@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow, noarchive" />
+  <title>XPRS Literature Index</title>
+  <script>
+    (() => {
+      const url = new URL(window.location.href);
+      const suppliedToken = url.searchParams.get("token");
+      if (suppliedToken) {
+        sessionStorage.setItem("xprsAdminToken", suppliedToken);
+        url.searchParams.delete("token");
+        history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      }
+      window.XPRS_ADMIN_TOKEN = suppliedToken || sessionStorage.getItem("xprsAdminToken") || "";
+    })();
+  </script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/admin-documents.css?v=2" />
+  <script src="/static/admin-documents.js?v=2" defer></script>
+</head>
+<body>
+  <aside class="gene-panel" aria-label="Indexed genes">
+    <div class="brand-row">
+      <img src="/static/favicon.svg" alt="" />
+      <div>
+        <span class="eyebrow">XPRS admin</span>
+        <strong>Literature index</strong>
+      </div>
+    </div>
+
+    <label class="field-label" for="gene-search">Find a gene</label>
+    <div class="search-wrap">
+      <span aria-hidden="true">⌕</span>
+      <input id="gene-search" type="search" placeholder="e.g. ESR1" autocomplete="off" />
+    </div>
+    <div id="gene-list-status" class="list-status" aria-live="polite">Loading index…</div>
+    <nav id="gene-list" class="gene-list" aria-label="Gene documents"></nav>
+  </aside>
+
+  <main class="document-shell">
+    <header class="page-header">
+      <div>
+        <span class="eyebrow">Read-only ChromaDB browser</span>
+        <h1 id="page-title">Indexed documents</h1>
+        <p id="page-description">Select a gene to inspect its stored literature.</p>
+      </div>
+      <a class="portal-link" href="/dashboard">Return to portal</a>
+    </header>
+
+    <section class="stats-grid" aria-label="Index summary">
+      <article>
+        <span>Documents</span>
+        <strong id="stat-documents">—</strong>
+      </article>
+      <article>
+        <span>Genes</span>
+        <strong id="stat-genes">—</strong>
+      </article>
+      <article>
+        <span>General pool</span>
+        <strong id="stat-general">—</strong>
+      </article>
+      <article>
+        <span>Phenotype pool</span>
+        <strong id="stat-phenotype">—</strong>
+      </article>
+    </section>
+
+    <section class="toolbar" aria-label="Document filters">
+      <label>
+        <span>Pool</span>
+        <select id="pool-filter">
+          <option value="all">All pools</option>
+          <option value="general">General queries</option>
+          <option value="phenotype">Phenotype queries</option>
+          <option value="opentargets">Open Targets</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <label>
+        <span>Query phenotype</span>
+        <select id="phenotype-filter">
+          <option value="">All phenotypes</option>
+        </select>
+      </label>
+      <label class="document-search-label">
+        <span>Search within this gene</span>
+        <input id="document-search" type="search" placeholder="Title, abstract, or paper ID" autocomplete="off" />
+      </label>
+      <label>
+        <span>Sort</span>
+        <select id="sort-filter">
+          <option value="citations_desc">Citations: high to low</option>
+          <option value="title">Title: A–Z</option>
+          <option value="pool">Pool, then title</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="results-heading">
+      <p id="results-count" aria-live="polite">No gene selected</p>
+      <p class="privacy-note">Embeddings and secrets are never returned by this page.</p>
+    </div>
+
+    <section id="document-list" class="document-list" aria-busy="false"></section>
+
+    <nav id="pagination" class="pagination" aria-label="Document pages" hidden>
+      <button id="previous-page" type="button">Previous</button>
+      <span id="page-indicator"></span>
+      <button id="next-page" type="button">Next</button>
+    </nav>
+  </main>
+</body>
+</html>

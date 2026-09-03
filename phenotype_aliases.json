@@ -1,0 +1,348 @@
+{
+  "aliases": {
+    "22q11.2 deletion syndrome": [
+      "22q112 deletion syndrome",
+      "di george syndrome",
+      "digeorge syndrome",
+      "velocardiofacial syndrome"
+    ],
+    "alport syndrome": [],
+    "alzheimer's disease": [
+      "alzheimer disease",
+      "alzheimers disease"
+    ],
+    "amyotrophic lateral sclerosis": [
+      "motor neuron disease"
+    ],
+    "angelman syndrome": [],
+    "arrhythmogenic cardiomyopathy": [
+      "arrhythmogenic right ventricular cardiomyopathy"
+    ],
+    "ataxia": [
+      "spinocerebellar degeneration"
+    ],
+    "autism spectrum disorder": [
+      "autism",
+      "autistic disorder"
+    ],
+    "bardet-biedl syndrome": [
+      "bardet biedl syndrome"
+    ],
+    "becker muscular dystrophy": [
+      "becker dystrophy"
+    ],
+    "bladder cancer": [
+      "urothelial carcinoma"
+    ],
+    "breast cancer": [
+      "breast carcinoma",
+      "breast tumor",
+      "breast tumour"
+    ],
+    "brugada syndrome": [],
+    "cervical cancer": [
+      "cervical carcinoma"
+    ],
+    "charcot-marie-tooth disease": [
+      "charcot marie tooth disease",
+      "hereditary motor and sensory neuropathy"
+    ],
+    "colorectal cancer": [
+      "colon cancer",
+      "rectal cancer"
+    ],
+    "congenital heart disease": [
+      "congenital heart defect"
+    ],
+    "coronary artery disease": [
+      "ischaemic heart disease",
+      "ischemic heart disease"
+    ],
+    "cystic fibrosis": [],
+    "developmental delay": [
+      "global developmental delay",
+      "neurodevelopmental delay"
+    ],
+    "dementia": [
+      "vascular dementia"
+    ],
+    "dilated cardiomyopathy": [],
+    "down syndrome": [
+      "trisomy 21"
+    ],
+    "duchenne muscular dystrophy": [
+      "duchenne dystrophy"
+    ],
+    "ehlers-danlos syndrome": [
+      "ehlers danlos syndrome"
+    ],
+    "endometrial cancer": [],
+    "epilepsy": [
+      "epileptic encephalopathy",
+      "seizure disorder"
+    ],
+    "esophageal cancer": [
+      "escc",
+      "esophageal squamous cell carcinoma",
+      "oesophageal cancer"
+    ],
+    "fabry disease": [],
+    "familial hypercholesterolemia": [
+      "familial hypercholesterolaemia"
+    ],
+    "focal segmental glomerulosclerosis": [
+      "fsgs"
+    ],
+    "fragile x syndrome": [
+      "fragile x"
+    ],
+    "frontotemporal dementia": [
+      "frontotemporal lobar degeneration"
+    ],
+    "gastric cancer": [
+      "stomach cancer"
+    ],
+    "gaucher disease": [],
+    "gastrointestinal cancer": [
+      "gi cancer",
+      "gi cancers",
+      "gastrointestinal cancers"
+    ],
+    "glioblastoma": [
+      "gbm"
+    ],
+    "head and neck cancer": [
+      "head and neck squamous cell carcinoma",
+      "hnscc"
+    ],
+    "hearing loss": [
+      "deafness",
+      "hereditary hearing loss",
+      "sensorineural hearing loss"
+    ],
+    "hemophilia": [
+      "haemophilia",
+      "haemophilia a",
+      "haemophilia b",
+      "hemophilia a",
+      "hemophilia b"
+    ],
+    "hereditary hemochromatosis": [
+      "haemochromatosis",
+      "hemochromatosis",
+      "hereditary haemochromatosis"
+    ],
+    "hereditary spastic paraplegia": [
+      "familial spastic paraplegia"
+    ],
+    "huntington's disease": [
+      "huntington disease",
+      "huntingtons disease"
+    ],
+    "hypertrophic cardiomyopathy": [],
+    "inflammatory bowel disease": [
+      "crohn disease",
+      "crohn's disease",
+      "crohns disease",
+      "ibd",
+      "ulcerative colitis"
+    ],
+    "inherited retinal dystrophy": [
+      "inherited retinal degeneration",
+      "retinal dystrophy"
+    ],
+    "intellectual disability": [
+      "developmental intellectual disability"
+    ],
+    "kidney cancer": [
+      "ccrcc",
+      "clear cell renal cell carcinoma",
+      "renal cancer",
+      "renal cell cancer",
+      "renal cell carcinoma"
+    ],
+    "kidney disease": [
+      "chronic kidney disease",
+      "chronic renal disease",
+      "ckd",
+      "kidney disorder",
+      "membranous nephropathy",
+      "nephropathy",
+      "renal disease",
+      "renal disorder"
+    ],
+    "leukemia": [
+      "acute lymphoblastic leukemia",
+      "acute lymphoblastic leukaemia",
+      "acute myeloid leukemia",
+      "acute myeloid leukaemia",
+      "aml",
+      "b-all",
+      "b-cell acute lymphoblastic leukemia",
+      "b-cell acute lymphoblastic leukaemia",
+      "chronic lymphocytic leukemia",
+      "chronic lymphocytic leukaemia",
+      "chronic myeloid leukemia",
+      "chronic myeloid leukaemia",
+      "cll",
+      "cml",
+      "leukaemia",
+      "t-all",
+      "t-cell acute lymphoblastic leukemia",
+      "t-cell acute lymphoblastic leukaemia"
+    ],
+    "liver cancer": [
+      "hcc",
+      "hepatocarcinogenesis",
+      "hepatocellular carcinoma"
+    ],
+    "long qt syndrome": [
+      "long qt interval syndrome",
+      "long-qt syndrome"
+    ],
+    "lung cancer": [
+      "lung adenocarcinoma",
+      "lung carcinoma",
+      "non-small cell lung cancer",
+      "nsclc",
+      "small cell lung cancer",
+      "sclc"
+    ],
+    "marfan syndrome": [],
+    "melanoma": [],
+    "muscular dystrophy": [
+      "congenital muscular dystrophy",
+      "limb-girdle muscular dystrophy"
+    ],
+    "neurofibromatosis": [
+      "neurofibromatosis type 1",
+      "neurofibromatosis type 2",
+      "von recklinghausen disease"
+    ],
+    "noonan syndrome": [],
+    "ovarian cancer": [],
+    "pancreatic cancer": [
+      "pancreatic carcinoma",
+      "pancreatic ductal adenocarcinoma",
+      "pdac"
+    ],
+    "parkinson's disease": [
+      "parkinson disease",
+      "parkinsons disease"
+    ],
+    "phenylketonuria": [
+      "pku"
+    ],
+    "polycystic kidney disease": [
+      "adpkd",
+      "arpkd",
+      "autosomal dominant polycystic kidney disease",
+      "autosomal recessive polycystic kidney disease"
+    ],
+    "pompe disease": [
+      "glycogen storage disease type 2",
+      "glycogen storage disease type ii"
+    ],
+    "prader-willi syndrome": [
+      "prader willi syndrome"
+    ],
+    "primary ciliary dyskinesia": [
+      "immotile cilia syndrome"
+    ],
+    "prostate cancer": [
+      "prostate carcinoma",
+      "prostate tumor",
+      "prostate tumour"
+    ],
+    "retinitis pigmentosa": [],
+    "rett syndrome": [],
+    "schizophrenia": [],
+    "sickle cell disease": [
+      "sickle cell anaemia",
+      "sickle cell anemia"
+    ],
+    "spinocerebellar ataxia": [],
+    "spinal muscular atrophy": [
+      "proximal spinal muscular atrophy"
+    ],
+    "tay-sachs disease": [
+      "tay sachs disease"
+    ],
+    "thalassemia": [
+      "alpha thalassemia",
+      "alpha-thalassemia",
+      "beta thalassemia",
+      "beta-thalassemia",
+      "thalassaemia"
+    ],
+    "tuberous sclerosis complex": [
+      "tuberous sclerosis"
+    ],
+    "type 2 diabetes": [
+      "t2d",
+      "type ii diabetes"
+    ],
+    "thyroid cancer": [
+      "thyroid carcinoma",
+      "thyroid tumor",
+      "thyroid tumour"
+    ],
+    "uterine cancer": [
+      "uterine carcinoma",
+      "uterine tumor",
+      "uterine tumour",
+      "cancer of the uterus"
+    ],
+    "usher syndrome": [],
+    "williams syndrome": [
+      "williams beuren syndrome",
+      "williams-beuren syndrome"
+    ],
+    "wilson disease": []
+  },
+  "generic": [
+    "cancer",
+    "cancers",
+    "disease",
+    "diseases",
+    "malignancies",
+    "malignancy",
+    "neoplasm",
+    "neoplasms",
+    "tumor",
+    "tumors",
+    "tumour",
+    "tumours"
+  ],
+  "ko_labels": {
+    "alzheimer's disease": "알츠하이머병",
+    "bladder cancer": "방광암",
+    "breast cancer": "유방암",
+    "cervical cancer": "자궁경부암",
+    "colorectal cancer": "대장암",
+    "coronary artery disease": "관상동맥질환",
+    "dementia": "치매",
+    "down syndrome": "다운증후군",
+    "endometrial cancer": "자궁내막암",
+    "esophageal cancer": "식도암",
+    "gastric cancer": "위암",
+    "gastrointestinal cancer": "위장관암",
+    "glioblastoma": "교모세포종",
+    "head and neck cancer": "두경부암",
+    "inflammatory bowel disease": "염증성 장질환",
+    "kidney cancer": "신장암",
+    "kidney disease": "신장질환",
+    "leukemia": "백혈병",
+    "liver cancer": "간암",
+    "lung cancer": "폐암",
+    "melanoma": "흑색종",
+    "ovarian cancer": "난소암",
+    "pancreatic cancer": "췌장암",
+    "parkinson's disease": "파킨슨병",
+    "prostate cancer": "전립선암",
+    "schizophrenia": "조현병",
+    "thyroid cancer": "갑상선암",
+    "type 2 diabetes": "제2형 당뇨병",
+    "uterine cancer": "자궁암"
+  }
+}

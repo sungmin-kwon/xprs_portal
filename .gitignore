@@ -1,0 +1,65 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Local environments and Python build artifacts
+.xprs_portal/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime state
+logs/*
+!logs/.gitkeep
+cache_s2/*
+!cache_s2/.gitkeep
+chroma/*
+!chroma/.gitkeep
+*.sqlite3
+*.log
+
+# Full-cohort artifacts and derivatives are distributed separately after
+# provenance/licensing review. Keep only documentation and the demo profile.
+data/*
+!data/README.md
+!data/demo/
+!data/demo/**
+
+# Large/derived R inputs and generated browser plot payloads
+r/*.RDS
+r/*.rds
+r/*.fam
+static/plots/*
+
+# Source-paper copies are local inputs; curated Markdown notes remain publishable.
+ref/*.pdf
+ref/*.txt
+
+# Generated benchmark corpora, vector stores, and review exports
+benchmarks/**/candidates.json
+benchmarks/**/corpus.json
+benchmarks/**/embeddings.npy
+benchmarks/**/fetch_stats.json
+benchmarks/**/partial_results.json
+benchmarks/**/results.json
+benchmarks/**/blinded_review.csv
+benchmarks/**/review_mapping.json
+benchmarks/**/raw_s2/
+benchmarks/**/chroma/
+benchmarks/**/lancedb/
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*~
+*.swp
+*.tmp

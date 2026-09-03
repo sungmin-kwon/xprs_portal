@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+
+pandas
+numpy
+scipy
+pyarrow
+
+openai
+requests
+chromadb
+sentence-transformers
+reportlab

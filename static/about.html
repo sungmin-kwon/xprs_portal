@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>About XPRS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/about.css?v=2" />
+</head>
+<body>
+  <nav class="sidebar" aria-label="XPRS navigation">
+    <a class="nav-brand" href="/" title="XPRS Portal">
+      <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
+    </a>
+    <a class="nav-item" href="/" title="Disease overview">
+      <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+    </a>
+    <a class="nav-item" href="/dashboard" title="Breast cancer portal">
+      <span class="material-symbols-outlined" aria-hidden="true">vaccines</span>
+    </a>
+  </nav>
+
+  <main class="about-shell">
+    <header class="about-header">
+      <div>
+        <a class="back-link" href="/">
+          <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+          <span>Disease Overview</span>
+        </a>
+        <h1>XPRS Methodology</h1>
+        <p>
+          XPRS is an explainable polygenic risk score framework that decomposes
+          individual genetic risk into gene-level and variant-level contributions.
+        </p>
+      </div>
+      <a class="paper-link" href="https://academic.oup.com/bioinformatics/article/41/4/btaf143/8101489" target="_blank" rel="noreferrer">
+        <span class="material-symbols-outlined" aria-hidden="true">article</span>
+        <span>Read Bioinformatics Paper</span>
+      </a>
+    </header>
+
+    <section class="summary-band">
+      <article>
+        <span class="eyebrow">Why XPRS</span>
+        <h2>From a black-box PRS to the genes and variants behind it</h2>
+        <p>
+          Standard polygenic risk scores summarize many genetic effects into a
+          single risk value. XPRS keeps that score but also shows which genes
+          and variants contribute most, for a cohort or an individual.
+        </p>
+      </article>
+      <article>
+        <span class="eyebrow">Portal Layer</span>
+        <h2>Explanations backed by the literature</h2>
+        <p>
+          For a chosen disease, the portal turns XPRS outputs into an
+          interpretation layer: cohort risk plots, gene-level summaries with
+          cited literature, and a follow-up Q&amp;A.
+        </p>
+      </article>
+    </section>
+
+    <section class="method-card" aria-labelledby="method-title">
+      <div class="section-heading">
+        <h2 id="method-title">How XPRS Is Computed</h2>
+        <p>XPRS aligns the inputs, maps variants to genes, and aggregates their contribution scores into interpretable views.</p>
+      </div>
+
+      <div class="method-flow">
+        <div class="input-row">
+          <div class="input-tile">
+            <span class="material-symbols-outlined" aria-hidden="true">genetics</span>
+            <strong>Genotype File</strong>
+            <small>bim, fam, bed</small>
+          </div>
+          <div class="input-tile">
+            <span class="material-symbols-outlined" aria-hidden="true">query_stats</span>
+            <strong>PRS Scoring File</strong>
+            <small>variant weights</small>
+          </div>
+          <div class="input-tile">
+            <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+            <strong>GWAS Association File</strong>
+            <small>trait associations</small>
+          </div>
+        </div>
+
+        <div class="flow-arrow"><span class="material-symbols-outlined" aria-hidden="true">south</span></div>
+
+        <div class="step-row">
+          <div class="step-block">
+            <div class="step-label">Step 1</div>
+            <h3>Preprocessing and Variant Mapping</h3>
+            <p>Align SNPs across inputs and map variants to genes using positional and association-aware strategies.</p>
+          </div>
+          <div class="step-block">
+            <div class="step-label">Step 2</div>
+            <h3>Contribution Score Calculation</h3>
+            <p>Estimate how much each gene and variant contributes to the individual and cohort-level risk score.</p>
+          </div>
+          <div class="step-block">
+            <div class="step-label">Step 3</div>
+            <h3>Interpretable Visualization</h3>
+            <p>Visualize population distributions, individual PRS position, and gene-level contribution patterns.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="portal-card" aria-labelledby="portal-title">
+      <div class="section-heading">
+        <h2 id="portal-title">How This Portal Uses XPRS</h2>
+        <p>The current software layer turns precomputed XPRS results into a disease-specific interpretation workflow.</p>
+      </div>
+      <div class="portal-grid">
+        <div class="portal-step">
+          <span class="material-symbols-outlined" aria-hidden="true">monitoring</span>
+          <h3>Risk Overview</h3>
+          <p>Compare an individual against cohort PRS distributions across the available diseases.</p>
+        </div>
+        <div class="portal-step">
+          <span class="material-symbols-outlined" aria-hidden="true">account_tree</span>
+          <h3>Gene-Level Explanation</h3>
+          <p>Open a disease portal to inspect density, Manhattan-style gene contribution plots, and top genes.</p>
+        </div>
+        <div class="portal-step">
+          <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+          <h3>Scientific Evidence</h3>
+          <p>Review references and ask follow-up questions drawn from retrieved biomedical literature.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

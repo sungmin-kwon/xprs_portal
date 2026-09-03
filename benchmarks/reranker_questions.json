@@ -1,0 +1,101 @@
+[
+  {
+    "id": "ccnd1_breast_prognosis_en",
+    "gene": "CCND1",
+    "language": "en",
+    "intent": "primary_disease",
+    "question": "How does CCND1 amplification affect breast cancer prognosis and survival?",
+    "target_terms": ["breast cancer", "breast carcinoma", "mammary cancer", "mammary carcinoma", "triple-negative breast", "tnbc"],
+    "keywords": ["amplification", "prognosis", "survival", "outcome"]
+  },
+  {
+    "id": "esr1_breast_resistance_en",
+    "gene": "ESR1",
+    "language": "en",
+    "intent": "primary_disease",
+    "question": "How do ESR1 mutations contribute to tamoxifen or endocrine therapy resistance in breast cancer?",
+    "target_terms": ["breast cancer", "breast carcinoma", "mammary cancer", "mammary carcinoma", "triple-negative breast", "tnbc"],
+    "keywords": ["mutation", "tamoxifen", "endocrine", "resistance"]
+  },
+  {
+    "id": "tox3_breast_risk_en",
+    "gene": "TOX3",
+    "language": "en",
+    "intent": "primary_disease",
+    "question": "What evidence links TOX3 variants to breast cancer susceptibility?",
+    "target_terms": ["breast cancer", "breast carcinoma", "mammary cancer", "mammary carcinoma", "triple-negative breast", "tnbc"],
+    "keywords": ["variant", "susceptibility", "risk", "gwas"]
+  },
+  {
+    "id": "psmb8_breast_immunity_en",
+    "gene": "PSMB8",
+    "language": "en",
+    "intent": "primary_disease",
+    "question": "What role does PSMB8 play in antitumor immunity and breast cancer prognosis?",
+    "target_terms": ["breast cancer", "breast carcinoma", "mammary cancer", "mammary carcinoma", "triple-negative breast", "tnbc"],
+    "keywords": ["immunity", "immune", "prognosis", "survival"]
+  },
+  {
+    "id": "ano1_breast_progression_en",
+    "gene": "ANO1",
+    "language": "en",
+    "intent": "primary_disease",
+    "question": "Does ANO1 promote breast cancer proliferation, invasion, migration, or metastasis?",
+    "target_terms": ["breast cancer", "breast carcinoma", "mammary cancer", "mammary carcinoma", "triple-negative breast", "tnbc"],
+    "keywords": ["proliferation", "invasion", "migration", "metastasis"]
+  },
+  {
+    "id": "hla_drb1_breast_risk_en",
+    "gene": "HLA-DRB1",
+    "language": "en",
+    "intent": "primary_disease",
+    "question": "Are HLA-DRB1 alleles associated with breast cancer susceptibility or immune response?",
+    "target_terms": ["breast cancer", "breast carcinoma", "mammary cancer", "mammary carcinoma", "triple-negative breast", "tnbc"],
+    "keywords": ["allele", "susceptibility", "immune", "risk"]
+  },
+  {
+    "id": "ano1_colorectal_en",
+    "gene": "ANO1",
+    "language": "en",
+    "intent": "other_disease",
+    "question": "What evidence links ANO1 to colorectal cancer progression or metastasis?",
+    "target_terms": ["colorectal cancer", "colorectal carcinoma", "colon cancer", "rectal cancer"],
+    "keywords": ["colorectal", "progression", "metastasis", "invasion"]
+  },
+  {
+    "id": "psmb8_thyroid_en",
+    "gene": "PSMB8",
+    "language": "en",
+    "intent": "other_disease",
+    "question": "What evidence links PSMB8 to thyroid cancer prognosis or immune response?",
+    "target_terms": ["thyroid cancer", "thyroid carcinoma"],
+    "keywords": ["thyroid", "prognosis", "immune", "immunity"]
+  },
+  {
+    "id": "hla_drb1_autoimmune_en",
+    "gene": "HLA-DRB1",
+    "language": "en",
+    "intent": "other_disease",
+    "question": "What evidence links HLA-DRB1 alleles to autoimmune disease susceptibility?",
+    "target_terms": ["autoimmune", "rheumatoid arthritis", "systemic lupus", "autoimmune hepatitis"],
+    "keywords": ["allele", "autoimmune", "susceptibility", "risk"]
+  },
+  {
+    "id": "esr1_breast_resistance_ko",
+    "gene": "ESR1",
+    "language": "ko",
+    "intent": "primary_disease",
+    "question": "ESR1 돌연변이는 유방암에서 타목시펜 또는 내분비 치료 저항성에 어떻게 기여하나요?",
+    "target_terms": ["breast cancer", "breast carcinoma", "mammary cancer", "mammary carcinoma", "triple-negative breast", "tnbc"],
+    "keywords": ["mutation", "tamoxifen", "endocrine", "resistance"]
+  },
+  {
+    "id": "ano1_colorectal_ko",
+    "gene": "ANO1",
+    "language": "ko",
+    "intent": "other_disease",
+    "question": "ANO1이 대장암의 진행이나 전이에 관여한다는 근거가 있나요?",
+    "target_terms": ["colorectal cancer", "colorectal carcinoma", "colon cancer", "rectal cancer"],
+    "keywords": ["colorectal", "progression", "metastasis", "invasion"]
+  }
+]

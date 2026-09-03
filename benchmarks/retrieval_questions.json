@@ -1,0 +1,38 @@
+[
+  {
+    "id": "ccnd1_amplification_prognosis",
+    "gene": "CCND1",
+    "question": "How does CCND1 amplification affect breast cancer prognosis and survival?",
+    "keywords": ["amplification", "prognosis", "survival", "outcome"]
+  },
+  {
+    "id": "esr1_endocrine_resistance",
+    "gene": "ESR1",
+    "question": "How do ESR1 mutations contribute to tamoxifen or endocrine therapy resistance in breast cancer?",
+    "keywords": ["mutation", "tamoxifen", "endocrine", "resistance"]
+  },
+  {
+    "id": "tox3_susceptibility",
+    "gene": "TOX3",
+    "question": "What evidence links TOX3 variants to breast cancer susceptibility?",
+    "keywords": ["variant", "susceptibility", "risk", "gwas"]
+  },
+  {
+    "id": "psmb8_immunity_prognosis",
+    "gene": "PSMB8",
+    "question": "What role does PSMB8 play in antitumor immunity and breast cancer prognosis?",
+    "keywords": ["immunity", "immune", "prognosis", "survival"]
+  },
+  {
+    "id": "ano1_invasion_metastasis",
+    "gene": "ANO1",
+    "question": "Does ANO1 promote breast cancer proliferation, invasion, migration, or metastasis?",
+    "keywords": ["proliferation", "invasion", "migration", "metastasis"]
+  },
+  {
+    "id": "hla_drb1_alleles",
+    "gene": "HLA-DRB1",
+    "question": "Are HLA-DRB1 alleles associated with breast cancer susceptibility or immune response?",
+    "keywords": ["allele", "susceptibility", "immune", "risk"]
+  }
+]

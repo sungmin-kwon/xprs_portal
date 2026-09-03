@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>XPRS Information Portal</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=73" />
+</head>
+
+<body>
+
+  <nav class="sidebar" aria-label="Disease navigation">
+    <a class="nav-brand" href="/" title="XPRS Portal">
+      <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
+    </a>
+    <a class="nav-item" href="/" title="Disease overview">
+      <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+    </a>    <a class="nav-item active" href="/dashboard" title="Breast cancer portal">
+      <span class="material-symbols-outlined" aria-hidden="true">vaccines</span>
+    </a>
+  </nav>
+
+  <div class="content-wrapper">
+    
+    <header>
+      <div class="header-inner simple-header">
+        <div class="header-title-block">
+          <h1 data-i18n="portalTitle">XPRS Information Portal – BREAST CANCER</h1>
+        </div>
+
+        <div class="header-session-bar">
+          <button id="individual-selector-btn" class="session-pill individual-selector-btn" type="button" aria-label="Change Individual" title="Change Individual">
+            <span class="material-symbols-outlined individual-selector-icon" aria-hidden="true">person</span>
+            <strong id="current-individual-label">—</strong>
+            <span class="material-symbols-outlined individual-selector-caret" aria-hidden="true">expand_more</span>
+          </button>
+          <div class="export-menu-wrap">
+            <button id="export-menu-btn" class="secondary-btn export-menu-btn" type="button" disabled aria-expanded="false" aria-haspopup="menu">
+              <span class="material-symbols-outlined" aria-hidden="true">download</span>
+              <span data-i18n="exportLabel">Download</span>
+            </button>
+            <div id="export-menu" class="export-menu" hidden>
+              <button id="download-pdf-btn" class="export-menu__item" type="button" data-i18n="downloadPdfReport">Download Full PDF Report</button>
+              <button id="download-chat-md-btn" class="export-menu__item" type="button" data-i18n="downloadChatMd">Download Chat (.md)</button>
+              <button id="download-chat-json-btn" class="export-menu__item" type="button" data-i18n="downloadChatJson">Download Chat (.json)</button>
+            </div>
+          </div>
+          <button id="language-toggle-top" class="language-toggle-button" type="button" aria-label="Switch to Korean" title="Switch to Korean">
+            <span class="material-symbols-outlined" aria-hidden="true">language</span>
+            <span class="language-toggle-label" aria-hidden="true">EN</span>
+          </button>
+          <button id="theme-toggle-top" class="theme-icon-button" type="button" aria-label="Toggle theme" title="Toggle theme">
+            <span class="theme-icon" aria-hidden="true">☾</span>
+          </button>
+          <div class="header-avatar" aria-hidden="true"></div>
+        </div>
+      </div>
+    </header>
+
+    <main class="page">
+      <div class="left-column">
+        <section class="panel viz-panel" style="display:flex; flex-direction:column;">
+          <div class="panel-header">
+            <div class="status" id="viz-status"></div>
+          </div>
+
+          <div class="viz-body" style="flex:1;">
+            <div class="viz-card">
+              <div class="viz-title">
+                <span data-i18n="densityTitle">PRS Density</span>
+              </div>
+              <div class="viz-content">
+                <div id="density-plot" class="plotly-box" style="display:none;"></div>
+              </div>
+            </div>
+
+            <div class="viz-card">
+              <div class="viz-title viz-title--with-action">
+                <span data-i18n="manhattanTitle">Individual Manhattan Plot</span>
+                <button
+                  id="manhattan-popout-btn"
+                  class="viz-action-btn"
+                  type="button"
+                  aria-label="Expand plot"
+                  title="Expand plot"
+                  disabled
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true">open_in_full</span>
+                </button>
+              </div>
+              <div class="viz-content">
+                <div id="manhattan-plot" class="plotly-box" style="display:none;"></div>
+              </div>
+            </div>
+
+            <div class="viz-card viz-card--placeholder">
+              <div class="viz-title">
+                <span data-i18n="visualizationPlaceholder">Visualization Placeholder</span>
+              </div>
+              <div class="viz-content viz-content--placeholder">
+                <div class="viz-empty-state">
+                  <span class="material-symbols-outlined">show_chart</span>
+                  <p data-i18n="futureAnalysisPanel">Reserved for future analysis panel</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+
+      <section class="panel panel-chat-container">
+        <div class="panel-header">
+          <div class="chatbot-heading">
+            <div class="chatbot-badge">
+              <span class="material-symbols-outlined">smart_toy</span>
+            </div>
+            <div class="chatbot-heading-copy">
+              <h2 data-i18n="chatbotTitle">Interactive Chatbot</h2>
+              <div class="chatbot-model-indicator">
+                <span class="chatbot-model-dot"></span>
+                <span id="chatbot-model-label">…</span>
+              </div>
+            </div>
+          </div>
+          <div class="status" id="chat-status"></div>
+          <div class="chatbot-panel-actions">
+            <button id="header-generate-btn" class="primary-header-btn panel-generate-btn" type="button" data-i18n="generateSummary">Generate Summary</button>
+            <button class="panel-icon-btn" type="button" aria-label="Refresh">
+              <span class="material-symbols-outlined">refresh</span>
+            </button>
+            <div class="settings-menu-wrap">
+              <button id="settings-menu-btn" class="panel-icon-btn" type="button"
+                      aria-label="Settings" aria-expanded="false" aria-haspopup="menu">
+                <span class="material-symbols-outlined">more_vert</span>
+              </button>
+              <div id="settings-menu" class="export-menu settings-menu" hidden>
+                <div class="settings-menu__section">
+                  <label class="settings-menu__label" for="generation-model-select"
+                         data-i18n="generationModelLabel">Answer model</label>
+                  <select id="generation-model-select" class="settings-menu__select"></select>
+                </div>
+                <!-- FUTURE: reference-extraction model selector drops in here as a
+                     second .settings-menu__section with #reference-model-select,
+                     populated from /api/models .reference_extraction. -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="chat"></div>
+
+        <div class="input-area">
+          <textarea id="user-input" rows="1" data-i18n-placeholder="followupPlaceholder" placeholder="Ask a question about XPRS genomics..."></textarea>
+          <div class="input-actions">
+            <button id="send-btn" type="button" aria-label="Send question" title="Send question">
+              <span class="material-symbols-outlined">send</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <div class="right-column">
+
+        <!-- NEW: References List (top-right) -->
+        <section class="panel" id="refs-panel" style="display:flex; flex-direction:column; flex: 1 1 0; min-height: 280px;">
+          <div class="panel-header">
+            <div><h2 data-i18n="referencesList">References List</h2></div>
+            <div class="status refs-badge" id="refs-status"></div>
+          </div>
+      
+          <div id="refs-body" style="flex: 1; padding: 0.75rem; overflow-y: auto; min-height: 0;">
+            <div class="placeholder" data-i18n="noReferencesYet">No references yet.</div>
+          </div>
+        </section>
+      
+        <!-- Existing: Reference Viewer (bottom-right) -->
+        <section class="panel" id="paper-panel" style="display:flex; flex-direction:column; flex: 2 1 0; min-height: 0;">
+          <div class="panel-header">
+            <div><h2 data-i18n="referenceViewer">Reference Viewer</h2></div>
+            <div class="status" id="paper-status"></div>
+          </div>
+      
+          <div id="paper-body" style="flex: 1; overflow: hidden; min-height: 0; padding: 1rem;">
+            <div class="placeholder" data-i18n="noPaperYet">No paper selected yet.</div>
+          </div>
+        </section>
+      
+      </div>
+    </main>
+  
+  </div>
+
+  <div id="plot-overlay" class="plot-overlay" aria-hidden="true">
+    <div id="plot-overlay-backdrop" class="plot-overlay__backdrop"></div>
+    <div class="plot-overlay__dialog" role="dialog" aria-modal="true" aria-labelledby="plot-overlay-title">
+      <div class="plot-overlay__header">
+        <h2 id="plot-overlay-title" data-i18n="manhattanTitle">Individual Manhattan Plot</h2>
+        <button
+          id="close-plot-overlay-btn"
+          class="plot-overlay__close"
+          type="button"
+          aria-label="Close expanded plot"
+          title="Close expanded plot"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <div class="plot-overlay__body">
+        <div id="manhattan-plot-expanded" class="plotly-box plotly-box--expanded"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="landing-overlay" class="landing-overlay is-open" aria-hidden="false">
+    <div id="landing-backdrop" class="landing-backdrop"></div>
+    <div class="landing-modal" role="dialog" aria-modal="true" aria-labelledby="landing-title">
+      <div class="landing-modal__header">
+        <div class="landing-eyebrow" data-i18n="landingEyebrow">XPRS Information Portal: BREAST CANCER</div>
+        <h2 id="landing-title" data-i18n="landingTitle">Configure XPRS Summary</h2>
+      </div>
+
+      <div class="landing-modal__body">
+        <section class="landing-section landing-section--search">
+          <div class="landing-section__topline">
+            <label for="individual-search" data-i18n="individualId">Individual ID</label>
+            <span class="landing-record-count status" id="individual-status"></span>
+          </div>
+          <div class="landing-picker" id="landing-picker">
+            <div class="landing-search-wrap">
+              <span class="material-symbols-outlined landing-search-icon" aria-hidden="true">search</span>
+              <input id="individual-search" type="text" data-i18n-placeholder="individualSearchPlaceholder" placeholder="Search Individual ID" autocomplete="off">
+              <span class="material-symbols-outlined landing-search-caret" aria-hidden="true">expand_more</span>
+            </div>
+            <div class="landing-dropdown" id="individual-dropdown" hidden>
+              <select id="individual-id" size="8"></select>
+            </div>
+          </div>
+        </section>
+
+        <section class="landing-section landing-section--gene-count">
+          <div class="landing-section__split">
+            <div class="landing-section__copy">
+              <label id="gene-count-label" data-i18n="geneCountLabel">Genes to Include</label>
+              <div class="landing-section__hint" data-i18n="geneCountHint">Choose how many of this individual's highest-contributing genes to interpret in detail</div>
+            </div>
+            <div class="landing-gene-count-chip">
+              <span id="gene-count-value">2 genes</span>
+            </div>
+          </div>
+          <input type="hidden" id="summary-gene-count" value="2">
+          <div class="gene-count-options" role="radiogroup" aria-labelledby="gene-count-label">
+            <button type="button" class="gene-count-option" role="radio" aria-checked="false" data-gene-count="1">1</button>
+            <button type="button" class="gene-count-option is-selected" role="radio" aria-checked="true" data-gene-count="2">2</button>
+            <button type="button" class="gene-count-option" role="radio" aria-checked="false" data-gene-count="3">3</button>
+            <button type="button" class="gene-count-option" role="radio" aria-checked="false" data-gene-count="4">4</button>
+            <button type="button" class="gene-count-option" role="radio" aria-checked="false" data-gene-count="5">5</button>
+          </div>
+          <div id="gene-selection-preview" class="status gene-selection-preview"></div>
+        </section>
+
+        <div class="landing-status-row">
+          <div id="landing-warning" class="landing-warning" data-i18n="generateSummaryAlert"></div>
+        </div>
+
+        <div id="landing-disclaimer-panel" class="landing-disclaimer-panel" hidden>
+          <div class="landing-disclaimer-header">
+            <h3 data-i18n="disclaimerTitle">⚠️ Clinical Disclaimer</h3>
+          </div>
+          <div class="landing-disclaimer-body" data-i18n="disclaimerBody">
+            This tool provides information based on statistical associations and scientific literature,
+            and is <strong>not</strong> a diagnostic tool. Genetic risk scores are probabilistic and do
+            not guarantee specific health outcomes. Please consult a certified genetic counselor or
+            medical professional for clinical advice.
+          </div>
+        </div>
+      </div>
+
+      <div class="landing-modal__footer">
+        <button id="landing-disclaimer-btn" class="landing-footer-link" type="button" data-i18n="viewDisclaimer">View Disclaimer</button>
+        <div class="landing-action-buttons">
+          <button id="landing-cancel-btn" class="secondary-btn landing-cancel-btn" type="button" data-i18n="cancelAction">Cancel</button>
+          <button id="landing-change-btn" type="button" data-i18n="changeIid">Change IID</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+  <script src="/static/dashboard.js?v=76"></script>
+
+</body>
+</html>

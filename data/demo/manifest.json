@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "bundle_id": "xprs-1000g-breast-cancer-demo-hg00436-v1",
+  "description": "One-individual XPRS demonstration with a relabeled 1000 Genomes background PRS distribution.",
+  "source_cohort": "1000 Genomes Project, East Asian subset",
+  "source_iid": "HG00436",
+  "demo_iid": "DEMO_HG00436",
+  "individual_gene_profiles": 1,
+  "background_prs_count": 502,
+  "provenance_note": "The demo IID is a transparent alias for the public source IID, not an anonymization claim.",
+  "generated_by": "scripts/build_demo_data.py",
+  "source_files": {
+    "gene_importance": {
+      "path": "all_individuals_gene_importance.csv",
+      "sha256": "9d7079a2fc96c652332bf44863df326d706ee668eb83538c8f38343489233591",
+      "bytes": 60197638
+    },
+    "open_targets": {
+      "path": "ot_breast_carcinoma_gene_associations.csv",
+      "sha256": "a386d5e569c3369298accd7f8e3c7eb4460c0a7941c315ce452e8f28018efc73",
+      "bytes": 518116
+    },
+    "annotated_info": {
+      "path": "plot_cache/annotated_info.parquet",
+      "sha256": "a76a661aca8be47861a42048c98863881636443cbe15a7f4b9d9da97007f5d7a",
+      "bytes": 348268
+    },
+    "prs_info": {
+      "path": "plot_cache/prs_info.parquet",
+      "sha256": "6b67ed97b92922091c52824d83c3f5a5d9a2a193891a7bdaf660b81b4f3fe525",
+      "bytes": 74653279
+    },
+    "full_prs": {
+      "path": "plot_cache/full_prs.parquet",
+      "sha256": "a1b066bced9e7d1be42cbb5f861ecdaed767b86d550155098233240c9da04c8a",
+      "bytes": 9107
+    }
+  },
+  "files": {
+    "gene_importance": {
+      "path": "all_individuals_gene_importance.csv",
+      "sha256": "8ebbc39670f78f17f987a370227e8c8ed7bb77cdab67d956e5ce1a0a34497419",
+      "bytes": 166853,
+      "rows": 6500,
+      "columns": [
+        "Gene",
+        "DEMO_HG00436"
+      ]
+    },
+    "open_targets": {
+      "path": "ot_breast_carcinoma_gene_associations.csv",
+      "sha256": "dda9771984a1e5130c80400e334ac5b146117575b8fb4911c6b58fcf1e924b31",
+      "bytes": 452264,
+      "rows": 8230,
+      "columns": [
+        "diseaseId",
+        "targetId",
+        "score",
+        "evidenceCount",
+        "Gene name"
+      ]
+    },
+    "annotated_info": {
+      "path": "plot_cache/annotated_info.parquet",
+      "sha256": "c59e35d61f256fb4bbfe76211d59cedbe23b5535c363055c0cf643100df1d8c9",
+      "bytes": 261128,
+      "rows": 15172,
+      "columns": [
+        "chr",
+        "symbol",
+        "start",
+        "end"
+      ]
+    },
+    "prs_info": {
+      "path": "plot_cache/prs_info.parquet",
+      "sha256": "7f2fe5f82067228a6c86d0967922ddd762f5350b3aae597036d6be4da7958be8",
+      "bytes": 143592,
+      "rows": 15172,
+      "columns": [
+        "DEMO_HG00436"
+      ]
+    },
+    "full_prs": {
+      "path": "plot_cache/full_prs.parquet",
+      "sha256": "2efea5963350b09c3ec71c43628feb8138ab34eaf9fec988477932033bd4f6a3",
+      "bytes": 7036,
+      "rows": 503,
+      "columns": [
+        "IID",
+        "PRS"
+      ]
+    }
+  }
+}

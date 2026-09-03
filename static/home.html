@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XPRS Disease Overview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/home.css?v=11" />
+</head>
+<body>
+  <nav class="sidebar" aria-label="Disease navigation" data-i18n-aria="diseaseNavigation">
+    <a class="nav-brand" href="/" title="XPRS Portal" data-i18n-title="portalTitle">
+      <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
+    </a>
+    <a class="nav-item is-active" href="/" title="Disease overview" data-i18n-title="diseaseOverview">
+      <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+    </a>    <a id="sidebar-breast-portal" class="nav-item" href="/dashboard" title="Breast cancer portal" data-i18n-title="breastCancerPortal">
+      <span class="material-symbols-outlined" aria-hidden="true">vaccines</span>
+    </a>
+  </nav>
+
+  <div class="page-shell">
+    <header class="topbar">
+      <div>
+        <h1 data-i18n="pageTitle">XPRS Disease Overview</h1>
+      </div>
+      <div class="topbar-actions">
+        <div class="topbar-status" id="disease-count-status">Loading diseases...</div>
+        <button id="language-toggle-top" class="language-toggle-button" type="button" aria-label="Switch to Korean" title="Switch to Korean">
+          <span class="material-symbols-outlined" aria-hidden="true">language</span>
+          <span class="language-toggle-label" aria-hidden="true">EN</span>
+        </button>
+        <a class="about-link" href="/about">
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          <span data-i18n="aboutXprs">About XPRS</span>
+        </a>
+      </div>
+    </header>
+
+    <main class="overview-layout">
+      <section class="control-panel" aria-labelledby="individual-selector-title">
+        <div class="panel-title-row">
+          <span class="material-symbols-outlined" aria-hidden="true">person_search</span>
+          <h2 id="individual-selector-title" data-i18n="cohortAndIndividual">Cohort &amp; Individual</h2>
+        </div>
+
+        <label for="cohort-select" data-i18n="cohort">Cohort</label>
+        <div class="select-wrap">
+          <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+          <select id="cohort-select" aria-label="Available cohorts" data-i18n-aria="availableCohorts"></select>
+          <span class="material-symbols-outlined select-caret" aria-hidden="true">expand_more</span>
+        </div>
+
+        <label for="individual-search" data-i18n="individualId">ID</label>
+        <div class="search-wrap">
+          <span class="material-symbols-outlined" aria-hidden="true">search</span>
+          <input id="individual-search" type="search" autocomplete="off" placeholder="Search individual ID" data-i18n-placeholder="searchIndividualId">
+        </div>
+        <select id="individual-id" size="9" aria-label="Available individual IDs" data-i18n-aria="availableIndividualIds"></select>
+        <div class="panel-status" id="individual-status">Loading individuals...</div>
+      </section>
+
+      <section class="disease-panel" aria-labelledby="disease-grid-title">
+        <div class="disease-panel-header">
+          <div>
+            <h2 id="disease-grid-title" data-i18n="riskOverview">Overall Individual Risk Overview</h2>
+            <p id="grid-subtitle"></p>
+          </div>
+          <button id="refresh-grid-btn" class="icon-btn" type="button" title="Refresh risk cards" aria-label="Refresh risk cards" data-i18n-title="refreshRiskCards" data-i18n-aria="refreshRiskCards">
+            <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+          </button>
+        </div>
+
+        <div id="disease-grid" class="disease-grid" aria-live="polite">
+          <div class="empty-state">
+            <span class="material-symbols-outlined" aria-hidden="true">query_stats</span>
+            <p>Loading disease workspaces...</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/home.js?v=9"></script>
+</body>
+</html>
