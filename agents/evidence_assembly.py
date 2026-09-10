@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 import time
 from typing import Any, Callable, Optional
 
@@ -13,7 +14,12 @@ from agents.semantic_scholar import (
     S2_PRIMARY_LIMIT,
     SemanticScholarAgent,
 )
-from config import RERANKER_CANDIDATE_K, S2_CACHE_DIR
+from config import (
+    RERANKER_CANDIDATE_K,
+    S2_CACHE_DIR,
+    S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS,
+    S2_RUNTIME_RATE_LIMIT_COOLDOWN_MAX_SECONDS,
+)
 from phenotype_utils import infer_phenotypes_from_text, normalize_phenotype_values
 from reference_utils import build_reference_hit, extract_s2_paper_id
 from text_utils import emit_progress, emit_timing, is_cancer_phenotype, unique_preserving_order
@@ -57,6 +63,11 @@ class EvidenceAssemblyAgent:
         self.rag = rag_agent
         self.ot = ot_agent
         self.s2 = s2_agent
+        # Interactive requests share this agent. Serialize uncached S2 fetches so
+        # one 429 can open the cooldown before another summary sends more queries.
+        self._s2_fetch_lock = threading.Lock()
+        self._s2_cooldown_until = 0.0
+        self._s2_rate_limit_streak = 0
 
     @staticmethod
     def _pool_where(gene: str, pool_type: str, phenotype: str | None = None) -> dict[str, Any]:
@@ -112,7 +123,7 @@ class EvidenceAssemblyAgent:
         phenotype: str | None,
         limit: int,
         progress_callback: Optional[Callable[[str], None]],
-    ) -> None:
+    ) -> bool:
         query_label = f"{gene} {phenotype}".strip() if phenotype else gene
         pool_label = (
             f'{phenotype} query pool'
@@ -132,41 +143,88 @@ class EvidenceAssemblyAgent:
             )
         logger.info("[EVIDENCE_INDEX] %s", message)
         emit_progress(progress_callback, message)
-        papers = self.s2.cached_for_gene(
-            gene,
-            limit=limit,
-            phenotype=phenotype,
-            progress_callback=progress_callback,
-        )
-        docs = self.s2.papers_to_docs(
-            gene,
-            papers,
-            pool_type=pool_type,
-            phenotype=phenotype,
-        )
-        if docs:
-            source = "cached results" if cache_ready_before else "newly retrieved results"
-            message = (
-                f'Indexing {len(docs)} eligible documents for "{query_label}" '
-                f"from {source}"
+
+        with self._s2_fetch_lock:
+            # A different request may have populated the cache while this one
+            # waited for the serialized fetch slot.
+            cache_ready_now = self.s2.cached_query_succeeded(gene, phenotype)
+            if not cache_ready_now and self._s2_cooldown_until > time.monotonic():
+                remaining = max(1, int(self._s2_cooldown_until - time.monotonic() + 0.999))
+                message = (
+                    f'Semantic Scholar query skipped for "{query_label}": '
+                    f"rate-limit cooldown active ({remaining}s remaining)"
+                )
+                logger.warning("[EVIDENCE_INDEX] %s", message)
+                emit_progress(progress_callback, message)
+                return False
+
+            papers = self.s2.cached_for_gene(
+                gene,
+                limit=limit,
+                phenotype=phenotype,
+                progress_callback=progress_callback,
             )
-            logger.info("[EVIDENCE_INDEX] %s", message)
-            emit_progress(progress_callback, message)
-            self.rag.upsert_docs(docs)
-        elif self.s2.cached_query_succeeded(gene, phenotype):
-            message = (
-                f'No eligible documents were available to index for "{query_label}"; '
-                "the completed Semantic Scholar cache was retained"
+            docs = self.s2.papers_to_docs(
+                gene,
+                papers,
+                pool_type=pool_type,
+                phenotype=phenotype,
             )
-            logger.info("[EVIDENCE_INDEX] %s", message)
-            emit_progress(progress_callback, message)
-        else:
+            completed = self.s2.cached_query_succeeded(gene, phenotype)
+            if not completed and hasattr(self.s2, "get_health_status"):
+                health = self.s2.get_health_status() or {}
+                if health.get("last_status_code") == 429:
+                    retry_after = health.get("last_retry_after_seconds")
+                    self._s2_rate_limit_streak += 1
+                    exponential_cooldown = min(
+                        S2_RUNTIME_RATE_LIMIT_COOLDOWN_MAX_SECONDS,
+                        S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS
+                        * (2 ** (self._s2_rate_limit_streak - 1)),
+                    )
+                    cooldown = max(float(retry_after or 0), float(exponential_cooldown))
+                    self._s2_cooldown_until = max(
+                        self._s2_cooldown_until,
+                        time.monotonic() + cooldown,
+                    )
+                    cooldown_message = (
+                        "Semantic Scholar rate-limit cooldown opened for "
+                        f"{int(cooldown)}s (consecutive 429s: {self._s2_rate_limit_streak})"
+                    )
+                    logger.warning("[EVIDENCE_INDEX] %s", cooldown_message)
+                    emit_progress(progress_callback, cooldown_message)
+
+            # A completed uncached request proves that the upstream endpoint has
+            # recovered, so the next future 429 starts again at one minute.
+            if completed and not cache_ready_now:
+                self._s2_rate_limit_streak = 0
+                self._s2_cooldown_until = 0.0
+
+            if docs:
+                source = "cached results" if cache_ready_before or cache_ready_now else "newly retrieved results"
+                message = (
+                    f'Indexing {len(docs)} eligible documents for "{query_label}" '
+                    f"from {source}"
+                )
+                logger.info("[EVIDENCE_INDEX] %s", message)
+                emit_progress(progress_callback, message)
+                self.rag.upsert_docs(docs)
+                return True
+            if completed:
+                message = (
+                    f'No eligible documents were available to index for "{query_label}"; '
+                    "the completed Semantic Scholar cache was retained"
+                )
+                logger.info("[EVIDENCE_INDEX] %s", message)
+                emit_progress(progress_callback, message)
+                return True
+
             message = (
                 f'Semantic Scholar retrieval did not complete for "{query_label}"; '
                 "no documents were added to the vector store"
             )
             logger.warning("[EVIDENCE_INDEX] %s", message)
             emit_progress(progress_callback, message)
+            return False
 
     def _ensure_indexed_for_gene(
         self,
@@ -201,15 +259,16 @@ class EvidenceAssemblyAgent:
                 logger.info("[EVIDENCE_INDEX] %s", message)
                 emit_progress(progress_callback, message)
 
+        general_available = general_indexed
         if not general_indexed:
-            self._fetch_and_index_pool(
+            general_available = self._fetch_and_index_pool(
                 gene,
                 pool_type="general",
                 phenotype=None,
                 limit=general_limit,
                 progress_callback=progress_callback,
             )
-        if not primary_indexed:
+        if not primary_indexed and general_available:
             self._fetch_and_index_pool(
                 gene,
                 pool_type="phenotype",
@@ -217,6 +276,13 @@ class EvidenceAssemblyAgent:
                 limit=primary_limit,
                 progress_callback=progress_callback,
             )
+        elif not primary_indexed:
+            message = (
+                f'Skipping the {PRIMARY_PHENOTYPE} query for "{gene}" because '
+                "the general Semantic Scholar query did not complete"
+            )
+            logger.warning("[EVIDENCE_INDEX] %s", message)
+            emit_progress(progress_callback, message)
 
         ot_where = {"$and": [{"gene": gene}, {"source": "opentargets"}]}
         if not self.rag.has_documents(ot_where):

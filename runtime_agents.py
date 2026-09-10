@@ -33,7 +33,7 @@ def get_runtime_agents() -> dict[str, Any]:
         RERANKER_MODEL,
         S2_CACHE_DIR,
     )
-    from llm_utils import LLM_PROVIDER, build_llm_agent, build_llm_agent_with_temperature, build_llm_client
+    from llm_utils import LLM_PROVIDER, build_llm_agent, build_llm_client
     from reference_utils import ReferenceMetadataExtractor
 
     client, llm_model = build_llm_client(LLM_PROVIDER)
@@ -52,19 +52,11 @@ def get_runtime_agents() -> dict[str, Any]:
         }
     reference_extraction_timeout = int(os.getenv("REFERENCE_EXTRACTION_TIMEOUT", "30"))
     reference_extraction_batch_size = int(os.getenv("REFERENCE_EXTRACTION_BATCH_SIZE", "10"))
-    if reference_extraction_provider == "openai":
-        reference_extractor_llm = build_llm_agent_with_temperature(
-            reference_extraction_provider,
-            client=reference_extraction_client,
-            model=reference_extraction_model,
-            temperature=None,
-        )
-    else:
-        reference_extractor_llm = build_llm_agent(
-            reference_extraction_provider,
-            client=reference_extraction_client,
-            model=reference_extraction_model,
-        )
+    reference_extractor_llm = build_llm_agent(
+        reference_extraction_provider,
+        client=reference_extraction_client,
+        model=reference_extraction_model,
+    )
     metadata_extractor = ReferenceMetadataExtractor(
         llm_chat=lambda messages, timeout: reference_extractor_llm.chat(messages, timeout=timeout),
         timeout=reference_extraction_timeout,
@@ -156,23 +148,25 @@ def _build_expl_agent_for_model(bundle: dict[str, Any], model: str):
 def get_expl_agent(model: str | None = None):
     """Return an ExplanationAgent for the requested generation model.
 
-    None or the default model -> the pre-warmed shared agent (fast path). Any
-    other allowlisted model -> a per-model agent, built once and cached.
+    The configured default resolves to a concrete model before choosing the
+    pre-warmed shared agent. This prevents an environment/config mismatch from
+    silently running a different model than the one selected in the UI.
     """
     from config import DEFAULT_GENERATION_MODEL
 
     bundle = get_runtime_agents()
-    if not model or model == DEFAULT_GENERATION_MODEL:
+    requested_model = model or DEFAULT_GENERATION_MODEL
+    if requested_model == bundle["llm_model"]:
         return bundle["expl_agent"]
 
-    cached = _expl_agent_cache.get(model)
+    cached = _expl_agent_cache.get(requested_model)
     if cached is not None:
         return cached
     with _expl_agent_lock:
-        cached = _expl_agent_cache.get(model)
+        cached = _expl_agent_cache.get(requested_model)
         if cached is None:
-            cached = _build_expl_agent_for_model(bundle, model)
-            _expl_agent_cache[model] = cached
+            cached = _build_expl_agent_for_model(bundle, requested_model)
+            _expl_agent_cache[requested_model] = cached
         return cached
 
 

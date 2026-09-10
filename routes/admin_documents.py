@@ -25,7 +25,7 @@ def _require_admin_access(request: Request) -> None:
         raise HTTPException(status_code=404, detail="Not found")
     supplied = (
         request.headers.get("X-XPRS-Admin-Token")
-        or request.query_params.get("token")
+        or request.cookies.get("xprs_admin_access")
         or ""
     )
     if not hmac.compare_digest(supplied, expected):
@@ -33,12 +33,28 @@ def _require_admin_access(request: Request) -> None:
 
 
 @router.get("/admin/documents", include_in_schema=False)
-def admin_documents_page(request: Request):
-    _require_admin_access(request)
+def admin_documents_page():
+    if not os.getenv("XPRS_ADMIN_TOKEN", "").strip():
+        raise HTTPException(status_code=404, detail="Not found")
     return FileResponse(
         STATIC_DIR / "admin-documents.html",
-        headers={"Cache-Control": "no-store"},
+        headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"},
     )
+
+
+@router.post("/api/admin/access", include_in_schema=False)
+def establish_admin_access(request: Request, response: Response) -> None:
+    _require_admin_access(request)
+    response.headers["Cache-Control"] = "no-store"
+    if request.headers.get("X-XPRS-Admin-Token"):
+        response.set_cookie(
+            "xprs_admin_access",
+            request.headers["X-XPRS-Admin-Token"],
+            max_age=8 * 60 * 60,
+            httponly=True,
+            samesite="strict",
+            secure=os.getenv("XPRS_COOKIE_SECURE", "false").lower() in {"1", "true", "yes", "on"},
+        )
 
 
 @router.get("/api/admin/document-inventory", include_in_schema=False)

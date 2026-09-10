@@ -12,10 +12,8 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai").lower()
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter").lower()
 LLM_TEMPERATURE = 0.2
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
@@ -24,28 +22,21 @@ VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "openai/gpt-oss")
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "EMPTY")
 
-QWEN_API_KEY = os.getenv("QWEN_API_KEY")
-QWEN_BASE_URL = os.getenv(
-    "QWEN_BASE_URL",
-    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-)
-QWEN_MODEL = os.getenv("QWEN_MODEL", "qwen3.5-27b")
-
 # OpenRouter is OpenAI-API-compatible: same SDK, only base_url/key/model IDs differ.
-# Model IDs are namespaced, e.g. "openai/gpt-5.1", "anthropic/claude-...".
+# Model IDs are namespaced, e.g. "openai/gpt-5.6-sol", "anthropic/claude-...".
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-5.1")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-5.6-sol")
 
 
 class LLMAgent:
-    """Wraps OpenAI, vLLM, Qwen, or Ollama chat completions."""
+    """Wraps OpenRouter, local vLLM, or Ollama chat completions."""
 
     def __init__(
         self,
-        provider: str = "openai",
+        provider: str = "openrouter",
         client: Optional[Any] = None,
-        model: str = "gpt-5.1",
+        model: str = "openai/gpt-5.6-sol",
         temperature: float = 0.2,
         ollama_url: str = "http://localhost:11434",
     ):
@@ -56,7 +47,7 @@ class LLMAgent:
         self.ollama_url = ollama_url
 
     def chat(self, messages: List[Dict[str, str]], timeout: int = 600) -> str:
-        if self.provider in {"openai", "vllm", "qwen", "openrouter"}:
+        if self.provider in {"vllm", "openrouter"}:
             try:
                 request_kwargs = {
                     "model": self.model,
@@ -69,9 +60,7 @@ class LLMAgent:
                 return resp.choices[0].message.content
             except BadRequestError as e:
                 provider_name = {
-                    "openai": "OpenAI",
                     "vllm": "vLLM",
-                    "qwen": "Qwen",
                     "openrouter": "OpenRouter",
                 }.get(self.provider, self.provider)
                 # Some models (e.g. reasoning models) reject a custom temperature.
@@ -100,9 +89,7 @@ class LLMAgent:
                 raise RuntimeError(f"{provider_name} chat call failed: {e}")
             except Exception as e:
                 provider_name = {
-                    "openai": "OpenAI",
                     "vllm": "vLLM",
-                    "qwen": "Qwen",
                     "openrouter": "OpenRouter",
                 }.get(self.provider, self.provider)
                 raise RuntimeError(f"{provider_name} chat call failed: {e}")
@@ -132,19 +119,8 @@ class LLMAgent:
 def build_llm_client(provider: str) -> tuple[Optional[Any], Optional[str]]:
     from openai import OpenAI
 
-    if provider == "openai":
-        if not OPENAI_API_KEY:
-            raise ValueError("Missing OPENAI_API_KEY. Please add it to your .env file.")
-        os.environ.pop("OPENAI_API_BASE", None)
-        return OpenAI(api_key=OPENAI_API_KEY), os.getenv("LLM_MODEL", "gpt-5.1")
-
     if provider == "vllm":
         return OpenAI(api_key=VLLM_API_KEY, base_url=VLLM_BASE_URL), VLLM_MODEL
-
-    if provider == "qwen":
-        if not QWEN_API_KEY:
-            raise ValueError("Missing QWEN_API_KEY. Please add it to your .env file.")
-        return OpenAI(api_key=QWEN_API_KEY, base_url=QWEN_BASE_URL), QWEN_MODEL
 
     if provider == "openrouter":
         if not OPENROUTER_API_KEY:
@@ -190,14 +166,11 @@ def build_llm_agent_with_temperature(
         )
 
     provider_label = {
-        "openai": "OpenAI",
         "vllm": "vLLM",
-        "qwen": "Qwen",
         "openrouter": "OpenRouter",
     }.get(provider, provider)
     endpoint = {
         "vllm": VLLM_BASE_URL,
-        "qwen": QWEN_BASE_URL,
         "openrouter": OPENROUTER_BASE_URL,
     }.get(provider)
 
@@ -209,6 +182,6 @@ def build_llm_agent_with_temperature(
     return LLMAgent(
         provider=provider,
         client=client,
-        model=model or "gpt-5.1",
+        model=model or OPENROUTER_MODEL,
         temperature=temperature,
     )

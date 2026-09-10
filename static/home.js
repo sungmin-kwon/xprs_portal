@@ -4,10 +4,15 @@ let cohorts = [];
 let selectedCohortSlug = "1000_genomes";
 let selectedIndividualId = "";
 let currentLanguage = "en";
+let currentTheme = "light";
 let cohortsLoaded = false;
 let individualsLoaded = false;
 let diseasesLoaded = false;
 let visibleDiseaseCards = [];
+
+const LANGUAGE_PREFERENCE_KEY = "xprs.language";
+const THEME_PREFERENCE_KEY = "xprs.theme";
+const INDIVIDUAL_PREFERENCE_KEY = "xprs.individual_id";
 
 const UI_TEXT = {
   en: {
@@ -16,6 +21,7 @@ const UI_TEXT = {
     portalTitle: "XPRS Portal",
     diseaseOverview: "Disease overview",
     breastCancerPortal: "Breast cancer portal",
+    userEvaluation: "User evaluation survey",
     pageTitle: "XPRS Disease Overview",
     aboutXprs: "About XPRS",
     cohortAndIndividual: "Cohort & Individual",
@@ -28,13 +34,16 @@ const UI_TEXT = {
     refreshRiskCards: "Refresh risk cards",
     switchToKorean: "Switch to Korean",
     switchToEnglish: "Switch to English",
+    darkMode: "Dark mode",
+    lightMode: "Light mode",
     loadingCohorts: "Loading cohorts...",
     loadingIndividuals: "Loading individuals...",
     loadingDiseaseWorkspaces: "Loading disease workspaces...",
     loadingRiskCards: "Loading risk density cards...",
     noDiseaseWorkspaces: "No disease workspaces are configured.",
-    noModelData: "No XPRS model data are configured yet.",
-    modelDataUnavailable: "XPRS model data are not configured for this disease yet.",
+    noModelData: "No data available yet.",
+    modelDataUnavailable: "No data available for this disease.",
+    cohortDataUnavailable: "No data available for this cohort.",
     available: "Available",
     unavailable: "Unavailable",
     percentile: "Percentile",
@@ -50,6 +59,7 @@ const UI_TEXT = {
     portalTitle: "XPRS 포털",
     diseaseOverview: "질환 위험 개요",
     breastCancerPortal: "유방암 포털",
+    userEvaluation: "사용성 평가 설문",
     pageTitle: "XPRS 질환 위험 개요",
     aboutXprs: "XPRS 소개",
     cohortAndIndividual: "코호트 및 개인",
@@ -62,13 +72,16 @@ const UI_TEXT = {
     refreshRiskCards: "위험 카드 새로고침",
     switchToKorean: "한국어로 전환",
     switchToEnglish: "영어로 전환",
+    darkMode: "다크 모드",
+    lightMode: "라이트 모드",
     loadingCohorts: "코호트 불러오는 중...",
     loadingIndividuals: "개인 ID 불러오는 중...",
     loadingDiseaseWorkspaces: "질환별 작업공간 불러오는 중...",
     loadingRiskCards: "위험 분포 카드 불러오는 중...",
     noDiseaseWorkspaces: "구성된 질환별 작업공간이 없습니다.",
-    noModelData: "XPRS 모델 데이터가 아직 구성되지 않았습니다.",
-    modelDataUnavailable: "이 질환의 XPRS 모델 데이터가 아직 구성되지 않았습니다.",
+    noModelData: "아직 사용할 수 있는 데이터가 없습니다.",
+    modelDataUnavailable: "이 질환에는 사용할 수 있는 데이터가 없습니다.",
+    cohortDataUnavailable: "이 코호트에는 사용할 수 있는 데이터가 없습니다.",
     available: "이용 가능",
     unavailable: "이용 불가",
     percentile: "백분위",
@@ -111,6 +124,40 @@ function setText(id, value) {
   if (el) el.textContent = value || "";
 }
 
+function readPreference(key, fallback) {
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function savePreference(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (_error) {
+    // The portal remains usable when storage is disabled by the browser.
+  }
+}
+
+function syncEvaluationAvailability(enabled) {
+  document.querySelectorAll("[data-evaluation-link]").forEach((link) => {
+    link.hidden = !enabled;
+    link.style.display = enabled ? "" : "none";
+  });
+}
+
+async function loadAppInfo() {
+  try {
+    const response = await fetch("/api/info");
+    if (!response.ok) return;
+    const data = await response.json();
+    syncEvaluationAvailability(data.evaluation_enabled === true);
+  } catch (_error) {
+    syncEvaluationAvailability(false);
+  }
+}
+
 function getSelectedCohort() {
   return cohorts.find((cohort) => cohort.slug === selectedCohortSlug) || null;
 }
@@ -130,10 +177,9 @@ function diseaseDisplayName(card) {
 }
 
 function unavailableReason(card) {
-  if (currentLanguage === "ko") {
-    return card.unavailable_reason ? t("modelDataUnavailable") : t("noModelData");
-  }
-  return card.unavailable_reason || t("noModelData");
+  const cohort = getSelectedCohort();
+  if (cohort && !cohort.data_available) return t("cohortDataUnavailable");
+  return card.unavailable_reason ? t("modelDataUnavailable") : t("noModelData");
 }
 
 function syncLanguageToggle() {
@@ -163,6 +209,7 @@ function updateStaticText() {
     element.setAttribute("aria-label", t(element.dataset.i18nAria));
   });
   syncLanguageToggle();
+  syncThemeToggle();
 }
 
 function updateGridSubtitle() {
@@ -173,6 +220,7 @@ function updateGridSubtitle() {
 
 function applyLanguage(language) {
   currentLanguage = language === "ko" ? "ko" : "en";
+  savePreference(LANGUAGE_PREFERENCE_KEY, currentLanguage);
   updateStaticText();
 
   if (cohortsLoaded) {
@@ -205,6 +253,28 @@ function toggleLanguage() {
   applyLanguage(currentLanguage === "ko" ? "en" : "ko");
 }
 
+function syncThemeToggle() {
+  const button = $("theme-toggle-top");
+  if (!button) return;
+  const icon = button.querySelector(".theme-icon");
+  if (icon) icon.textContent = currentTheme === "dark" ? "☀" : "☾";
+  const action = currentTheme === "dark" ? t("lightMode") : t("darkMode");
+  button.setAttribute("aria-label", action);
+  button.setAttribute("title", action);
+}
+
+function applyTheme(theme) {
+  currentTheme = theme === "dark" ? "dark" : "light";
+  savePreference(THEME_PREFERENCE_KEY, currentTheme);
+  document.body.classList.toggle("dark-theme", currentTheme === "dark");
+  syncThemeToggle();
+  if (visibleDiseaseCards.length) renderDiseaseCards(visibleDiseaseCards);
+}
+
+function toggleTheme() {
+  applyTheme(currentTheme === "dark" ? "light" : "dark");
+}
+
 async function postJSON(url, payload) {
   const res = await fetch(url, {
     method: "POST",
@@ -232,6 +302,9 @@ function renderIndividuals(individuals) {
   if (individuals.length) {
     select.value = individuals.includes(preferred) ? preferred : individuals[0];
     selectedIndividualId = select.value;
+    if (selectedCohortSlug === "1000_genomes") {
+      savePreference(INDIVIDUAL_PREFERENCE_KEY, selectedIndividualId);
+    }
   } else {
     selectedIndividualId = "";
   }
@@ -325,14 +398,15 @@ function plotMiniDensity(card) {
   const prsValue = Number(density?.prs_value);
   if (!x.length || !y.length || !Number.isFinite(prsValue)) return;
 
+  const darkTheme = currentTheme === "dark";
   const trace = {
     type: "scatter",
     mode: "lines",
     x,
     y,
-    line: { color: "#27609d", width: 2.2 },
+    line: { color: darkTheme ? "#7bb2f6" : "#27609d", width: 2.2 },
     fill: "tozeroy",
-    fillcolor: "rgba(39, 96, 157, 0.10)",
+    fillcolor: darkTheme ? "rgba(123, 178, 246, 0.16)" : "rgba(39, 96, 157, 0.10)",
     hoverinfo: "skip",
   };
 
@@ -346,15 +420,15 @@ function plotMiniDensity(card) {
       fixedrange: true,
       zeroline: false,
       showgrid: false,
-      tickfont: { size: 10, color: "#66727d" },
+      tickfont: { size: 10, color: darkTheme ? "#a9bac8" : "#66727d" },
     },
     yaxis: {
       title: "",
       fixedrange: true,
       zeroline: false,
       showgrid: true,
-      gridcolor: "#eef2f5",
-      tickfont: { size: 10, color: "#66727d" },
+      gridcolor: darkTheme ? "#26364c" : "#eef2f5",
+      tickfont: { size: 10, color: darkTheme ? "#a9bac8" : "#66727d" },
     },
     shapes: [{
       type: "line",
@@ -475,7 +549,9 @@ function openDashboardForDisease(slug) {
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
-  applyLanguage("en");
+  applyTheme(readPreference(THEME_PREFERENCE_KEY, "light"));
+  applyLanguage(readPreference(LANGUAGE_PREFERENCE_KEY, "en"));
+  await loadAppInfo();
 
   try {
     await loadCohorts();
@@ -488,6 +564,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
 
   $("language-toggle-top")?.addEventListener("click", toggleLanguage);
+  $("theme-toggle-top")?.addEventListener("click", toggleTheme);
+
+  window.addEventListener("storage", (event) => {
+    if (event.key === LANGUAGE_PREFERENCE_KEY && event.newValue) {
+      applyLanguage(event.newValue);
+    }
+    if (event.key === THEME_PREFERENCE_KEY && event.newValue) {
+      applyTheme(event.newValue);
+    }
+  });
 
   $("individual-search")?.addEventListener("input", () => {
     filterIndividuals();
@@ -503,6 +589,9 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   $("individual-id")?.addEventListener("change", () => {
     selectedIndividualId = $("individual-id").value || "";
+    if (selectedCohortSlug === "1000_genomes" && selectedIndividualId) {
+      savePreference(INDIVIDUAL_PREFERENCE_KEY, selectedIndividualId);
+    }
     loadDiseaseOverview();
   });
 

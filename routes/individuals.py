@@ -84,7 +84,7 @@ def get_app_info():
     return {
         "model": runtime_model
         or os.getenv("LLM_MODEL")
-        or os.getenv("OPENAI_MODEL")
         or os.getenv("MODEL")
-        or "AI"
+        or "AI",
+        "evaluation_enabled": bool(os.getenv("XPRS_EVALUATION_TOKEN", "").strip()),
     }

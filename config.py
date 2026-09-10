@@ -20,7 +20,19 @@ REF_DIR = _resolve_path(os.getenv("REF_DIR"), APP_BASE_DIR / "ref")
 PLOTS_DIR = _resolve_path(os.getenv("PLOTS_DIR"), STATIC_DIR / "plots")
 LOG_DIR = _resolve_path(os.getenv("LOG_DIR"), RUNTIME_DIR / "logs")
 S2_CACHE_DIR = _resolve_path(os.getenv("S2_CACHE_DIR"), RUNTIME_DIR / "cache_s2")
+S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS = max(
+    1,
+    int(os.getenv("S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS", "60")),
+)
+S2_RUNTIME_RATE_LIMIT_COOLDOWN_MAX_SECONDS = max(
+    S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS,
+    int(os.getenv("S2_RUNTIME_RATE_LIMIT_COOLDOWN_MAX_SECONDS", "600")),
+)
 CHROMA_DIR = _resolve_path(os.getenv("CHROMA_DIR"), RUNTIME_DIR / "chroma")
+EVALUATION_RESPONSES_DIR = _resolve_path(
+    os.getenv("EVALUATION_RESPONSES_DIR"),
+    RUNTIME_DIR / "evaluation_responses",
+)
 PLOT_DATA_CACHE_DIR = _resolve_path(os.getenv("PLOT_DATA_CACHE_DIR"), DATA_DIR / "plot_cache")
 PHENOTYPE_ALIASES_JSON = _resolve_path(
     os.getenv("PHENOTYPE_ALIASES_JSON"),
@@ -99,5 +111,12 @@ PHENOTYPE_LABELS_KO = {
 
 
 def ensure_runtime_dirs() -> None:
-    for path in [PLOTS_DIR, LOG_DIR, S2_CACHE_DIR, CHROMA_DIR, PLOT_DATA_CACHE_DIR]:
+    for path in [
+        PLOTS_DIR,
+        LOG_DIR,
+        S2_CACHE_DIR,
+        CHROMA_DIR,
+        PLOT_DATA_CACHE_DIR,
+        EVALUATION_RESPONSES_DIR,
+    ]:
         path.mkdir(parents=True, exist_ok=True)

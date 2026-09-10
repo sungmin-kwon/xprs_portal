@@ -154,6 +154,31 @@ select {
   letter-spacing: 0.06em;
 }
 
+.theme-icon-button {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.theme-icon-button:hover {
+  border-color: var(--border);
+  color: var(--primary);
+  background: var(--panel-soft);
+}
+
+.theme-icon {
+  font-size: 1rem;
+  line-height: 1;
+}
+
 .about-link {
   height: 38px;
   padding: 0 0.75rem;
@@ -163,7 +188,7 @@ select {
   align-items: center;
   gap: 0.4rem;
   color: var(--primary);
-  background: #ffffff;
+  background: var(--panel);
   text-decoration: none;
   font-size: 0.86rem;
   font-weight: 800;
@@ -294,7 +319,7 @@ label {
   min-height: 260px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--ink);
   padding: 0.25rem;
   outline: none;
@@ -342,7 +367,7 @@ label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #ffffff;
+  background: var(--panel);
   color: var(--primary);
   cursor: pointer;
 }
@@ -367,7 +392,7 @@ label {
   min-height: 270px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--panel);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -522,6 +547,91 @@ button.disease-card:hover {
   font-weight: 700;
 }
 
+body.dark-theme {
+  --bg: #0d1012;
+  --panel: #121518;
+  --panel-soft: #171b1f;
+  --ink: #dee4ea;
+  --muted: #9da8b1;
+  --faint: #7f8a94;
+  --border: #293139;
+  --primary: #bbd6ff;
+  --primary-strong: #7fb2f6;
+  --accent: #62cfc3;
+  --disabled: #1b2025;
+  --sidebar: #14181b;
+  --sidebar-text: #8c959d;
+  --shadow: none;
+  color-scheme: dark;
+  background:
+    radial-gradient(circle at top left, rgba(129, 179, 243, 0.12), transparent 24%),
+    linear-gradient(180deg, #0d1012 0%, #111518 100%);
+}
+
+body.dark-theme .sidebar {
+  border-right: 1px solid rgba(139, 146, 151, 0.12);
+  box-shadow: none;
+}
+
+body.dark-theme .nav-item:hover {
+  color: var(--primary);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+body.dark-theme .nav-item.is-active {
+  color: var(--primary);
+  background: #1a2025;
+}
+
+body.dark-theme .topbar {
+  background: rgba(15, 17, 19, 0.82);
+}
+
+body.dark-theme .language-toggle-button:hover,
+body.dark-theme .theme-icon-button:hover {
+  color: var(--primary);
+  background: rgba(187, 214, 255, 0.08);
+}
+
+body.dark-theme .about-link {
+  color: var(--primary);
+}
+
+body.dark-theme #cohort-select,
+body.dark-theme #individual-search,
+body.dark-theme #individual-id {
+  color: var(--ink);
+}
+
+body.dark-theme #individual-id option {
+  color: var(--ink);
+  background: var(--panel);
+}
+
+body.dark-theme #individual-id option:checked {
+  color: #f7fbff;
+  background: #2d67a8;
+}
+
+body.dark-theme button.disease-card:hover {
+  border-color: rgba(187, 214, 255, 0.42);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+body.dark-theme .disease-card.is-disabled {
+  color: var(--muted);
+}
+
+body.dark-theme .card-status {
+  color: #9de2da;
+  background: rgba(35, 160, 148, 0.18);
+}
+
+body.dark-theme .disease-card.is-disabled .card-status {
+  color: var(--muted);
+  background: #262d33;
+}
+
 @media (max-width: 980px) {
   body {
     overflow: auto;
@@ -541,6 +651,7 @@ button.disease-card:hover {
   .topbar-actions {
     width: 100%;
     justify-content: space-between;
+    flex-wrap: wrap;
   }
 
   .overview-layout {

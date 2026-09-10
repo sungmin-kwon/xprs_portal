@@ -23,6 +23,7 @@ cache_s2/*
 !cache_s2/.gitkeep
 chroma/*
 !chroma/.gitkeep
+evaluation_responses/
 *.sqlite3
 *.log
 

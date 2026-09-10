@@ -5,21 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow, noarchive" />
   <title>XPRS Literature Index</title>
-  <script>
-    (() => {
-      const url = new URL(window.location.href);
-      const suppliedToken = url.searchParams.get("token");
-      if (suppliedToken) {
-        sessionStorage.setItem("xprsAdminToken", suppliedToken);
-        url.searchParams.delete("token");
-        history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
-      }
-      window.XPRS_ADMIN_TOKEN = suppliedToken || sessionStorage.getItem("xprsAdminToken") || "";
-    })();
-  </script>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/admin-documents.css?v=2" />
-  <script src="/static/admin-documents.js?v=2" defer></script>
+  <link rel="stylesheet" href="/static/admin-documents.css?v=3" />
+  <script src="/static/admin-documents.js?v=3" defer></script>
 </head>
 <body>
   <aside class="gene-panel" aria-label="Indexed genes">
@@ -45,7 +33,6 @@
       <div>
         <span class="eyebrow">Read-only ChromaDB browser</span>
         <h1 id="page-title">Indexed documents</h1>
-        <p id="page-description">Select a gene to inspect its stored literature.</p>
       </div>
       <a class="portal-link" href="/dashboard">Return to portal</a>
     </header>
@@ -102,7 +89,6 @@
 
     <div class="results-heading">
       <p id="results-count" aria-live="polite">No gene selected</p>
-      <p class="privacy-note">Embeddings and secrets are never returned by this page.</p>
     </div>
 
     <section id="document-list" class="document-list" aria-busy="false"></section>

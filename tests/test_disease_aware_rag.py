@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 
 import numpy as np
@@ -81,6 +82,27 @@ class FakeIndexS2:
                 "phenotype": phenotype,
             },
         }]
+
+
+class FakeRateLimitedS2:
+    def __init__(self):
+        self.calls = []
+
+    def cached_query_succeeded(self, _gene, _phenotype=None):
+        return False
+
+    def cached_for_gene(self, gene, limit, phenotype=None, progress_callback=None):
+        self.calls.append((gene, phenotype, limit))
+        return []
+
+    def papers_to_docs(self, _gene, _papers, pool_type, phenotype=None):
+        return []
+
+    def get_health_status(self):
+        return {
+            "last_status_code": 429,
+            "last_retry_after_seconds": None,
+        }
 
 
 class FakeIndexOT:
@@ -299,6 +321,45 @@ class EvidenceIndexProgressTests(unittest.TestCase):
             "GENE1", progress_callback=live_progress.append
         )
         self.assertTrue(any("a Semantic Scholar query is required" in message for message in live_progress))
+
+    def test_rate_limit_stops_remaining_queries_and_opens_runtime_cooldown(self):
+        s2 = FakeRateLimitedS2()
+        agent = EvidenceAssemblyAgent(FakeIndexRAG(), FakeIndexOT(), s2)
+        progress = []
+
+        agent._ensure_indexed_for_gene("GENE1", progress_callback=progress.append)
+        agent._ensure_indexed_for_gene("GENE2", progress_callback=progress.append)
+
+        self.assertEqual(len(s2.calls), 1)
+        self.assertEqual(s2.calls[0][0:2], ("GENE1", None))
+        self.assertEqual(agent._s2_rate_limit_streak, 1)
+        self.assertTrue(any("Skipping the breast cancer query" in message for message in progress))
+        self.assertTrue(any("rate-limit cooldown active" in message for message in progress))
+
+    def test_repeated_rate_limits_double_the_runtime_cooldown(self):
+        s2 = FakeRateLimitedS2()
+        agent = EvidenceAssemblyAgent(FakeIndexRAG(), FakeIndexOT(), s2)
+
+        agent._ensure_indexed_for_gene("GENE1")
+        first_remaining = agent._s2_cooldown_until - time.monotonic()
+        agent._s2_cooldown_until = 0.0
+        agent._ensure_indexed_for_gene("GENE2")
+        second_remaining = agent._s2_cooldown_until - time.monotonic()
+
+        self.assertEqual(agent._s2_rate_limit_streak, 2)
+        self.assertGreater(first_remaining, 59)
+        self.assertGreater(second_remaining, 119)
+
+    def test_successful_live_request_resets_rate_limit_streak(self):
+        agent = EvidenceAssemblyAgent(
+            FakeIndexRAG(), FakeIndexOT(), FakeIndexS2()
+        )
+        agent._s2_rate_limit_streak = 3
+
+        agent._ensure_indexed_for_gene("GENE1")
+
+        self.assertEqual(agent._s2_rate_limit_streak, 0)
+        self.assertEqual(agent._s2_cooldown_until, 0.0)
 
 
 class RerankerTests(unittest.TestCase):

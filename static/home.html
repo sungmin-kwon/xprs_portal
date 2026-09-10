@@ -9,17 +9,21 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/home.css?v=11" />
+  <link rel="stylesheet" href="/static/home.css?v=12" />
 </head>
 <body>
   <nav class="sidebar" aria-label="Disease navigation" data-i18n-aria="diseaseNavigation">
-    <a class="nav-brand" href="/" title="XPRS Portal" data-i18n-title="portalTitle">
+    <a class="nav-brand" href="/about" title="About XPRS" data-i18n-title="aboutXprs">
       <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
     </a>
     <a class="nav-item is-active" href="/" title="Disease overview" data-i18n-title="diseaseOverview">
       <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
-    </a>    <a id="sidebar-breast-portal" class="nav-item" href="/dashboard" title="Breast cancer portal" data-i18n-title="breastCancerPortal">
+    </a>
+    <a id="sidebar-breast-portal" class="nav-item" href="/dashboard" title="Breast cancer portal" data-i18n-title="breastCancerPortal">
       <span class="material-symbols-outlined" aria-hidden="true">vaccines</span>
+    </a>
+    <a class="nav-item" href="/evaluation" title="User evaluation survey" data-i18n-title="userEvaluation" data-evaluation-link hidden>
+      <span class="material-symbols-outlined" aria-hidden="true">assignment</span>
     </a>
   </nav>
 
@@ -33,6 +37,9 @@
         <button id="language-toggle-top" class="language-toggle-button" type="button" aria-label="Switch to Korean" title="Switch to Korean">
           <span class="material-symbols-outlined" aria-hidden="true">language</span>
           <span class="language-toggle-label" aria-hidden="true">EN</span>
+        </button>
+        <button id="theme-toggle-top" class="theme-icon-button" type="button" aria-label="Dark mode" title="Dark mode">
+          <span class="theme-icon" aria-hidden="true">☾</span>
         </button>
         <a class="about-link" href="/about">
           <span class="material-symbols-outlined" aria-hidden="true">info</span>
@@ -85,6 +92,6 @@
     </main>
   </div>
 
-  <script src="/static/home.js?v=9"></script>
+  <script src="/static/home.js?v=14"></script>
 </body>
 </html>

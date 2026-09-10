@@ -76,13 +76,13 @@ After mapping, XPRS computes:
 ## Gene-Level Contribution
 The paper gives an explicit definition for the gene contribution score. It quantifies how much each gene contributes to increasing the PRS of an individual:
 
-`CSgene_j = sum over SNPs mapped to gene j of (beta_std_i * G0_i)`
+$$CS_{\mathrm{gene},j} = \sum_{i \in j} \left(\beta_{\mathrm{std},i} \cdot G_{0,i}\right)$$
 
 where:
-- `beta_std_i` is the standardized effect size of SNP `i`
-- `G_i` is the individual's genotype for SNP `i`
-- `p_i` is the allele frequency of SNP `i`
-- `G0_i = G_i - p_i`
+- $\beta_{\mathrm{std},i}$ is the standardized effect size of SNP $i$
+- $G_i$ is the individual's genotype for SNP $i$
+- $p_i$ is the allele frequency of SNP $i$
+- $G_{0,i} = G_i - p_i$
 
 The paper explains that because adjusted beta coefficients are used, the genotype is recalculated by subtracting the allele frequency.
 
@@ -104,7 +104,7 @@ The variance of `CSgene_j` across individuals is used to identify genes that con
 
 The attributed value is defined as:
 
-`Agene_j = CSgene_j - mean(CSgene_j across the population)`
+$$A_{\mathrm{gene},j} = CS_{\mathrm{gene},j} - \operatorname{mean}_{\mathrm{population}}\left(CS_{\mathrm{gene},j}\right)$$
 
 This quantity identifies genes whose contribution in an individual is above or below the population average. The paper explicitly says this is the SHAP value in a linear model.
 
@@ -116,7 +116,7 @@ In practical portal terms:
 ## SNP-Level Contribution
 The SNP contribution score is defined as:
 
-`CSSNP_i = beta_std_i * G0_i`
+$$CS_{\mathrm{SNP},i} = \beta_{\mathrm{std},i} \cdot G_{0,i}$$
 
 This is the per-variant contribution of SNP `i` to the individual's PRS. The paper frames this as the SNP-level decomposition that supports LocusZoom-like visualization and fine-grained explanation within a gene or region.
 

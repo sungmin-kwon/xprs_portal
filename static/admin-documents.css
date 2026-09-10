@@ -161,11 +161,6 @@ button, input, select { font: inherit; }
   line-height: 1.1;
 }
 
-.page-header p {
-  margin: 0.5rem 0 0;
-  color: var(--muted);
-}
-
 .portal-link {
   flex: 0 0 auto;
   padding: 0.65rem 0.9rem;
@@ -244,7 +239,6 @@ button, input, select { font: inherit; }
 
 .results-heading p { margin: 0; }
 #results-count { font-size: 0.87rem; font-weight: 750; }
-.privacy-note { color: var(--muted); font-size: 0.72rem; }
 
 .document-list { display: grid; gap: 0.75rem; }
 
@@ -383,7 +377,6 @@ button, input, select { font: inherit; }
   .toolbar { grid-template-columns: 1fr; }
   .document-search-label { grid-column: auto; grid-row: auto; }
   .results-heading { display: block; }
-  .privacy-note { margin-top: 0.25rem !important; }
   .document-card-header { display: block; }
   .citation-count { display: inline-block; margin-top: 0.65rem; }
 }

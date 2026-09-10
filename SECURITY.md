@@ -2,8 +2,8 @@
 
 ## Secrets
 
-Never commit `.env`, API keys, admin tokens, session logs, Semantic Scholar
-response caches, Chroma databases, or generated benchmark corpora. Use
+Never commit `.env`, API keys, admin or evaluation tokens, evaluation responses,
+session logs, Semantic Scholar response caches, Chroma databases, or generated benchmark corpora. Use
 `.env.example` only as a key-free configuration template.
 
 If a secret is exposed, revoke it at the provider before removing it from Git
@@ -16,6 +16,9 @@ earlier commits or forks.
   required and appropriately protected.
 - Set a strong `XPRS_ADMIN_TOKEN`; the administration route is disabled when
   the token is absent.
+- Leave `XPRS_EVALUATION_TOKEN` empty when the internal evaluation is not in
+  progress. Keep `evaluation_responses/` private and define a retention and
+  deletion policy before collecting participant responses.
 - Protect OpenRouter-backed generation endpoints with authentication, edge
   access controls, rate limits, and provider-side spending limits.
 - Do not mount private KFDA data into a public deployment.

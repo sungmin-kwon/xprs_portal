@@ -64,6 +64,10 @@ SAFETY_RULES = (
 )
 
 
+class LiteratureEvidenceUnavailableError(RuntimeError):
+    """Raised when a literature-backed summary cannot be cited responsibly."""
+
+
 class ExplanationAgent:
     MAX_SUMMARY_GENES = 5
     GENE_SECTION_TIMEOUT = 35
@@ -233,10 +237,21 @@ class ExplanationAgent:
         question: str,
         n_max: int,
         language: str = "en",
+        methodology_query: bool = False,
     ) -> str:
         output_language = "Korean" if normalize_output_language(language) == "ko" else "English"
         evidence_context = compact_ctx if compact_ctx else "(No evidence context available.)"
         reference_index = ref_index if ref_index else "(No references available.)"
+        methodology_instructions = ""
+        if methodology_query:
+            methodology_instructions = (
+                "This is a PRS/XPRS methodology question. Give the level of detail warranted by the supplied "
+                "methodology sections rather than only restating their overview. For a calculation question, "
+                "explain: (1) what is being calculated, (2) required inputs, (3) preprocessing and SNP-to-gene "
+                "mapping, (4) each supplied equation with its variables, (5) population-relative interpretation, "
+                "and (6) important limitations. Clearly distinguish calculation of the underlying PRS from "
+                "XPRS decomposition and interpretation. Do not introduce formulas or details absent from the notes.\n"
+            )
         try:
             raw = self.llm.chat(
                 [
@@ -255,7 +270,10 @@ class ExplanationAgent:
                             "If Korean, use consistent formal 존댓말.\n"
                             "Format mathematical expressions in LaTeX: use $...$ for inline math and $$...$$ for display math. "
                             "Prefer proper symbols such as \\beta, subscripts like _{i}, and \\cdot for multiplication. "
+                            "Write named subscripts with \\mathrm, for example $CS_{\\mathrm{gene},j}$, "
+                            "$A_{\\mathrm{gene},j}$, and $CS_{\\mathrm{SNP},i}$. Never escape an underscore as \\_ in math. "
                             "Do not use plain square brackets to display equations, and do not leave LaTeX fragments undelimited.\n\n"
+                            f"{methodology_instructions}\n"
                             f"{SAFETY_RULES}\n\n"
                             f"Largest valid reference number: {n_max}\n\n"
                             f"Background:\n{background}\n\n"
@@ -610,6 +628,53 @@ class ExplanationAgent:
                     results_map[future_to_gene[future]] = ([], [], "ERROR")
         mark_timing("gene_context_fetch_s", fetch_started_at, "Literature retrieval across selected genes", genes=len(target_genes), workers=max_workers)
 
+        evidence_backed_genes = [
+            gene
+            for gene in target_genes
+            if any(
+                extract_s2_paper_id(ref or {})
+                for ref in results_map.get(gene, ([], [], "ERROR"))[1]
+            )
+        ]
+        if target_genes and not evidence_backed_genes:
+            health: dict[str, Any] = {}
+            s2_agent = getattr(self.evidence_agent, "s2", None)
+            if s2_agent is not None and hasattr(s2_agent, "get_health_status"):
+                health = s2_agent.get_health_status() or {}
+            genes_text = ", ".join(target_genes)
+            if language == "ko":
+                reason = (
+                    "Semantic Scholar가 현재 요청을 제한하고 있습니다."
+                    if health.get("last_status_code") == 429
+                    else "현재 해당 논문을 검색할 수 없습니다."
+                )
+                message = (
+                    f"{genes_text}에 대해 인용 가능한 문헌이 색인되어 있지 않으며, {reason} "
+                    "따라서 출처 없는 해석은 생성하지 않았습니다. 잠시 후 다시 시도해 주세요."
+                )
+            else:
+                reason = (
+                    "Semantic Scholar is currently rate-limiting requests."
+                    if health.get("last_status_code") == 429
+                    else "No papers could be retrieved at this time."
+                )
+                message = (
+                    f"No citable literature is indexed for {genes_text}. {reason} "
+                    "The portal did not generate an uncited interpretation; please try again later."
+                )
+            logger.warning("[SUMMARY_EVIDENCE] %s", message)
+            if language == "ko":
+                emit_progress(
+                    progress_callback,
+                    f"요약 중단: {genes_text}에 대해 인용 가능한 문헌이 없습니다",
+                )
+            else:
+                emit_progress(
+                    progress_callback,
+                    f"Summary stopped: no citable literature is available for {genes_text}",
+                )
+            raise LiteratureEvidenceUnavailableError(message)
+
         # 2. Sequential Assembly: literature refs are numbered; structured database evidence is rendered separately.
         ctx_sections: list[str] = []
         source_notes: list[str] = []
@@ -623,7 +688,6 @@ class ExplanationAgent:
 
         context_assembly_started_at = time.perf_counter()
         for g in target_genes:
-            emit_progress(progress_callback, f'Drafting gene-level interpretation for "{g}" with {self.llm.model}')
             chunks, refs, src_used = results_map.get(g, ([], [], "ERROR"))
 
             start_id = global_ref_counter
@@ -712,13 +776,45 @@ class ExplanationAgent:
             gene_sections_started_at = time.perf_counter()
             for gene in target_genes:
                 one_gene_started_at = time.perf_counter()
-                gene_section = self._generate_gene_section(
-                    gene=gene,
-                    individual_contribution=f"{float(contribution_lookup.get(gene, 0.0)):.2f}",
-                    evidence_context=gene_context_map.get(gene, ""),
-                    citation_rules=gene_citation_rules.get(gene, ""),
-                    language=language,
-                )
+                contribution = float(contribution_lookup.get(gene, 0.0))
+                if gene in evidence_backed_genes:
+                    emit_progress(
+                        progress_callback,
+                        f'Drafting gene-level interpretation for "{gene}" with {self.llm.model}',
+                    )
+                    gene_section = self._generate_gene_section(
+                        gene=gene,
+                        individual_contribution=f"{contribution:.2f}",
+                        evidence_context=gene_context_map.get(gene, ""),
+                        citation_rules=gene_citation_rules.get(gene, ""),
+                        language=language,
+                    )
+                elif language == "ko":
+                    emit_progress(
+                        progress_callback,
+                        f'색인된 문헌이 없어 "{gene}"의 문헌 해석을 건너뜁니다',
+                    )
+                    gene_section = {
+                        "why_it_matters": (
+                            f"{gene}는 이 개인의 상위 기여 유전자 중 하나이므로 포함되었습니다 "
+                            f"(기여도 {contribution:.2f})."
+                        ),
+                        "breast_cancer_relevance": "현재 이 유전자에 대해 인용 가능한 문헌이 색인되어 있지 않습니다.",
+                        "clinical_meaning": "근거 문헌이 확보될 때까지 문헌 기반 해석을 제공할 수 없습니다.",
+                    }
+                else:
+                    emit_progress(
+                        progress_callback,
+                        f'Skipping literature interpretation for "{gene}" because no indexed evidence is available',
+                    )
+                    gene_section = {
+                        "why_it_matters": (
+                            f"{gene} is included because it is one of this individual's top contributors "
+                            f"(contribution {contribution:.2f})."
+                        ),
+                        "breast_cancer_relevance": "No citable literature is currently indexed for this gene.",
+                        "clinical_meaning": "A literature-based interpretation is unavailable until supporting sources are retrieved.",
+                    }
                 section_parts = [
                     f"### {gene}",
                     self._subsection_block(ui_label(language, "why_it_matters"), gene_section.get("why_it_matters", "")),
@@ -730,7 +826,7 @@ class ExplanationAgent:
                     structured_sections.append(section_text)
                 raw_gene_sections.append({
                     "gene": gene,
-                    "individual_contribution": float(contribution_lookup.get(gene, 0.0)),
+                    "individual_contribution": contribution,
                     "why_it_matters": gene_section.get("why_it_matters", "").strip(),
                     "breast_cancer_relevance": gene_section.get("breast_cancer_relevance", "").strip(),
                     "clinical_meaning": gene_section.get("clinical_meaning", "").strip(),
@@ -1099,13 +1195,16 @@ class ExplanationAgent:
 
         effective_question = resolution.get("resolved_question") or question
 
+        initial_methodology_query = self.local_reference_agent.is_methodology_query(
+            f"{question}\n{effective_question}"
+        )
         analysis = (
             self.query_agent.analyze(
                 effective_question,
                 available_genes=available_genes,
                 conversation_history=conversation_history,
             )
-            if self.query_agent
+            if self.query_agent and not initial_methodology_query
             else {
                 "rewritten_query": effective_question,
                 "genes": [],
@@ -1125,19 +1224,45 @@ class ExplanationAgent:
         else:
             followup_genes = top_gene_symbols[: min(3, self.MAX_SUMMARY_GENES)]
 
-        emit_progress(progress_callback, "Loading summary context for follow-up")
-        def _background_summary_progress(_: str) -> None:
-            return
-
-        base = self.build_explanation(
-            pid,
-            evaluate=False,
-            gene_count=gene_count,
-            language=language,
-            progress_callback=_background_summary_progress,
-        )
         rewritten_query = analysis.get("rewritten_query") or question
         followup_phenotype = ", ".join(analysis.get("phenotypes") or [])
+        combined_methodology_query = f"{question}\n{effective_question}\n{rewritten_query}"
+        methodology_query = self.local_reference_agent.is_methodology_query(
+            combined_methodology_query
+        )
+        local_reference_hits = (
+            self.local_reference_agent.query_methodology(
+                combined_methodology_query,
+                top_k=10,
+            )
+            if methodology_query
+            else []
+        )
+
+        if methodology_query and local_reference_hits:
+            # Methodology questions are fully served by the curated local corpus.
+            # Avoid regenerating an individual gene summary or querying literature.
+            followup_genes = []
+            base = {
+                "Detailed Explanation": "",
+                "Generated Explanation": "",
+                "References": [],
+                "RAG Context Compact": "",
+                "Gene Count Used": gene_count,
+            }
+        else:
+            emit_progress(progress_callback, "Loading summary context for follow-up")
+
+            def _background_summary_progress(_: str) -> None:
+                return
+
+            base = self.build_explanation(
+                pid,
+                evaluate=False,
+                gene_count=gene_count,
+                language=language,
+                progress_callback=_background_summary_progress,
+            )
         logger.info(
             "[FOLLOWUP_QUERY] scope=%s question=%r effective_question=%r rewritten=%r genes=%s phenotypes=%s state_genes=%s",
             analysis.get("scope"),
@@ -1153,17 +1278,6 @@ class ExplanationAgent:
         compact_ctx_lines: list[str] = []
         local_methodology_context_lines: list[str] = []
         local_ref_id = 1
-        methodology_query = self.local_reference_agent.is_methodology_query(
-            f"{question}\n{effective_question}\n{rewritten_query}"
-        )
-        local_reference_hits = (
-            self.local_reference_agent.query(
-                f"{question}\n{effective_question}\n{rewritten_query}",
-                top_k=3,
-            )
-            if methodology_query
-            else []
-        )
         if local_reference_hits:
             emit_progress(progress_callback, "Checking local XPRS/PRS reference notes")
             logger.info(
@@ -1184,11 +1298,8 @@ class ExplanationAgent:
                 if hit.get("heading") and hit["heading"] != hit["title"]:
                     context_label = f"{hit['title']} — {hit['heading']}"
                 local_methodology_context_lines.append(
-                    f"- {context_label}: {hit['text']}"
+                    f"### {context_label}\n{hit['text']}"
                 )
-
-        if methodology_query and local_reference_hits:
-            followup_genes = []
 
         for gene in followup_genes:
             chunks, refs, _ = self.evidence_agent.retrieve_gene_context_for_question(
@@ -1274,6 +1385,7 @@ class ExplanationAgent:
             question=question,
             n_max=n_max,
             language=language,
+            methodology_query=methodology_query and bool(local_reference_hits),
         )
 
         # Normalize grouped citations, then remove any invalid ones

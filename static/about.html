@@ -12,14 +12,17 @@
 </head>
 <body>
   <nav class="sidebar" aria-label="XPRS navigation">
-    <a class="nav-brand" href="/" title="XPRS Portal">
+    <a class="nav-brand" href="/about" title="About XPRS">
       <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
     </a>
     <a class="nav-item" href="/" title="Disease overview">
       <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
     </a>
-    <a class="nav-item" href="/dashboard" title="Breast cancer portal">
+    <a id="sidebar-breast-portal" class="nav-item" href="/" title="Breast cancer portal">
       <span class="material-symbols-outlined" aria-hidden="true">vaccines</span>
+    </a>
+    <a class="nav-item" href="/evaluation" title="User evaluation survey" data-evaluation-link hidden>
+      <span class="material-symbols-outlined" aria-hidden="true">assignment</span>
     </a>
   </nav>
 
@@ -134,5 +137,6 @@
       </div>
     </section>
   </main>
+  <script src="/static/about.js?v=2"></script>
 </body>
 </html>

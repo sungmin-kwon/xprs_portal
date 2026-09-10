@@ -4,17 +4,23 @@ import os
 import unittest
 from unittest.mock import patch
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from starlette.requests import Request
 
 import session_logs
-from routes.admin_documents import _require_admin_access
+from routes.admin_documents import (
+    _require_admin_access,
+    admin_documents_page,
+    establish_admin_access,
+)
 
 
-def request_with_admin_token(token: str | None = None) -> Request:
+def request_with_admin_token(token: str | None = None, cookie: str | None = None) -> Request:
     headers = []
     if token is not None:
         headers.append((b"x-xprs-admin-token", token.encode("utf-8")))
+    if cookie is not None:
+        headers.append((b"cookie", f"xprs_admin_access={cookie}".encode("utf-8")))
     return Request({
         "type": "http",
         "method": "GET",
@@ -38,6 +44,30 @@ class AdminAccessTests(unittest.TestCase):
     def test_admin_route_accepts_the_configured_token(self):
         with patch.dict(os.environ, {"XPRS_ADMIN_TOKEN": "test-admin-token"}):
             _require_admin_access(request_with_admin_token("test-admin-token"))
+
+    def test_admin_page_is_available_only_when_feature_is_configured(self):
+        with patch.dict(os.environ, {"XPRS_ADMIN_TOKEN": ""}):
+            with self.assertRaises(HTTPException):
+                admin_documents_page()
+        with patch.dict(os.environ, {"XPRS_ADMIN_TOKEN": "test-admin-token"}):
+            result = admin_documents_page()
+        self.assertEqual(result.headers["x-robots-tag"], "noindex, nofollow")
+
+    def test_fragment_exchange_sets_http_only_cookie(self):
+        response = Response()
+        with patch.dict(os.environ, {"XPRS_ADMIN_TOKEN": "test-admin-token"}):
+            establish_admin_access(
+                request_with_admin_token("test-admin-token"),
+                response,
+            )
+        cookie = response.headers.get("set-cookie", "")
+        self.assertIn("xprs_admin_access=test-admin-token", cookie)
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=strict", cookie)
+
+    def test_admin_cookie_authenticates_subsequent_requests(self):
+        with patch.dict(os.environ, {"XPRS_ADMIN_TOKEN": "test-admin-token"}):
+            _require_admin_access(request_with_admin_token(cookie="test-admin-token"))
 
 
 class EphemeralSessionTests(unittest.TestCase):

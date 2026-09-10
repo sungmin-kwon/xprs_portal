@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>XPRS Pilot User Evaluation</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/evaluation.css?v=1" />
+</head>
+<body>
+  <header class="study-header">
+    <a class="brand" href="/" aria-label="XPRS Portal home">
+      <span class="brand-mark" aria-hidden="true">X</span>
+      <span>XPRS Portal</span>
+    </a>
+    <span class="internal-badge">Internal pilot</span>
+  </header>
+
+  <main class="survey-shell">
+    <section class="intro-card">
+      <p class="eyebrow">Research software evaluation</p>
+      <h1>XPRS Information Portal Pilot User Evaluation</h1>
+      <p class="lede">
+        Please complete the portal tasks below, then tell us about the clarity,
+        usability, evidence, and visualizations in this research prototype.
+      </p>
+      <div class="notice" role="note">
+        <strong>Before you begin</strong>
+        <p>
+          XPRS Portal is not a clinical tool. Do not enter your name, email,
+          health information, or another person's identifying information in
+          this form. Use only the anonymous participant code assigned by the study team.
+        </p>
+      </div>
+      <div class="study-meta">
+        <span>Instrument: pilot-v1</span>
+        <span>Estimated time: 10–15 minutes</span>
+        <span>30 questions</span>
+      </div>
+    </section>
+
+    <aside class="progress-card" aria-label="Survey progress">
+      <div class="progress-copy">
+        <strong>Survey progress</strong>
+        <span id="progress-label">0% complete</span>
+      </div>
+      <div class="progress-track" aria-hidden="true">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+    </aside>
+    <div id="access-message" class="form-message" role="status" aria-live="polite"></div>
+
+    <section class="survey-card task-flow" aria-labelledby="task-flow-title">
+      <div class="section-heading">
+        <span>Portal task flow</span>
+        <h2 id="task-flow-title">Complete these activities first</h2>
+        <p>Keep this page open in a separate tab while using the portal.</p>
+      </div>
+      <ol class="task-list">
+        <li>Open the XPRS Information Portal and select the assigned individual ID.</li>
+        <li>Generate an XPRS summary using the default top two contributing genes.</li>
+        <li>Inspect the PRS density plot and individual Manhattan plot.</li>
+        <li>Read the simple summary and at least one gene-level explanation.</li>
+        <li>Open at least one cited reference and inspect the abstract viewer.</li>
+        <li>Ask at least one follow-up question in the chatbot.</li>
+        <li>Download or preview the full PDF report.</li>
+      </ol>
+      <details>
+        <summary>Suggested follow-up questions</summary>
+        <ul>
+          <li>What other cancers are the top genes related to?</li>
+          <li>Why is this gene important in this profile?</li>
+          <li>What does the PRS percentile mean?</li>
+          <li>How does XPRS calculate gene contribution scores?</li>
+        </ul>
+      </details>
+    </section>
+
+    <form id="evaluation-form" novalidate>
+      <section class="survey-card" aria-labelledby="consent-title">
+        <div class="section-heading">
+          <span>Section 1</span>
+          <h2 id="consent-title">Consent and session information</h2>
+          <p>Both consent items must be answered “Yes” to submit this evaluation.</p>
+        </div>
+
+        <fieldset class="question-block">
+          <legend><span class="question-number">1</span>I understand that this is a research prototype and not a clinical tool.<b aria-label="required">*</b></legend>
+          <div class="choice-row">
+            <label><input type="radio" name="q1" value="yes" required /> Yes</label>
+            <label><input type="radio" name="q1" value="no" /> No</label>
+          </div>
+        </fieldset>
+
+        <fieldset class="question-block">
+          <legend><span class="question-number">2</span>I agree to participate in this pilot usability evaluation.<b aria-label="required">*</b></legend>
+          <div class="choice-row">
+            <label><input type="radio" name="q2" value="yes" required /> Yes</label>
+            <label><input type="radio" name="q2" value="no" /> No</label>
+          </div>
+        </fieldset>
+
+        <label class="question-block text-question" for="participant-id">
+          <span><span class="question-number">3</span>Anonymous participant ID<b aria-label="required">*</b></span>
+          <small>Use the code supplied by the study team—not your name or email.</small>
+          <input id="participant-id" name="participant_id" type="text" maxlength="80" autocomplete="off" required placeholder="Example: P-014" />
+        </label>
+
+        <label class="question-block text-question" for="portal-session-id">
+          <span><span class="question-number">4</span>Portal session ID, if available</span>
+          <small>Optional. This links the survey to a portal session without using your identity.</small>
+          <input id="portal-session-id" name="portal_session_id" type="text" maxlength="100" autocomplete="off" placeholder="Optional session ID" />
+        </label>
+      </section>
+
+      <section class="survey-card" aria-labelledby="background-title">
+        <div class="section-heading">
+          <span>Section 2</span>
+          <h2 id="background-title">Background</h2>
+        </div>
+
+        <fieldset class="question-block stacked-choices">
+          <legend><span class="question-number">5</span>What best describes your background?<b aria-label="required">*</b></legend>
+          <label><input type="radio" name="background" value="computational_genomics" required /> Computational genomics / bioinformatics</label>
+          <label><input type="radio" name="background" value="genetics_research" /> Genetics / genomics researcher</label>
+          <label><input type="radio" name="background" value="clinician" /> Clinician or clinical trainee</label>
+          <label><input type="radio" name="background" value="genetic_counseling" /> Genetic counselor or genetic counseling trainee</label>
+          <label><input type="radio" name="background" value="data_science_ai" /> Data science / AI researcher</label>
+          <label><input type="radio" name="background" value="student" /> Student</label>
+          <label><input type="radio" name="background" value="other" /> Other</label>
+          <input id="background-other" name="background_other" class="other-input" type="text" maxlength="200" placeholder="Please specify" hidden />
+        </fieldset>
+
+        <fieldset class="question-block">
+          <legend><span class="question-number">6</span>How familiar are you with polygenic risk scores?<b aria-label="required">*</b></legend>
+          <div class="scale-labels"><span>Not familiar</span><span>Very familiar</span></div>
+          <div class="number-scale" data-scale-name="prs_familiarity"></div>
+        </fieldset>
+
+        <fieldset class="question-block">
+          <legend><span class="question-number">7</span>How familiar are you with XPRS or gene-level PRS explanation?<b aria-label="required">*</b></legend>
+          <div class="scale-labels"><span>Not familiar</span><span>Very familiar</span></div>
+          <div class="number-scale" data-scale-name="xprs_familiarity"></div>
+        </fieldset>
+      </section>
+
+      <section class="survey-card" aria-labelledby="tasks-title">
+        <div class="section-heading">
+          <span>Section 3</span>
+          <h2 id="tasks-title">Task completion</h2>
+        </div>
+
+        <fieldset class="question-block stacked-choices">
+          <legend><span class="question-number">8</span>Which tasks did you complete? <em>Select all that apply.</em></legend>
+          <label><input type="checkbox" name="completed_tasks" value="generated_summary" /> Generated an XPRS summary</label>
+          <label><input type="checkbox" name="completed_tasks" value="viewed_density_plot" /> Viewed the PRS density plot</label>
+          <label><input type="checkbox" name="completed_tasks" value="viewed_manhattan_plot" /> Viewed the individual Manhattan plot</label>
+          <label><input type="checkbox" name="completed_tasks" value="read_gene_explanation" /> Read a gene-level explanation</label>
+          <label><input type="checkbox" name="completed_tasks" value="opened_reference" /> Opened a cited reference / abstract</label>
+          <label><input type="checkbox" name="completed_tasks" value="asked_followup" /> Asked a follow-up question</label>
+          <label><input type="checkbox" name="completed_tasks" value="viewed_pdf" /> Downloaded or previewed the PDF report</label>
+        </fieldset>
+
+        <fieldset class="question-block stacked-choices">
+          <legend><span class="question-number">9</span>Approximately how long did the evaluation take?<b aria-label="required">*</b></legend>
+          <label><input type="radio" name="completion_time" value="lt_5" required /> Less than 5 minutes</label>
+          <label><input type="radio" name="completion_time" value="5_10" /> 5–10 minutes</label>
+          <label><input type="radio" name="completion_time" value="10_15" /> 10–15 minutes</label>
+          <label><input type="radio" name="completion_time" value="15_20" /> 15–20 minutes</label>
+          <label><input type="radio" name="completion_time" value="gt_20" /> More than 20 minutes</label>
+        </fieldset>
+      </section>
+
+      <section class="survey-card" aria-labelledby="ratings-title">
+        <div class="section-heading">
+          <span>Section 4</span>
+          <h2 id="ratings-title">Portal ratings</h2>
+          <p>Rate each statement from 1 (strongly disagree) to 5 (strongly agree).</p>
+        </div>
+        <div class="rating-key" aria-hidden="true">
+          <span><b>1</b> Strongly disagree</span>
+          <span><b>3</b> Neutral</span>
+          <span><b>5</b> Strongly agree</span>
+        </div>
+        <div id="rating-items"></div>
+      </section>
+
+      <section class="survey-card" aria-labelledby="comprehension-title">
+        <div class="section-heading">
+          <span>Section 5</span>
+          <h2 id="comprehension-title">Comprehension checks</h2>
+          <p>Select the best answer based on the portal.</p>
+        </div>
+
+        <fieldset class="question-block stacked-choices">
+          <legend><span class="question-number">24</span>A PRS percentile should be interpreted as:<b aria-label="required">*</b></legend>
+          <label><input type="radio" name="q24" value="clinical_diagnosis" required /> A clinical diagnosis</label>
+          <label><input type="radio" name="q24" value="reference_position" /> A statistical position relative to a reference cohort</label>
+          <label><input type="radio" name="q24" value="guaranteed_outcome" /> A guaranteed future disease outcome</label>
+          <label><input type="radio" name="q24" value="treatment_recommendation" /> A treatment recommendation</label>
+        </fieldset>
+
+        <fieldset class="question-block stacked-choices">
+          <legend><span class="question-number">25</span>A high gene contribution means:<b aria-label="required">*</b></legend>
+          <label><input type="radio" name="q25" value="strong_contribution" required /> The gene is contributing strongly to this individual's PRS profile</label>
+          <label><input type="radio" name="q25" value="definite_disease" /> The individual definitely has disease caused by that gene</label>
+          <label><input type="radio" name="q25" value="clinical_target" /> The gene should be clinically targeted</label>
+          <label><input type="radio" name="q25" value="no_score_relationship" /> The gene has no relationship to the score</label>
+        </fieldset>
+
+        <fieldset class="question-block stacked-choices">
+          <legend><span class="question-number">26</span>The structured database evidence primarily provides:<b aria-label="required">*</b></legend>
+          <label><input type="radio" name="q26" value="gene_disease_context" required /> Gene–disease association context</label>
+          <label><input type="radio" name="q26" value="personalized_diagnosis" /> A personalized diagnosis</label>
+          <label><input type="radio" name="q26" value="treatment_plan" /> A treatment plan</label>
+          <label><input type="radio" name="q26" value="literature_replacement" /> A replacement for cited literature</label>
+        </fieldset>
+      </section>
+
+      <section class="survey-card" aria-labelledby="feedback-title">
+        <div class="section-heading">
+          <span>Section 6</span>
+          <h2 id="feedback-title">Open feedback</h2>
+          <p>Please avoid names, health information, and other identifying details.</p>
+        </div>
+
+        <label class="question-block text-question" for="q27">
+          <span><span class="question-number">27</span>What was the most useful part of the portal?<b aria-label="required">*</b></span>
+          <textarea id="q27" name="most_useful" maxlength="4000" rows="4" required></textarea>
+        </label>
+        <label class="question-block text-question" for="q28">
+          <span><span class="question-number">28</span>What was confusing, difficult, or missing?<b aria-label="required">*</b></span>
+          <textarea id="q28" name="confusing_or_missing" maxlength="4000" rows="4" required></textarea>
+        </label>
+        <label class="question-block text-question" for="q29">
+          <span><span class="question-number">29</span>Did the visualizations, references, or PDF report improve your understanding? Why or why not?<b aria-label="required">*</b></span>
+          <textarea id="q29" name="understanding_impact" maxlength="4000" rows="4" required></textarea>
+        </label>
+        <label class="question-block text-question" for="q30">
+          <span><span class="question-number">30</span>What is the most important improvement before using this portal in a larger study?<b aria-label="required">*</b></span>
+          <textarea id="q30" name="most_important_improvement" maxlength="4000" rows="4" required></textarea>
+        </label>
+      </section>
+
+      <section class="submit-card">
+        <div>
+          <h2>Submit evaluation</h2>
+          <p>Your response is stored on the XPRS server under a random receipt ID. The survey does not record your IP address in the response file.</p>
+        </div>
+        <button id="submit-button" type="submit" disabled>Checking access…</button>
+      </section>
+      <div id="form-message" class="form-message" role="status" aria-live="polite"></div>
+    </form>
+
+    <noscript>
+      <div class="survey-card error-message">JavaScript is required to complete this evaluation.</div>
+    </noscript>
+  </main>
+
+  <script src="/static/evaluation.js?v=1" defer></script>
+</body>
+</html>

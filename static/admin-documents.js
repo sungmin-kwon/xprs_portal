@@ -18,7 +18,6 @@
     geneList: document.getElementById("gene-list"),
     geneListStatus: document.getElementById("gene-list-status"),
     pageTitle: document.getElementById("page-title"),
-    pageDescription: document.getElementById("page-description"),
     statDocuments: document.getElementById("stat-documents"),
     statGenes: document.getElementById("stat-genes"),
     statGeneral: document.getElementById("stat-general"),
@@ -40,11 +39,11 @@
   }
 
   async function fetchJson(path, signal) {
-    const headers = {};
-    if (window.XPRS_ADMIN_TOKEN) {
-      headers["X-XPRS-Admin-Token"] = window.XPRS_ADMIN_TOKEN;
-    }
-    const response = await fetch(path, { headers, signal, cache: "no-store" });
+    const response = await fetch(path, {
+      credentials: "same-origin",
+      signal,
+      cache: "no-store",
+    });
     if (!response.ok) {
       throw new Error(response.status === 404 ? "Admin index unavailable" : `HTTP ${response.status}`);
     }
@@ -145,10 +144,6 @@
     renderGeneList();
     populatePhenotypeFilter();
     elements.pageTitle.textContent = `${gene} documents`;
-    const row = state.inventory?.genes.find((item) => item.gene === gene);
-    elements.pageDescription.textContent = row
-      ? `${number(row.total)} indexed records across ${number(Object.keys(row.pools).length)} source pools.`
-      : "Indexed literature and evidence records.";
     loadDocuments();
   }
 
@@ -317,6 +312,24 @@
     }
   }
 
+  async function establishAccess() {
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("token") || "";
+    const headers = token ? { "X-XPRS-Admin-Token": token } : {};
+    const response = await fetch("/api/admin/access", {
+      method: "POST",
+      credentials: "same-origin",
+      headers,
+      cache: "no-store",
+    });
+    if (!response.ok) throw new Error("Admin index unavailable");
+    if (token) {
+      const url = new URL(window.location.href);
+      url.hash = "";
+      history.replaceState(null, "", `${url.pathname}${url.search}`);
+    }
+  }
+
   let searchTimer;
   elements.geneSearch.addEventListener("input", renderGeneList);
   elements.poolFilter.addEventListener("change", () => {
@@ -362,5 +375,10 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
-  loadInventory();
+  establishAccess()
+    .then(loadInventory)
+    .catch((error) => {
+      elements.geneListStatus.textContent = error.message || "Unable to access index.";
+      renderError(error.message || "Unable to access the ChromaDB index.");
+    });
 })();

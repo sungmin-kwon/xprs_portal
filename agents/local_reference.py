@@ -69,20 +69,22 @@ class LocalReferenceAgent:
 
             heading = title
             buffer: list[str] = []
+            section_number = 0
 
             def flush_buffer() -> None:
-                nonlocal buffer
-                paragraph = " ".join(line.strip() for line in buffer if line.strip()).strip()
+                nonlocal buffer, section_number
+                section_text = "\n".join(buffer).strip()
                 buffer = []
-                if len(paragraph) < 80:
+                if not section_text:
                     return
+                section_number += 1
                 entries.append({
-                    "id": f"{path.stem}:{len(entries) + 1}",
+                    "id": f"{path.stem}:{section_number}",
                     "title": title,
                     "heading": heading,
-                    "text": paragraph,
+                    "text": section_text,
                     "path": str(path),
-                    "tokens": _tokenize_reference_text(f"{title} {heading} {paragraph}"),
+                    "tokens": _tokenize_reference_text(f"{title} {heading} {section_text}"),
                 })
 
             for line in lines:
@@ -91,12 +93,102 @@ class LocalReferenceAgent:
                     flush_buffer()
                     heading = stripped.lstrip("#").strip() or title
                     continue
-                if not stripped:
-                    flush_buffer()
-                    continue
-                buffer.append(stripped)
+                # Keep blank lines, lists, and short standalone equations attached to
+                # their containing Markdown section.  Formula lines in the XPRS note
+                # are intentionally short and must not be discarded as noise.
+                buffer.append(line.rstrip())
             flush_buffer()
         return entries
+
+    def _sections_by_heading(
+        self,
+        *,
+        title: str,
+        headings: list[str],
+        top_k: int,
+    ) -> list[dict[str, Any]]:
+        wanted = {heading.lower(): index for index, heading in enumerate(headings)}
+        matches = [
+            entry
+            for entry in self._entries
+            if entry["title"].lower() == title.lower()
+            and entry["heading"].lower() in wanted
+        ]
+        matches.sort(key=lambda entry: wanted[entry["heading"].lower()])
+        return matches[:top_k]
+
+    def query_methodology(self, question: str, top_k: int = 10) -> list[dict[str, Any]]:
+        """Return coherent, curated sections for PRS/XPRS methodology questions.
+
+        The local corpus is deliberately small and structured, so deterministic
+        section routing is more reliable than treating each paragraph as an
+        independent dense-retrieval document.
+        """
+        tokens = _tokenize_reference_text(question)
+        calculation_terms = {
+            "calculate", "calculated", "calculation", "compute", "computed",
+            "derive", "derived", "formula", "workflow", "pipeline",
+        }
+
+        if "xprs" in tokens:
+            if tokens & calculation_terms:
+                headings = [
+                    "What XPRS Is",
+                    "Core Idea",
+                    "Inputs",
+                    "How XPRS Is Calculated",
+                    "Step 1: Preprocessing and Variant Mapping",
+                    "Step 2: Calculation of Scores",
+                    "Gene-Level Contribution",
+                    "Population Rank",
+                    "SNP-Level Contribution",
+                    "Important Limits",
+                ]
+            elif tokens & {"input", "inputs", "file", "files", "ancestry"}:
+                headings = ["What XPRS Is", "Inputs", "Important Limits"]
+            elif tokens & {"mapping", "map", "mapped", "region", "regionizing"}:
+                headings = [
+                    "What XPRS Is",
+                    "Inputs",
+                    "Step 1: Preprocessing and Variant Mapping",
+                    "Important Limits",
+                ]
+            else:
+                headings = [
+                    "What XPRS Is",
+                    "Core Idea",
+                    "Gene-Level Contribution",
+                    "Population Rank",
+                    "SNP-Level Contribution",
+                    "Visualizations and Outputs",
+                    "Important Limits",
+                ]
+            routed = self._sections_by_heading(
+                title="XPRS Methods Note",
+                headings=headings,
+                top_k=top_k,
+            )
+            if routed:
+                return routed
+
+        if "prs" in tokens or "polygenic" in tokens:
+            headings = [
+                "What a PRS Is",
+                "How the PRS Was Constructed",
+                "How the PRS Was Used in Analysis",
+                "Clinical Interpretation",
+                "Interpretation Boundaries",
+                "Relevance to XPRS",
+            ]
+            routed = self._sections_by_heading(
+                title="Polygenic Risk Score Clinical Relevance Note",
+                headings=headings,
+                top_k=top_k,
+            )
+            if routed:
+                return routed
+
+        return self.query(question, top_k=top_k)
 
     def is_methodology_query(self, question: str) -> bool:
         tokens = _tokenize_reference_text(question)

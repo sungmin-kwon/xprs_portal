@@ -5,6 +5,7 @@ from . import (
     chat,
     cohorts,
     diseases,
+    evaluation,
     health,
     pages,
     individuals,
@@ -23,6 +24,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(admin_documents.router)
     app.include_router(cohorts.router)
     app.include_router(diseases.router)
+    app.include_router(evaluation.router)
     app.include_router(individuals.router)
     app.include_router(models.router)
     app.include_router(phenotype.router)

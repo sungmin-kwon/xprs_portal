@@ -44,8 +44,9 @@ for the selected genes are available.
 - Pandas/Parquet plot-data cache
 - ReportLab PDF reports
 
-The `openai` Python package is used as an OpenAI-compatible protocol client for
-OpenRouter. A direct `OPENAI_API_KEY` is not required by the current setup.
+The `openai` Python package is used only as an OpenAI-compatible protocol client
+for OpenRouter and local vLLM servers. Direct OpenAI and DashScope/Qwen provider
+credentials are not supported or required by the current setup.
 
 ## Literature retrieval flow
 
@@ -198,9 +199,49 @@ describe the contents of each title and abstract. The page and its API never
 return vector embeddings and do not provide any database mutation operations.
 
 Set `XPRS_ADMIN_TOKEN` and open the page once as
-`/admin/documents?token=VALUE`. The browser keeps the token in session storage,
-removes it from the visible URL, and sends it in the `X-XPRS-Admin-Token`
-header. When no token is configured, the page and its APIs return 404.
+`/admin/documents#token=VALUE`. URL fragments are not transmitted in HTTP
+requests or access logs. The browser exchanges the fragment for an HTTP-only,
+same-site cookie and removes it from the visible URL. When no token is
+configured, the page and its APIs return 404.
+
+## Internal pilot evaluation
+
+The optional `/evaluation` page implements the 30-item `pilot-v1` usability
+instrument: participant consent and background, task completion, fourteen
+portal-rating items, three comprehension checks, and four open-ended prompts.
+The optional System Usability Scale is not included in this pilot version.
+
+Set a separate `XPRS_EVALUATION_TOKEN`, restart the server, and give an
+evaluator a link of the following form:
+
+```text
+https://PORTAL_HOST/evaluation#token=VALUE
+```
+
+The fragment after `#` is not sent in the initial HTTP request or written to
+the server access log. After access is validated, the page places the token in
+an HTTP-only, same-site cookie and removes it from the visible URL. Set
+`XPRS_COOKIE_SECURE=true` when the portal is served through HTTPS. Responses
+are written as mode-0600 JSON files under the ignored
+`evaluation_responses/` directory. Response records contain the anonymous
+participant/session codes supplied in the form, but deliberately omit IP
+address and browser metadata.
+
+The survey icon is shown in the primary-page sidebars only while
+`XPRS_EVALUATION_TOKEN` is configured. It remains hidden in the default public
+configuration, where the evaluation route also returns 404.
+
+Export the collected records to an analysis-ready CSV, including the
+prespecified rating-group means, task indicators, and comprehension scores:
+
+```bash
+python scripts/export_evaluation_responses.py
+```
+
+Do not collect names, email addresses, health information, or other direct
+identifiers. Confirm the consent language, retention period, participant
+instructions, and any required IRB/ethics review before beginning a study
+intended for publication.
 
 ## Environment variables
 
@@ -216,6 +257,8 @@ The complete key-free template is in `.env.example`. The principal settings are:
 - `SESSION_LOGGING_ENABLED`
 - `EPHEMERAL_SESSION_LIMIT`
 - `XPRS_ADMIN_TOKEN` for the unlinked Chroma document browser
+- `XPRS_EVALUATION_TOKEN`, `EVALUATION_RESPONSES_DIR`, and
+  `XPRS_COOKIE_SECURE` for the internal pilot survey
 - optional path overrides such as `DATA_DIR`, `CHROMA_DIR`, `S2_CACHE_DIR`,
   `STATIC_DIR`, and `REF_DIR`
 
@@ -239,6 +282,7 @@ are intentionally excluded from the public repository surface.
 
 - `GET /` — landing page
 - `GET /dashboard` — dashboard
+- `GET /evaluation` — internal pilot survey; response submission is token-protected
 - `GET /api/cohorts` — cohort catalog
 - `GET /api/diseases` — ordered disease catalog
 - `GET /api/individuals` — available individual IDs
@@ -249,8 +293,8 @@ are intentionally excluded from the public repository surface.
 - `GET /api/health/rag` — dense store and reranker configuration status
 - `POST /api/report/pdf` — PDF report
 
-The read-only administration routes are intentionally omitted from this public
-API list and from the generated OpenAPI schema.
+The read-only administration routes and survey submission API are intentionally
+omitted from this public API list and from the generated OpenAPI schema.
 
 ## Public data and GitHub size
 

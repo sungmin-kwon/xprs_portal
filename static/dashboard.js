@@ -25,33 +25,34 @@ let phenotypeLabelsKo = {};
 let currentDiseaseSlug = "breast_cancer";
 let diseaseRegistry = {};
 
+const LANGUAGE_PREFERENCE_KEY = "xprs.language";
+const THEME_PREFERENCE_KEY = "xprs.theme";
+const INDIVIDUAL_PREFERENCE_KEY = "xprs.individual_id";
+
 const UI_TEXT = {
   en: {
     portalTitle: "XPRS Information Portal – BREAST CANCER",
-    portalSubtitle: "Gene-level interpretation and follow-up exploration based on scientific literature evidence",
-    selectedIndividual: "Selected Individual",
+    aboutXprs: "About XPRS",
+    diseaseOverview: "Disease overview",
+    breastCancerPortal: "Breast cancer portal",
+    userEvaluation: "User evaluation survey",
     changeIndividual: "Change Individual",
     changeIid: "Change IID",
-    visualizations: "Visualizations",
     manhattanTitle: "Individual Manhattan Plot",
     densityTitle: "PRS Density",
-    visualizationPlaceholder: "Visualization Placeholder",
-    futureAnalysisPanel: "Reserved for future analysis panel",
+    rareVariantTitle: "Rare Variant Analysis",
+    rareVariantUnavailable: "Available when rare-variant data are added to a cohort",
     disclaimerTitle: "⚠️ Clinical Disclaimer",
     disclaimerBody: "This tool provides information based on statistical associations and scientific literature, and is <strong>not</strong> a diagnostic tool. Genetic risk scores are probabilistic and do not guarantee specific health outcomes. Please consult a certified genetic counselor or medical professional for clinical advice.",
     chatbotTitle: "Genetic Chatbot",
     generationModelLabel: "Answer model",
-    referenceModelLabel: "Reference model",
-    welcomeMessage: "Select an individual and click <strong>Generate Summary</strong> to begin.",
     followupPlaceholder: "Ask a question about XPRS genomics...",
-    askQuestion: "Send question",
     referencesList: "References List",
     noReferencesYet: "No references yet.",
     referenceViewer: "Reference Abstract Viewer",
     noPaperYet: "No paper selected yet.",
     landingEyebrow: "XPRS Information Portal: BREAST CANCER",
     landingTitle: "Configure XPRS Summary",
-    landingCopy: "Choose an individual and the number of top contributing genes to interpret.",
     individualId: "Individual ID",
     individualSearchPlaceholder: "Search Individual ID",
     geneCountLabel: "Genes to Include",
@@ -61,13 +62,10 @@ const UI_TEXT = {
     genePreviewNone: "No contributing genes are available.",
     genePreviewGenes: (genes) => `Genes included: [${genes.join(", ")}]`,
     citedCount: (n) => `Cited ${n}`,
-    languageLabel: "Display Language",
-    languageHint: " ",
     switchToKorean: "Switch to Korean",
     switchToEnglish: "Switch to English",
     darkMode: "Dark Mode",
     lightMode: "Light Mode",
-    themeLabel: "Theme",
     generateSummaryAlert: "No XPRS summary generated yet.",
     viewDisclaimer: "View Disclaimer",
     closeDisclaimer: "Close Disclaimer",
@@ -76,11 +74,6 @@ const UI_TEXT = {
     summaryLoading: "Generating Summary...",
     loadingIndividuals: "Loading individuals...",
     loadedIndividuals: (n) => `Loaded ${n} from the 1000 Genomes Project`,
-    noPaperSelected: "No paper selected yet.",
-    noReferences: "No references yet.",
-    noPlotStatus: "—",
-    noChatWelcome: "Select an individual and click <strong>Generate Summary</strong> to begin.",
-    summaryButton: "Generate XPRS Summary",
     exportLabel: "Download",
     downloadPdfReport: "Download Full PDF Report",
     downloadChatMd: "Download Chat (.md)",
@@ -93,30 +86,27 @@ const UI_TEXT = {
   },
   ko: {
     portalTitle: "XPRS 정보 포털 – 유방암",
-    portalSubtitle: "유전자 별 문헌 기반 요약 및 팔로업 탐색",
-    selectedIndividual: "선택된 IID",
+    aboutXprs: "XPRS 소개",
+    diseaseOverview: "질환 위험 개요",
+    breastCancerPortal: "유방암 포털",
+    userEvaluation: "사용성 평가 설문",
     changeIndividual: "IID 변경",
     changeIid: "IID 변경",
-    visualizations: "시각화",
     manhattanTitle: "개인 맨해튼 플롯",
     densityTitle: "PRS 밀도 분포",
-    visualizationPlaceholder: "시각화 준비 영역",
-    futureAnalysisPanel: "향후 분석 패널을 위한 공간입니다",
+    rareVariantTitle: "희귀 변이 분석",
+    rareVariantUnavailable: "희귀 변이 데이터가 코호트에 추가되면 이용할 수 있습니다",
     disclaimerTitle: "⚠️ 임상적 고지",
     disclaimerBody: "이 도구는 통계적 연관성과 과학 문헌을 바탕으로 정보를 제공하며, <strong>진단 도구가 아닙니다</strong>. 유전 위험 점수는 확률적 지표이며 특정 건강 결과를 보장하지 않습니다. 임상적 판단은 전문 의료진 또는 유전상담사와 상의해 주세요.",
     chatbotTitle: "유전 정보 챗봇",
     generationModelLabel: "답변 생성 모델",
-    referenceModelLabel: "참고문헌 추출 모델",
-    welcomeMessage: "개인 ID를 선택한 뒤 <strong>요약 생성</strong>을 눌러 시작하세요.",
     followupPlaceholder: "XPRS 유전체에 대해 질문하세요...",
-    askQuestion: "질문 보내기",
     referencesList: "참고문헌 목록",
     noReferencesYet: "아직 참고문헌이 없습니다.",
     referenceViewer: "논문초록 조회",
     noPaperYet: "선택된 논문이 없습니다.",
     landingEyebrow: "XPRS 정보 포털 : 유방암",
     landingTitle: "XPRS 요약 설정",
-    landingCopy: "개인 ID와 상세히 해석할 상위 기여 유전자 수를 선택하세요.",
     individualId: "Individual ID",
     individualSearchPlaceholder: "개인 ID 검색",
     geneCountLabel: "요약에 포함할 유전자 수",
@@ -126,13 +116,10 @@ const UI_TEXT = {
     genePreviewNone: "사용 가능한 기여 유전자가 없습니다.",
     genePreviewGenes: (genes) => `포함할 유전자: [${genes.join(", ")}]`,
     citedCount: (n) => `${n}회 인용`,
-    languageLabel: "표시 언어",
-    languageHint: "참고문헌 제목 및 초록은 영어로 표시됩니다.",
     switchToKorean: "한국어로 전환",
     switchToEnglish: "영어로 전환",
     darkMode: "다크 모드",
     lightMode: "라이트 모드",
-    themeLabel: "테마",
     generateSummaryAlert: "아직 XPRS 요약이 생성되지 않았습니다.",
     viewDisclaimer: "고지 보기",
     closeDisclaimer: "고지 닫기",
@@ -141,11 +128,6 @@ const UI_TEXT = {
     summaryLoading: "요약 생성 중...",
     loadingIndividuals: "개인 목록 불러오는 중...",
     loadedIndividuals: (n) => `1000 Genomes Project 데이터에서 ${n}명의 Individual ID 적재 완료`,
-    noPaperSelected: "선택된 논문이 없습니다.",
-    noReferences: "아직 참고문헌이 없습니다.",
-    noPlotStatus: "—",
-    noChatWelcome: "개인을 선택한 뒤 <strong>요약 생성</strong>을 눌러 시작하세요.",
-    summaryButton: "요약 생성",
     exportLabel: "내려받기",
     downloadPdfReport: "상세 PDF 보고서 내려받기",
     downloadChatMd: "채팅 내려받기 (.md)",
@@ -206,6 +188,40 @@ function t(key) {
   return bundle[key] ?? fallback ?? key;
 }
 
+function readPreference(key, fallback) {
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function savePreference(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (_error) {
+    // The portal remains usable when storage is disabled by the browser.
+  }
+}
+
+function syncEvaluationAvailability(enabled) {
+  document.querySelectorAll("[data-evaluation-link]").forEach((link) => {
+    link.hidden = !enabled;
+    link.style.display = enabled ? "" : "none";
+  });
+}
+
+function syncLanguageInUrl() {
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("language") === currentLanguage) return;
+  url.searchParams.set("language", currentLanguage);
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${url.pathname}${url.search}${url.hash}`,
+  );
+}
+
 function updateUIText() {
   rememberSelectedIndividual();
   document.documentElement.lang = currentLanguage === "ko" ? "ko" : "en";
@@ -223,6 +239,20 @@ function updateUIText() {
     const value = t(key);
     if (typeof value === "string") {
       el.setAttribute("placeholder", value);
+    }
+  });
+
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const value = t(el.dataset.i18nTitle);
+    if (typeof value === "string") {
+      el.setAttribute("title", value);
+    }
+  });
+
+  document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+    const value = t(el.dataset.i18nAria);
+    if (typeof value === "string") {
+      el.setAttribute("aria-label", value);
     }
   });
 
@@ -339,6 +369,7 @@ function commitIndividualSelection(pid) {
   if (!pid) return;
   currentIndividualId = pid;
   lastSelectedIndividualId = pid;
+  savePreference(INDIVIDUAL_PREFERENCE_KEY, pid);
   setCurrentIndividualLabel(pid);
   const params = new URLSearchParams({
     individual_id: pid,
@@ -362,13 +393,11 @@ function getSummaryGeneCount() {
 
 function updateGeneCountControl() {
   const count = getSummaryGeneCount();
-  const out = $("gene-count-value");
-  if (out) out.textContent = t("geneCountValue")(count);
-  document.querySelectorAll("[data-gene-count]").forEach((button) => {
-    const selected = Number.parseInt(button.dataset.geneCount || "0", 10) === count;
-    button.classList.toggle("is-selected", selected);
-    button.setAttribute("aria-checked", selected ? "true" : "false");
-  });
+  const input = $("summary-gene-count");
+  if (input) {
+    input.setAttribute("aria-valuetext", t("geneCountValue")(count));
+    input.style.setProperty("--slider-progress", `${((count - 1) / 4) * 100}%`);
+  }
 }
 
 function setSummaryGeneCount(count, { refresh = true } = {}) {
@@ -558,6 +587,8 @@ function syncLanguageToggle() {
 
 function applyLanguage(language) {
   currentLanguage = language === "ko" ? "ko" : "en";
+  savePreference(LANGUAGE_PREFERENCE_KEY, currentLanguage);
+  syncLanguageInUrl();
   updateUIText();
   if (!hasConversationHistory()) {
     clearChat();
@@ -597,6 +628,7 @@ function syncThemeButtons() {
 function applyTheme(theme) {
   rememberSelectedIndividual();
   currentTheme = theme === "dark" ? "dark" : "light";
+  savePreference(THEME_PREFERENCE_KEY, currentTheme);
   document.body.classList.toggle("dark-theme", currentTheme === "dark");
   syncThemeButtons();
   rerenderPlotsForTheme();
@@ -671,28 +703,13 @@ function renderManhattanPlotly(manhattan, containerId, options = {}) {
     }
   };
 
-  const rawTitle = manhattan?.title || "Gene-based Manhattan Plot";
-  const match = rawTitle.match(/^(.*)\s+\((.*)\)$/);
-  const titleText = `<span style="font-size:16px;">${match ? match[1] : rawTitle}</span>`;
-
   const layout = {
     paper_bgcolor: isDarkTheme() ? "#111923" : "#ffffff",
     plot_bgcolor: isDarkTheme() ? "#111923" : "#ffffff",
     font: { color: isDarkTheme() ? "#dce6f2" : "#2c3e50" },
-    title: expanded
-      ? { text: "" }
-      : {
-          text: titleText,
-          x: 0.5,
-          xanchor: "center",
-          y: 0.985,
-          yanchor: "top",
-          automargin: true,
-          pad: { t: 8, b: 0 }
-        },
     margin: expanded
-      ? { l: 76, r: 32, t: 56, b: 88 }
-      : { l: 42, r: 14, t: 82, b: 40 },
+      ? { l: 76, r: 32, t: 36, b: 88 }
+      : { l: 42, r: 14, t: 18, b: 40 },
     xaxis: {
       title: {
         text: "Chromosome",
@@ -833,16 +850,11 @@ function renderDensityPlotly(density, containerId) {
     }
   ];
 
-  const rawTitle = density?.title || "Cohort Density Plot";
-  const m = rawTitle.match(/^(.*)\s+\((.*)\)$/);
-  const titleText = `<span style="font-size:16px;">${m ? m[1] : rawTitle}</span>`;
-
   const layout = {
     paper_bgcolor: isDarkTheme() ? "#111923" : "#ffffff",
     plot_bgcolor: isDarkTheme() ? "#111923" : "#ffffff",
     font: { color: isDarkTheme() ? "#dce6f2" : "#2c3e50" },
-    title: { text: titleText, x: 0.5, xanchor: "center", y: 0.985, yanchor: "top", automargin: true, pad: { t: 8, b: 0 } },
-    margin: { l: 44, r: 16, t: 84, b: 40 },
+    margin: { l: 44, r: 16, t: 18, b: 40 },
     xaxis: {
       title: { text: density?.x_label || "PRS", font: { size: 12 } },
       automargin: true,
@@ -927,17 +939,15 @@ async function loadAppInfo() {
     const res = await fetch("/api/info");
     if (res.ok) {
       const data = await res.json();
-      // Store the model name globally, e.g., "gpt-5.1" or "llama3"
+      // Store the resolved OpenRouter or local model name globally.
       if (data.model) {
         activeModelName = data.model;
-        const modelLabel = $("chatbot-model-label");
-        if (modelLabel) {
-          modelLabel.textContent = activeModelName;
-        }
       }
+      syncEvaluationAvailability(data.evaluation_enabled === true);
     }
   } catch (e) {
     console.warn("Failed to load model info:", e);
+    syncEvaluationAvailability(false);
   }
 }
 
@@ -1007,10 +1017,14 @@ function resetConversationState() {
   currentReferences = [];
   renderReferencesList([]);
   resetReferenceViewer();
-  resetVisualizations();
   activeSessionId = null;
   activeSummaryIndividualId = null;
   updateExportButtons();
+}
+
+function resetDashboardForIndividualChange() {
+  resetConversationState();
+  resetVisualizations();
 }
 
 function getReferenceIdentity(ref) {
@@ -1197,6 +1211,17 @@ function renderMath(containerEl) {
 function normalizeMathMarkup(text) {
   let normalized = String(text || "");
 
+  // Repair common XPRS symbols emitted with Markdown-style escaped underscores.
+  // In LaTeX, `\_` means a literal underscore; named subscripts need braces and
+  // roman text instead. This also repairs previously saved chat answers.
+  normalized = normalized
+    .replace(/\bCS\\?_\{gene\\?_j\}/gi, "CS_{\\mathrm{gene},j}")
+    .replace(/\bCS\\?_\{gene\}/gi, "CS_{\\mathrm{gene}}")
+    .replace(/\bA\\?_\{gene\\?_j\}/gi, "A_{\\mathrm{gene},j}")
+    .replace(/\bA\\?_\{gene\}/gi, "A_{\\mathrm{gene}}")
+    .replace(/\bCS\\?_\{SNP\\?_i\}/gi, "CS_{\\mathrm{SNP},i}")
+    .replace(/\bCS\\?_\{SNP\}/gi, "CS_{\\mathrm{SNP}}");
+
   // Repair malformed inline-math delimiters that sometimes come back as
   // escaped opening/closing dollars, e.g. "\$M$" or "\$G_{i}\$".
   normalized = normalized.replace(/\\\$(.+?)\\\$/gs, (_match, expr) => {
@@ -1363,12 +1388,12 @@ function appendBackendLogBox(logHtml) {
   chat.scrollTop = chat.scrollHeight;
 }
 
-function showLoadingBubble({ individualId }) {
+function showLoadingBubble() {
   const chat = $("chat");
   if (!chat) return;
   const welcome = chat.querySelector(".welcome");
   if (welcome) welcome.remove();
-  removeSummaryLoadingBubble();
+  removeLoadingBubble();
 
   const row = document.createElement("div");
   row.className = "msg-row bot-row";
@@ -1387,19 +1412,7 @@ function showLoadingBubble({ individualId }) {
   activeLoadingLogEl = bubble.querySelector(".backend-log-live__body");
 }
 
-function showSummaryLoadingBubble(individualId = getSelectedIndividualId()) {
-  showLoadingBubble({
-    individualId,
-  });
-}
-
-function showFollowupLoadingBubble(individualId = getSelectedIndividualId()) {
-  showLoadingBubble({
-    individualId,
-  });
-}
-
-function removeSummaryLoadingBubble() {
+function removeLoadingBubble() {
   stopLoadingEllipsisAnimation();
   if (activeLoadingBubble?.parentNode) {
     activeLoadingBubble.parentNode.removeChild(activeLoadingBubble);
@@ -1476,7 +1489,7 @@ async function loadModels() {
       selectedGenerationModel = availableModels.default_generation || null;
     }
     populateGenerationModelSelect();
-    // The chosen generation model is the source of truth for the pill + bubbles.
+    // The selected option is the source of truth for requests and response labels.
     if (selectedGenerationModel) setActiveModelDisplay(selectedGenerationModel);
   } catch (e) {
     console.warn("Failed to load models:", e);
@@ -1485,8 +1498,6 @@ async function loadModels() {
 
 function setActiveModelDisplay(modelId) {
   activeModelName = modelId;
-  const pill = $("chatbot-model-label");
-  if (pill) pill.textContent = modelId;
 }
 
 function populateGenerationModelSelect() {
@@ -1504,31 +1515,6 @@ function populateGenerationModelSelect() {
     selectedGenerationModel = sel.value;
     setActiveModelDisplay(sel.value);
   };
-}
-
-function openSettingsMenu() {
-  const menu = $("settings-menu");
-  const btn = $("settings-menu-btn");
-  if (!menu || !btn) return;
-  menu.hidden = false;
-  btn.setAttribute("aria-expanded", "true");
-}
-
-function closeSettingsMenu() {
-  const menu = $("settings-menu");
-  const btn = $("settings-menu-btn");
-  if (!menu || !btn) return;
-  menu.hidden = true;
-  btn.setAttribute("aria-expanded", "false");
-}
-
-function toggleSettingsMenu() {
-  const menu = $("settings-menu");
-  if (!menu || menu.hidden) {
-    openSettingsMenu();
-    return;
-  }
-  closeSettingsMenu();
 }
 
 function getFilenameFromResponse(response, fallback) {
@@ -1949,7 +1935,7 @@ function filterIndividuals() {
 }
 
 // ----------------------------
-// Summary + plots
+// Plot loading
 // ----------------------------
 async function loadPlotsForIndividual(pid) {
   if (!pid) return null;
@@ -1996,6 +1982,9 @@ async function loadPlotsForIndividual(pid) {
   return payload;
 }
 
+// ----------------------------
+// Individual selection
+// ----------------------------
 async function changeIndividual() {
   const pid = getSelectedIndividualId();
   if (!pid) {
@@ -2009,19 +1998,19 @@ async function changeIndividual() {
   closeLandingModal(true);
   if (!changed) return;
 
-  resetConversationState();
-  setStatus($("chat-status"), "");
-  setStatus($("viz-status"), "Loading interactive plots...");
+  resetDashboardForIndividualChange();
   try {
     await loadPlotsForIndividual(pid);
   } catch (err) {
     console.error(err);
     setStatus($("viz-status"), `Plots unavailable: ${err.message}`);
-    setStatus($("chat-status"), `Error: ${err.message}`);
   }
 }
 
-async function generateSummaryAndPlots() {
+// ----------------------------
+// Summary generation
+// ----------------------------
+async function generateSummary() {
   const pid = currentIndividualId || getSelectedIndividualId();
   const geneCount = getSummaryGeneCount();
   const language = currentLanguage;
@@ -2034,15 +2023,12 @@ async function generateSummaryAndPlots() {
   syncLanguageToggle();
   clearLandingWarning();
   closeLandingModal(true);
-  showSummaryLoadingBubble(pid);
+  showLoadingBubble();
 
   setLoading(true);
-  setStatus($("chat-status"), "Loading plots...");
-  setStatus($("viz-status"), "Loading interactive plots...");
+  setStatus($("chat-status"), "");
 
   try {
-    await loadPlotsForIndividual(pid);
-    setStatus($("chat-status"), "");
     const summary = await runTaskStream("/api/summary/start", {
       individual_id: pid,
       disease: getActiveDiseaseSlug(),
@@ -2062,7 +2048,7 @@ async function generateSummaryAndPlots() {
     setCurrentIndividualLabel(pid);
     updateExportButtons();
     const backendLogHtml = captureLoadingBubbleLogHtml();
-    removeSummaryLoadingBubble();
+    removeLoadingBubble();
     appendBackendLogBox(backendLogHtml);
     
     addMessage("bot", summary.simple_summary || summary.summary || "(No summary returned)", {
@@ -2073,10 +2059,13 @@ async function generateSummaryAndPlots() {
     setStatus($("chat-status"), "");
   } catch (e) {
     const backendLogHtml = captureLoadingBubbleLogHtml();
-    removeSummaryLoadingBubble();
+    removeLoadingBubble();
     appendBackendLogBox(backendLogHtml);
-    setStatus($("viz-status"), `Plots unavailable: ${e.message}`);
-    setStatus($("chat-status"), `Error: ${e.message}`);
+    addMessage("bot", e.message || "Summary generation failed.", {
+      individualId: pid,
+      showModel: false,
+    });
+    setStatus($("chat-status"), "");
   } finally {
     setLoading(false);
   }
@@ -2097,7 +2086,7 @@ async function sendFollowup() {
   $("send-btn").disabled = true;
   
   setStatus($("chat-status"), "");
-  showFollowupLoadingBubble(pid);
+  showLoadingBubble();
 
   try {
     const res = await runTaskStream("/api/chat/start", {
@@ -2125,7 +2114,7 @@ async function sendFollowup() {
       renderReferencesList(currentReferences);
     }
     const backendLogHtml = captureLoadingBubbleLogHtml();
-    removeSummaryLoadingBubble();
+    removeLoadingBubble();
     appendBackendLogBox(backendLogHtml);
     addMessage("bot", res.answer || "(No answer returned)", {
       individualId: pid,
@@ -2134,7 +2123,7 @@ async function sendFollowup() {
   } catch (e) {
     console.error(e);
     const backendLogHtml = captureLoadingBubbleLogHtml();
-    removeSummaryLoadingBubble();
+    removeLoadingBubble();
     appendBackendLogBox(backendLogHtml);
     addMessage("bot", `⚠️ Error: ${e.message}`, { individualId: pid, showModel: false });
   } finally {
@@ -2222,13 +2211,19 @@ function wireReferenceClicks() {
 // ----------------------------
 window.addEventListener("DOMContentLoaded", async () => {
   const params = dashboardUrlParams();
-  const initialIndividualId = params.get("individual_id") || "";
-  currentLanguage = params.get("language") === "ko" ? "ko" : "en";
+  const initialIndividualId = params.get("individual_id")
+    || readPreference(INDIVIDUAL_PREFERENCE_KEY, "");
+  const requestedLanguage = params.get("language");
+  currentLanguage = requestedLanguage === "ko" || requestedLanguage === "en"
+    ? requestedLanguage
+    : readPreference(LANGUAGE_PREFERENCE_KEY, "en");
+  savePreference(LANGUAGE_PREFERENCE_KEY, currentLanguage);
+  syncLanguageInUrl();
   currentDiseaseSlug = params.get("disease") || params.get("phenotype") || "breast_cancer";
   if (!initialIndividualId) {
     openLandingModal();
   }
-  applyTheme("light");
+  applyTheme(readPreference(THEME_PREFERENCE_KEY, "light"));
   updateUIText();
   installDashboardPlotResizeHandling();
   updateExportButtons();
@@ -2242,15 +2237,13 @@ window.addEventListener("DOMContentLoaded", async () => {
   if (initialIndividualId && selectIndividualById(initialIndividualId)) {
     commitIndividualSelection(initialIndividualId);
     closeLandingModal(true);
-    resetConversationState();
+    resetDashboardForIndividualChange();
     setStatus($("chat-status"), "");
     try {
       await loadPlotsForIndividual(initialIndividualId);
-      setStatus($("chat-status"), "");
     } catch (err) {
       console.error(err);
       setStatus($("viz-status"), `Plots unavailable: ${err.message}`);
-      setStatus($("chat-status"), `Error: ${err.message}`);
     }
   } else {
     if (initialIndividualId) {
@@ -2260,12 +2253,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   wireReferenceClicks();
   $("landing-change-btn").addEventListener("click", changeIndividual);
-  $("header-generate-btn")?.addEventListener("click", generateSummaryAndPlots);
+  $("header-generate-btn")?.addEventListener("click", generateSummary);
   $("send-btn").addEventListener("click", sendFollowup);
-  $("settings-menu-btn")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleSettingsMenu();
-  });
   $("export-menu-btn")?.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleExportMenu();
@@ -2329,11 +2318,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     individualSearch.addEventListener("input", filterIndividuals);
   }
 
-  document.querySelectorAll("[data-gene-count]").forEach((button) => {
-    button.addEventListener("click", () => {
-      setSummaryGeneCount(button.dataset.geneCount || "2");
+  const summaryGeneCount = $("summary-gene-count");
+  if (summaryGeneCount) {
+    summaryGeneCount.addEventListener("input", () => {
+      setSummaryGeneCount(summaryGeneCount.value || "2");
     });
-  });
+  }
 
   document.querySelectorAll("[data-language-option]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2343,6 +2333,14 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   $("language-toggle-top")?.addEventListener("click", toggleLanguage);
   $("theme-toggle-top")?.addEventListener("click", toggleTheme);
+  window.addEventListener("storage", (event) => {
+    if (event.key === LANGUAGE_PREFERENCE_KEY && event.newValue) {
+      applyLanguage(event.newValue);
+    }
+    if (event.key === THEME_PREFERENCE_KEY && event.newValue) {
+      applyTheme(event.newValue);
+    }
+  });
   $("landing-disclaimer-btn")?.addEventListener("click", toggleLandingDisclaimer);
   $("landing-cancel-btn")?.addEventListener("click", () => closeLandingModal());
 
@@ -2380,13 +2378,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   document.addEventListener("click", (e) => {
-    const wrap = document.querySelector(".settings-menu-wrap");
-    if (!wrap) return;
-    if (wrap.contains(e.target)) return;
-    closeSettingsMenu();
-  });
-
-  document.addEventListener("click", (e) => {
     const picker = $("landing-picker");
     const overlay = $("landing-overlay");
     if (!picker || !overlay?.classList.contains("is-open")) return;
@@ -2396,7 +2387,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
-    closeSettingsMenu();
     if ($("plot-overlay")?.classList.contains("is-open")) {
       closePlotOverlay();
       return;
