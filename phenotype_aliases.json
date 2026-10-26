@@ -214,6 +214,10 @@
       "congenital muscular dystrophy",
       "limb-girdle muscular dystrophy"
     ],
+    "myocardial infarction": [
+      "heart attack",
+      "mi"
+    ],
     "neurofibromatosis": [
       "neurofibromatosis type 1",
       "neurofibromatosis type 2",

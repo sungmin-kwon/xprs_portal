@@ -16,11 +16,16 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Internal meeting notes may contain private cohort aggregate statistics.
+docs/weekly-progress-*.md
+
 # Runtime state
 logs/*
 !logs/.gitkeep
 cache_s2/*
 !cache_s2/.gitkeep
+cache_literature/*
+!cache_literature/.gitkeep
 chroma/*
 !chroma/.gitkeep
 evaluation_responses/
@@ -33,6 +38,15 @@ data/*
 !data/README.md
 !data/demo/
 !data/demo/**
+
+# Controlled K-PREDICT/private cohort inputs must remain outside the public repository.
+# These patterns are defensive: production deployments should configure an
+# external data root rather than placing private material anywhere in this tree.
+private_data/
+data_private/
+*_cohort.RDS
+*_cohort.rds
+xprs_rare_findings_*.tsv
 
 # Large/derived R inputs and generated browser plot payloads
 r/*.RDS

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 from pydantic import ValidationError
+from starlette.requests import Request
 
 from agents.explanation import ExplanationAgent
 from routes.summary import summary_preview
@@ -36,6 +37,10 @@ class FakeExplanationAgent:
 
 
 class SummaryGeneSelectionTests(unittest.TestCase):
+    @staticmethod
+    def request():
+        return Request({"type": "http", "headers": []})
+
     def test_summary_request_defaults_to_two_genes(self):
         request = SummaryRequest(individual_id="HG00001")
         self.assertEqual(request.gene_count, 2)
@@ -56,10 +61,48 @@ class SummaryGeneSelectionTests(unittest.TestCase):
             ["GENE_A", "GENE_B", "GENE_C", "GENE_D"],
         )
 
+    def test_simple_summary_restores_compact_top_and_bottom_five_rankings(self):
+        agent = ExplanationAgent.__new__(ExplanationAgent)
+        top_rows = [
+            {
+                "gene": f"TOP_{index}",
+                "individual_contribution": 10.0 - index,
+                "population_rank": index,
+            }
+            for index in range(1, 7)
+        ]
+        bottom_rows = [
+            {
+                "gene": f"BOTTOM_{index}",
+                "individual_contribution": -10.0 + index,
+                "population_rank": index,
+            }
+            for index in range(1, 7)
+        ]
+
+        summary, payload = agent._build_simple_summary(
+            pid="HG00001",
+            density_profile={"percentile": 75.0, "prs_value": 1.25},
+            top_rows=top_rows,
+            bottom_rows=bottom_rows,
+            gene_sections=[],
+            language="en",
+        )
+
+        self.assertIn("Gene Contribution Rankings", summary)
+        self.assertIn("Top 5 (risk-increasing)", summary)
+        self.assertIn("Bottom 5 (risk-lowering)", summary)
+        self.assertIn("TOP_5", summary)
+        self.assertIn("BOTTOM_5", summary)
+        self.assertNotIn("TOP_6", summary)
+        self.assertNotIn("BOTTOM_6", summary)
+        self.assertEqual(len(payload["gene_rankings"]["top"]), 5)
+        self.assertEqual(len(payload["gene_rankings"]["bottom"]), 5)
+
     def test_preview_returns_the_same_top_gene_count(self):
         request = SummaryRequest(individual_id="HG00001", gene_count=3)
         with patch("routes.summary.get_expl_agent", return_value=FakeExplanationAgent()):
-            result = summary_preview(request)
+            result = summary_preview(request, self.request())
 
         self.assertEqual(result["genes"], ["GENE_A", "GENE_B", "GENE_C"])
         self.assertEqual(result["gene_count"], 3)

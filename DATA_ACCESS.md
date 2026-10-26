@@ -1,6 +1,6 @@
 # Data access
 
-XPRS Portal supports two data profiles. Neither profile contains KFDA cohort
+XPRS Portal supports two data profiles. Neither profile contains K-PREDICT cohort
 data.
 
 ## Bundled public demonstration
@@ -65,3 +65,28 @@ A versioned release/archive is preferred because it keeps ordinary source-code
 clones small and can provide one stable checksum and citation for the complete
 bundle. Git LFS remains technically possible, but it should not be enabled
 until the public redistribution decision and expected bandwidth are settled.
+
+## Private K-PREDICT deployments
+
+K-PREDICT data are not a third downloadable repository profile. They may
+contain reidentifiable individual-level genetic information, including disease
+scores, gene contributions, and rare-variant findings. They must not be added
+to Git, Git LFS, GitHub Releases, the public demo bundle, or a publicly served
+static directory.
+
+A controlled deployment must use an external private data root, server-side
+authorization on every K-PREDICT endpoint, pseudonymous browser-facing identifiers,
+and an explicit policy for logs, generated reports, retention, and external API
+use. Aggregate manifests may be published only after their disclosure has been
+reviewed separately from the source data.
+
+The implemented hosted policy permits explanation generation only through an
+OpenRouter route that requires Zero Data Retention and denies provider data
+collection on every request. K-PREDICT prompts are data-minimized: they may
+include the active disease, selected gene symbols and public literature, but do
+not include the pseudonymous IID, sex, raw or percentile PRS, exact contribution
+scores, complete contribution vectors, rare-variant records, rsIDs, HGVS strings,
+or genotypes. K-PREDICT sessions remain in process memory and are not written to
+the session-log directory. This technical policy does not replace institutional
+approval, the upstream data-use agreement, or review of OpenRouter and the
+selected model provider as data processors.

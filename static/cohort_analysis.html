@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>K-PREDICT Cohort Analysis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/cohort_analysis.css?v=4" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="topbar-heading">
+        <a class="brand" href="/?cohort=kpredict" aria-label="XPRS disease overview">
+          <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
+        </a>
+        <div>
+          <p class="eyebrow" data-i18n="sectionLabel">K-PREDICT · Population view</p>
+          <h1 data-i18n="pageTitle">Cohort Analysis</h1>
+        </div>
+      </div>
+      <nav class="topbar-actions" aria-label="Primary navigation">
+        <a class="nav-link" href="/?cohort=kpredict">
+          <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+          <span data-i18n="overview">Disease overview</span>
+        </a>
+        <a class="nav-link" href="/about">
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          <span data-i18n="about">About XPRS</span>
+        </a>
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <button id="language-toggle" class="icon-button language-button" type="button" aria-label="Switch to Korean" title="Switch to Korean">
+          <span class="material-symbols-outlined" aria-hidden="true">language</span>
+          <span id="language-label" aria-hidden="true">EN</span>
+        </button>
+        <button id="theme-toggle" class="icon-button" type="button" aria-label="Dark mode" title="Dark mode">
+          <span id="theme-icon" aria-hidden="true">☾</span>
+        </button>
+      </nav>
+    </header>
+
+    <main>
+      <section class="intro-card">
+        <div>
+          <p class="eyebrow" data-i18n="introEyebrow">COMMON + RARE VARIANT EVIDENCE</p>
+          <h2 data-i18n="introTitle">PRS and Rare-Variant Cohort Analysis</h2>
+          <p class="intro-question" data-i18n="introQuestion">Do common- and rare-variant signals occur in the same individuals?</p>
+          <p class="intro-scope" data-i18n="introBody">For the selected disease, this page compares PRS percentiles with rare-variant findings that the supplied K-PREDICT data explicitly assigned to that disease panel.</p>
+          <div class="intro-definitions">
+            <p><strong data-i18n="prsDefinitionLabel">PRS percentile</strong><span data-i18n="prsDefinition"> summarizes common-variant signal relative to applicable individuals in this cohort.</span></p>
+            <p><strong data-i18n="alertDefinitionLabel">Panel alert</strong><span data-i18n="alertDefinition"> is a supplied finding that may act with one copy and was designated for prominent review.</span></p>
+            <p><strong data-i18n="carrierDefinitionLabel">Carrier only</strong><span data-i18n="carrierDefinition"> is a supplied recessive heterozygous finding and is not classified as an alert.</span></p>
+          </div>
+          <p class="intro-boundary" data-i18n="introBoundary">The comparison is descriptive. It does not combine the two evidence types, establish causation, or provide a diagnosis.</p>
+          <details class="panel-source-note">
+            <summary data-i18n="panelSourceQuestion">How were disease-panel findings defined?</summary>
+            <p id="panel-source-answer">The supplied pipeline mapped pathogenic or likely pathogenic findings to diseases by gene membership in Genomics England PanelApp GREEN panels. PanelApp and ClinGen modes of inheritance were then used to classify each finding as an alert or carrier. The portal preserves those supplied assignments and does not infer them from ClinVar condition text.</p>
+          </details>
+        </div>
+        <span class="cohort-pill">
+          <span class="material-symbols-outlined" aria-hidden="true">lock</span>
+          <span data-i18n="privateCohort">K-PREDICT (Private)</span>
+        </span>
+      </section>
+
+      <section class="filter-card" aria-labelledby="filters-heading">
+        <div class="filter-heading">
+          <h2 id="filters-heading" data-i18n="filters">Analysis filters</h2>
+          <button id="reset-filters" class="text-button" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
+            <span data-i18n="reset">Reset</span>
+          </button>
+        </div>
+        <form id="analysis-form" class="filter-grid">
+          <div class="filter-mode filter-mode--immediate">
+            <label>
+              <span data-i18n="disease">Disease</span>
+              <select id="disease-filter"></select>
+            </label>
+          </div>
+          <div id="staged-filter-group" class="filter-mode filter-mode--staged">
+            <div class="staged-filter-fields">
+              <label>
+                <span data-i18n="rareStatus">Rare-variant status</span>
+                <select id="status-filter">
+                  <option value="all" data-i18n="allStatuses">All statuses</option>
+                  <option value="alert" data-i18n="panelAlert">Panel alert</option>
+                  <option value="carrier" data-i18n="carrierOnly">Carrier only</option>
+                  <option value="none" data-i18n="noPanelFinding">No panel finding</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="percentileBand">PRS percentile band</span>
+                <select id="percentile-filter">
+                  <option value="all" data-i18n="allPercentiles">All percentiles</option>
+                  <option value="top_5" data-i18n="top5">Top 5%</option>
+                  <option value="top_10" data-i18n="top10">Top 10%</option>
+                  <option value="top_25" data-i18n="top25">Top 25%</option>
+                  <option value="bottom_25" data-i18n="bottom25">Bottom 25%</option>
+                  <option value="bottom_10" data-i18n="bottom10">Bottom 10%</option>
+                  <option value="bottom_5" data-i18n="bottom5">Bottom 5%</option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="gene">Gene with a panel finding</span>
+                <select id="gene-filter"><option value="" data-i18n="allGenes">All genes</option></select>
+              </label>
+              <label>
+                <span data-i18n="consequence">Molecular consequence</span>
+                <select id="consequence-filter"><option value="" data-i18n="allConsequences">All consequences</option></select>
+              </label>
+              <button id="apply-filters" class="primary-button" type="submit">
+                <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+                <span data-i18n="apply">Apply filters</span>
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <div id="page-status" class="page-status" role="status" aria-live="polite"></div>
+
+      <section id="analysis-content" hidden>
+        <section class="panel distribution-panel" aria-labelledby="distribution-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow" data-i18n="distributionEyebrow">COHORT DISTRIBUTION</p>
+              <h2 id="distribution-title" data-i18n="distributionTitle">PRS percentile by rare-variant status</h2>
+            </div>
+            <p id="distribution-context" class="panel-context"></p>
+          </div>
+          <div class="distribution-layout">
+            <div id="distribution-plot" class="distribution-plot"></div>
+            <aside class="cohort-summary" aria-labelledby="cohort-summary-title">
+              <h3 id="cohort-summary-title" data-i18n="cohortSummary">Cohort summary</h3>
+              <dl>
+                <div><dt data-i18n="applicable">Applicable individuals</dt><dd id="kpi-applicable">—</dd></div>
+                <div class="summary-alert"><dt data-i18n="alerts">Individuals with a panel alert</dt><dd id="kpi-alerts">—</dd></div>
+                <div class="summary-carrier"><dt data-i18n="carriers">Carrier-only individuals</dt><dd id="kpi-carriers">—</dd></div>
+                <div><dt data-i18n="noPanelFindingIndividuals">Individuals without a panel finding</dt><dd id="kpi-none">—</dd></div>
+                <div class="summary-overlap"><dt data-i18n="overlap">Alert individuals in the top 10% PRS</dt><dd id="kpi-overlap">—</dd></div>
+              </dl>
+              <p data-i18n="summaryScope">Counts use distinct applicable individuals and only the selected disease's supplied panel assignments.</p>
+            </aside>
+          </div>
+          <p class="method-note"><strong data-i18n="howToRead">How to read the plot:</strong> <span data-i18n="distributionNote">Each curve is the cumulative PRS-percentile distribution for one rare-variant group. A curve lying farther to the right indicates generally higher PRS percentiles. Small alert or carrier groups should be interpreted cautiously.</span></p>
+        </section>
+
+        <div class="detail-grid">
+          <section class="panel" aria-labelledby="gene-table-title">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow" data-i18n="geneEyebrow">DISEASE-PANEL FINDINGS</p>
+                <h2 id="gene-table-title" data-i18n="geneTableTitle">Genes with panel findings</h2>
+              </div>
+            </div>
+            <p class="table-note" data-i18n="geneTableNote">These are genes observed in the supplied disease-panel findings after applying the filters—not a complete list of genes in the disease panel.</p>
+            <div class="table-wrap">
+              <table>
+                <thead><tr>
+                  <th data-i18n="geneHeader">Gene</th>
+                  <th data-i18n="individualsHeader">Individuals</th>
+                  <th data-i18n="alertsHeader">Alerts</th>
+                  <th data-i18n="carriersHeader">Carriers</th>
+                  <th data-i18n="medianHeader">Median PRS percentile</th>
+                  <th data-i18n="top10Header">Top 10%</th>
+                </tr></thead>
+                <tbody id="gene-table-body"></tbody>
+              </table>
+            </div>
+            <div id="gene-empty" class="empty-message" hidden data-i18n="noGenes">No disease-panel genes match these filters.</div>
+          </section>
+
+          <section class="panel" aria-labelledby="individual-table-title">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow" data-i18n="drilldownEyebrow">FILTERED DRILL-DOWN</p>
+                <h2 id="individual-table-title" data-i18n="individualTableTitle">Matching individuals</h2>
+              </div>
+              <p id="individual-count" class="panel-context"></p>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr>
+                  <th data-i18n="individualHeader">Individual</th>
+                  <th data-i18n="percentileHeader">PRS percentile</th>
+                  <th data-i18n="statusHeader">Rare-variant status</th>
+                  <th data-i18n="genesHeader">Panel genes</th>
+                </tr></thead>
+                <tbody id="individual-table-body"></tbody>
+              </table>
+            </div>
+            <div id="individual-empty" class="empty-message" hidden data-i18n="noIndividuals">No individuals match these filters.</div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/cohort_analysis.js?v=6"></script>
+</body>
+</html>

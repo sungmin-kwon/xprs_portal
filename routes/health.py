@@ -1,5 +1,6 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
+from routes.admin_documents import _require_admin_access
 from runtime_agents import get_rag_agent, get_s2_agent
 from schemas import SemanticScholarHealthResponse
 
@@ -17,7 +18,9 @@ def rag_health():
 
 
 @router.get("/api/health/semanticscholar", response_model=SemanticScholarHealthResponse)
-def semanticscholar_health(probe: bool = Query(True)):
+def semanticscholar_health(request: Request, probe: bool = Query(False)):
+    if probe:
+        _require_admin_access(request)
     s2_agent = get_s2_agent()
     if probe:
         return s2_agent.probe_health()

@@ -931,6 +931,22 @@ body {
     text-align: center;
   }
 
+  .summary-gene-ranking-table {
+    table-layout: fixed;
+  }
+
+  .summary-gene-ranking-table td {
+    white-space: nowrap;
+  }
+
+  .summary-gene-score {
+    float: right;
+    margin-left: 0.6rem;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+  }
+
   .chat-ref-link,
   .chat-pdf-link {
     color: var(--accent-color);
@@ -1745,14 +1761,162 @@ body {
     border: 1px dashed rgba(122, 138, 153, 0.2);
   }
 
-  .viz-empty-state {
+.viz-empty-state {
     display: grid;
     place-items: center;
     width: 100%;
     height: 100%;
     min-height: 170px;
     color: rgba(88, 108, 129, 0.22);
-  }
+}
+
+.rare-finding-summary {
+  padding: 10px 12px;
+  color: var(--muted, #66727d);
+  font-size: 0.82rem;
+}
+
+#rare-variant-content {
+  display: block;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.rare-finding-group {
+  padding: 0 12px 12px;
+}
+
+.rare-finding-group h4 {
+  margin: 8px 0;
+  font-size: 0.86rem;
+}
+
+.rare-finding-group h4 span {
+  color: var(--muted, #66727d);
+  font-weight: 500;
+}
+
+.rare-finding-subheading {
+  margin: 2px 12px 7px;
+  color: var(--ink, #27313a);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.rare-finding-subheading span {
+  color: var(--muted, #66727d);
+  font-weight: 500;
+}
+
+.rare-finding-empty,
+.rare-finding-more {
+  margin: 7px 0;
+  color: var(--muted, #66727d);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.rare-finding-collapsible {
+  margin: 7px 12px;
+  border: 1px solid rgba(126, 142, 160, 0.22);
+  border-radius: 9px;
+  background: rgba(248, 251, 253, 0.72);
+  overflow: hidden;
+}
+
+.rare-finding-collapsible summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--ink, #27313a);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.rare-finding-collapsible summary small {
+  color: var(--muted, #66727d);
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-align: right;
+}
+
+.rare-finding-collapsible[open] summary {
+  border-bottom: 1px solid rgba(126, 142, 160, 0.18);
+}
+
+.rare-finding-collapsible__body {
+  padding: 0 9px 8px;
+}
+
+.rare-finding-collapsible--unassigned {
+  margin-top: 10px;
+}
+
+.rare-finding-item {
+  border: 1px solid rgba(126, 142, 160, 0.25);
+  border-radius: 8px;
+  margin: 7px 0;
+  padding: 9px 10px;
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.rare-finding-item__heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 3px;
+}
+
+.rare-finding-item__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rare-finding-item__heading span,
+.rare-finding-item__condition {
+  color: var(--muted, #66727d);
+}
+
+.rare-finding-item__variant {
+  margin-bottom: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.clinvar-variant-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  color: var(--primary, #27609d);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.clinvar-variant-link:hover,
+.clinvar-variant-link:focus-visible {
+  text-decoration: underline;
+}
+
+.clinvar-variant-link .material-symbols-outlined {
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.clinvar-variant-link__source {
+  flex: 0 0 auto;
+  font-family: Inter, sans-serif;
+  font-size: 0.68rem;
+  font-weight: 800;
+}
 
   .viz-empty-state .material-symbols-outlined {
     font-size: 84px;
@@ -2732,6 +2896,13 @@ body {
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+  }
+
+  .privacy-disclosure {
+    max-width: 430px;
+    color: var(--muted);
+    font-size: 0.68rem;
+    line-height: 1.35;
   }
 
   .generation-model-select {
@@ -4044,20 +4215,16 @@ body {
     color: var(--primary);
   }
 
-  /* Keep real plots legible when viewport height is reduced by a small screen
-     or browser zoom. The visualization column scrolls before its rows collapse. */
+  /* Keep all three visualization panes visible together on desktop. Each card
+     receives an equal share of the column; content that can grow (currently
+     the rare-variant list) scrolls inside its own pane. */
   .viz-body {
-    grid-template-rows:
-      minmax(250px, 1fr)
-      minmax(250px, 1fr)
-      minmax(180px, 0.7fr);
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    scrollbar-gutter: stable;
+    grid-template-rows: repeat(3, minmax(0, 1fr));
+    overflow: hidden;
   }
 
   .plotly-box {
-    min-height: 180px;
+    min-height: 0;
   }
 
   .plotly-box--expanded {
@@ -4109,6 +4276,12 @@ body {
     .viz-card--placeholder {
       grid-column: 1 / -1;
       min-height: 220px;
+    }
+
+    #rare-variant-card {
+      grid-column: 1 / -1;
+      height: min(520px, 70vh);
+      min-height: 320px;
     }
 
     .panel-chat-container {
@@ -4180,3 +4353,489 @@ body {
       padding: 1rem;
     }
   }
+
+  /* Integrated common/rare evidence is opened from the density card so the
+     three primary visualization panes keep their equal-height layout. */
+  .evidence-summary-btn:not([hidden]) {
+    display: inline-flex;
+  }
+
+  .evidence-summary-btn {
+    width: auto;
+    padding: 0 0.65rem;
+    gap: 0.28rem;
+    font: inherit;
+    font-size: 0.68rem;
+    font-weight: 750;
+  }
+
+  .evidence-overlay__dialog {
+    width: min(1120px, calc(100vw - 3rem));
+    height: auto;
+    max-height: min(860px, calc(100vh - 3rem));
+  }
+
+  .evidence-overlay__header {
+    align-items: flex-start;
+  }
+
+  .evidence-overlay__eyebrow {
+    margin-bottom: 0.32rem;
+    color: var(--primary);
+    font-size: 0.66rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .evidence-overlay__header h2 {
+    color: var(--ink);
+    font-size: 1.05rem;
+    letter-spacing: 0.02em;
+    text-transform: none;
+  }
+
+  .evidence-overlay__body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1.35rem;
+    background: #f7fbfe;
+  }
+
+  .evidence-summary {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .evidence-context {
+    color: var(--ink-soft);
+    font-size: 0.8rem;
+    font-weight: 700;
+  }
+
+  .evidence-layer-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
+    gap: 1rem;
+    align-items: stretch;
+  }
+
+  .evidence-layer {
+    min-width: 0;
+    padding: 1.1rem;
+    border: 1px solid rgba(113, 124, 130, 0.14);
+    border-radius: 18px;
+    background: #ffffff;
+  }
+
+  .evidence-layer--common {
+    border-top: 3px solid #2770a8;
+  }
+
+  .evidence-layer--rare {
+    border-top: 3px solid #8d63a7;
+  }
+
+  .evidence-layer__heading {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    margin-bottom: 1rem;
+  }
+
+  .evidence-layer__heading > .material-symbols-outlined {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(39, 112, 168, 0.1);
+    color: #2770a8;
+    font-size: 1.15rem;
+  }
+
+  .evidence-layer--rare .evidence-layer__heading > .material-symbols-outlined {
+    background: rgba(141, 99, 167, 0.11);
+    color: #7a4e97;
+  }
+
+  .evidence-layer__heading h3,
+  .evidence-layer__heading p,
+  .evidence-gene-groups h4,
+  .evidence-boundary p {
+    margin: 0;
+  }
+
+  .evidence-layer__heading h3 {
+    color: var(--ink);
+    font-family: "Manrope", sans-serif;
+    font-size: 0.95rem;
+  }
+
+  .evidence-layer__heading p {
+    margin-top: 0.18rem;
+    color: var(--ink-soft);
+    font-size: 0.75rem;
+    line-height: 1.4;
+  }
+
+  .evidence-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+    margin-bottom: 1rem;
+  }
+
+  .evidence-metric {
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.75rem 0.85rem;
+    border-radius: 13px;
+    background: #f1f6fa;
+  }
+
+  .evidence-metric span {
+    color: var(--ink-soft);
+    font-size: 0.7rem;
+  }
+
+  .evidence-metric strong {
+    color: var(--ink);
+    font-family: "Manrope", sans-serif;
+    font-size: 1.15rem;
+  }
+
+  .evidence-gene-groups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.7rem;
+  }
+
+  .evidence-gene-groups > div {
+    min-width: 0;
+    padding: 0.75rem;
+    border: 1px solid rgba(113, 124, 130, 0.12);
+    border-radius: 13px;
+  }
+
+  .evidence-gene-groups h4 {
+    min-height: 2.2em;
+    color: var(--ink-soft);
+    font-size: 0.71rem;
+    line-height: 1.35;
+  }
+
+  .evidence-gene-list {
+    display: grid;
+    gap: 0.4rem;
+    margin-top: 0.55rem;
+  }
+
+  .evidence-gene-row,
+  .evidence-rare-row__heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+
+  .evidence-gene-row strong,
+  .evidence-rare-row strong {
+    overflow-wrap: anywhere;
+    color: var(--ink);
+    font-size: 0.8rem;
+  }
+
+  .evidence-score,
+  .evidence-call {
+    flex: 0 0 auto;
+    padding: 0.18rem 0.46rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 800;
+  }
+
+  .evidence-score.is-increasing,
+  .evidence-call.is-alert {
+    background: #fee9e7;
+    color: #b43b35;
+  }
+
+  .evidence-score.is-lowering {
+    background: #e6f5ec;
+    color: #24774c;
+  }
+
+  .evidence-call.is-carrier {
+    background: #fff3da;
+    color: #92640d;
+  }
+
+  .evidence-normalization {
+    margin-top: 0.75rem;
+    color: var(--ink-faint);
+    font-size: 0.66rem;
+  }
+
+  .evidence-rare-counts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .evidence-rare-list {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .evidence-rare-row {
+    padding: 0.72rem;
+    border: 1px solid rgba(113, 124, 130, 0.12);
+    border-radius: 13px;
+    background: #fbfdff;
+  }
+
+  .evidence-rare-row__variant {
+    margin-top: 0.3rem;
+    overflow-wrap: anywhere;
+    color: var(--ink-soft);
+    font-size: 0.72rem;
+  }
+
+  .evidence-rare-row small {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--ink-faint);
+    font-size: 0.65rem;
+    line-height: 1.35;
+  }
+
+  .evidence-empty {
+    margin: 0.7rem 0 0;
+    color: var(--ink-soft);
+    font-size: 0.76rem;
+    line-height: 1.45;
+  }
+
+  .evidence-boundary {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.75rem 0.85rem;
+    border-radius: 13px;
+    background: rgba(39, 96, 157, 0.07);
+    color: var(--ink-soft);
+  }
+
+  .evidence-boundary .material-symbols-outlined {
+    color: var(--primary);
+    font-size: 1rem;
+  }
+
+  .evidence-boundary p {
+    font-size: 0.72rem;
+    line-height: 1.45;
+  }
+
+  body.dark-theme .evidence-overlay__body {
+    background: #111923;
+  }
+
+  body.dark-theme .evidence-layer,
+  body.dark-theme .evidence-rare-row {
+    border-color: rgba(148, 163, 184, 0.18);
+    background: #1a2635;
+  }
+
+  body.dark-theme .evidence-metric,
+  body.dark-theme .evidence-boundary {
+    background: rgba(79, 111, 143, 0.16);
+  }
+
+  body.dark-theme .evidence-gene-groups > div {
+    border-color: rgba(148, 163, 184, 0.18);
+  }
+
+  @media (max-width: 760px) {
+    .evidence-overlay {
+      padding: 0.75rem;
+    }
+
+    .evidence-overlay__dialog {
+      width: calc(100vw - 1.5rem);
+      max-height: calc(100vh - 1.5rem);
+    }
+
+    .evidence-layer-grid,
+    .evidence-gene-groups {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .evidence-overlay__body {
+      padding: 0.85rem;
+    }
+  }
+
+/* Shared top navigation --------------------------------------------------- */
+body > .content-wrapper {
+  width: 100%;
+}
+
+.header-title-block {
+  flex: 1 1 auto;
+}
+
+.header-context-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.global-nav-link,
+.cohort-context-pill {
+  min-height: 36px;
+  padding: 0 0.68rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--primary-color);
+  background: var(--header-bg);
+  text-decoration: none;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.global-nav-link:hover {
+  border-color: rgba(52, 152, 219, 0.45);
+  color: #236fa1;
+  background: #f4f9fd;
+}
+
+.global-nav-link--disabled-icon {
+  min-width: 36px;
+  justify-content: center;
+  padding-inline: 0.5rem;
+  color: var(--muted);
+  background: transparent;
+  cursor: default;
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.global-nav-link--disabled-icon:hover {
+  border-color: var(--border);
+  color: var(--muted);
+  background: transparent;
+}
+
+.global-nav-link .material-symbols-outlined,
+.cohort-context-pill .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.global-nav-link--back {
+  border-color: transparent;
+  padding-left: 0;
+  color: #2d739f;
+  background: transparent;
+}
+
+.global-nav-link--back:hover {
+  border-color: transparent;
+  background: transparent;
+  color: #18577f;
+}
+
+.cohort-context-pill {
+  color: var(--muted);
+  background: #f5f8fb;
+}
+
+.header-session-divider {
+  width: 1px;
+  height: 27px;
+  margin: 0 0.05rem;
+  background: var(--border);
+}
+
+body.dark-theme .global-nav-link,
+body.dark-theme .cohort-context-pill {
+  border-color: rgba(148, 163, 184, 0.25);
+  color: #d7e1ec;
+  background: #1a2635;
+}
+
+body.dark-theme .global-nav-link:hover {
+  color: #a8d5f3;
+  background: #223346;
+}
+
+body.dark-theme .global-nav-link--disabled-icon,
+body.dark-theme .global-nav-link--disabled-icon:hover {
+  border-color: rgba(148, 163, 184, 0.18);
+  color: #8290a0;
+  background: transparent;
+}
+
+body.dark-theme .global-nav-link--back {
+  border-color: transparent;
+  color: #8cccf3;
+  background: transparent;
+}
+
+body.dark-theme .header-session-divider {
+  background: rgba(148, 163, 184, 0.25);
+}
+
+@media (max-width: 1280px) {
+  .global-nav-link__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+@media (max-width: 920px) {
+  .simple-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-session-bar {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .header-session-divider {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .header-inner {
+    padding: 0.75rem;
+  }
+
+  .header-context-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  h1 {
+    max-width: 100%;
+    white-space: normal;
+  }
+}

@@ -37,14 +37,6 @@ def _paragraph_text(
     latin_font_name: str | None = None,
 ) -> str:
     raw = str(text or "").strip()
-    raw = (
-        raw.replace("‐", "-")
-        .replace("‑", "-")
-        .replace("‒", "-")
-        .replace("–", "-")
-        .replace("—", "-")
-        .replace("−", "-")
-    )
     raw = re.sub(r"\*\*(.*?)\*\*", r"\1", raw)
 
     if not cjk_font_name and not latin_font_name:
@@ -95,6 +87,11 @@ _BUNDLED_FONTS_DIR = _REPO_ROOT / "assets" / "fonts"
 # Each tuple: (regular_path, bold_path, registered_family_name).
 _KOREAN_FONT_CANDIDATES: list[tuple[Path, Path, str]] = [
     (
+        _BUNDLED_FONTS_DIR / "NotoSansKR-Regular.ttf",
+        _BUNDLED_FONTS_DIR / "NotoSansKR-Bold.ttf",
+        "XPRSNotoSansKR",
+    ),
+    (
         _BUNDLED_FONTS_DIR / "NanumGothic.ttf",
         _BUNDLED_FONTS_DIR / "NanumGothicBold.ttf",
         "XPRSNanumGothic",
@@ -131,6 +128,13 @@ def _register_korean_ttf_family() -> tuple[str, str] | None:
         bold_name = f"{family}-Bold"
         pdfmetrics.registerFont(TTFont(family, str(regular_path)))
         pdfmetrics.registerFont(TTFont(bold_name, str(bold_path)))
+        pdfmetrics.registerFontFamily(
+            family,
+            normal=family,
+            bold=bold_name,
+            italic=family,
+            boldItalic=bold_name,
+        )
         return family, bold_name
     return None
 
@@ -160,18 +164,28 @@ def resolve_fonts(language: str) -> FontConfig:
             pdfmetrics.registerFont(TTFont("XPRSDejaVuSans-Oblique", str(_DEJAVU_OBLIQUE)))
 
     if language.startswith("ko"):
-        if dejavu_ok:
-            latin_inline = "XPRSDejaVuSans"
-            latin_inline_bold = "XPRSDejaVuSans-Bold"
-            if _DEJAVU_OBLIQUE.exists():
-                italic = "XPRSDejaVuSans-Oblique"
         korean_pair = _register_korean_ttf_family()
         if korean_pair is not None:
             regular, bold = korean_pair
-            cjk = regular
+            # The bundled Korean family contains Hangul, Latin, Greek, and
+            # common mathematical symbols. Let ParagraphStyle select the
+            # regular or true bold face for the entire run; per-script font
+            # wrappers would otherwise force Hangul headings back to regular.
+            cjk = None
+            latin_inline = None
+            latin_inline_bold = None
+            if _DEJAVU_OBLIQUE.exists():
+                italic = "XPRSDejaVuSans-Oblique"
+            else:
+                italic = regular
         else:
             # Last-resort CID fallback. No bold variant — visual hierarchy
             # in headings will be reduced to color/size only.
+            if dejavu_ok:
+                latin_inline = "XPRSDejaVuSans"
+                latin_inline_bold = "XPRSDejaVuSans-Bold"
+                if _DEJAVU_OBLIQUE.exists():
+                    italic = "XPRSDejaVuSans-Oblique"
             pdfmetrics.registerFont(UnicodeCIDFont("HYGothic-Medium"))
             regular = bold = cjk = "HYGothic-Medium"
     elif dejavu_ok:
@@ -540,14 +554,23 @@ def build_pdf_report(
 
     for section in report.get("gene_sections") or []:
         section_titles = section.get("titles") or {}
+        disease_relevance = section.get("disease_relevance")
+        if disease_relevance is None:
+            # Read reports created before the disease-neutral schema revision.
+            disease_relevance = section.get("breast_cancer_relevance")
+        disease_relevance_title = (
+            section_titles.get("disease_relevance")
+            or section_titles.get("breast_cancer_relevance")
+            or "Disease Relevance"
+        )
         appended_heading = False
-        for sub_title, key in [
-            (section_titles.get("why_it_matters") or "Why It Matters", "why_it_matters"),
-            (section_titles.get("breast_cancer_relevance") or "Breast Cancer Relevance", "breast_cancer_relevance"),
-            (section_titles.get("clinical_meaning") or "Potential Clinical Meaning", "clinical_meaning"),
+        for sub_title, value in [
+            (section_titles.get("why_it_matters") or "Why It Matters", section.get("why_it_matters")),
+            (disease_relevance_title, disease_relevance),
+            (section_titles.get("clinical_meaning") or "Potential Clinical Meaning", section.get("clinical_meaning")),
         ]:
-            if section.get(key):
-                body_paras = [p(paragraph, body_style) for paragraph in re.split(r"\n\s*\n", str(section.get(key) or "").strip()) if paragraph.strip()]
+            if value:
+                body_paras = [p(paragraph, body_style) for paragraph in re.split(r"\n\s*\n", str(value or "").strip()) if paragraph.strip()]
                 heading_para = p(sub_title, subheading_style)
                 if not appended_heading:
                     gene_heading_flowables = heading_with_rule(section.get("gene") or "Gene")

@@ -36,18 +36,23 @@ COHORT_REGISTRY: dict[str, CohortConfig] = {
         access="public",
         data_available=True,
     ),
-    "kfda": CohortConfig(
-        slug="kfda",
-        name="KFDA",
+    "kpredict": CohortConfig(
+        slug="kpredict",
+        name="K-PREDICT",
         access="private",
         data_available=False,
-        unavailable_reason="KFDA cohort data are private and are not configured in this deployment.",
+        unavailable_reason="K-PREDICT data are available only in a configured private deployment.",
     ),
+}
+
+COHORT_ALIASES = {
+    "kfda": "kpredict",
 }
 
 
 def get_cohort_config(slug: str | None = None) -> CohortConfig:
     normalized = (slug or DEFAULT_COHORT_SLUG).strip() or DEFAULT_COHORT_SLUG
+    normalized = COHORT_ALIASES.get(normalized, normalized)
     if normalized not in COHORT_REGISTRY:
         valid = ", ".join(COHORT_REGISTRY)
         raise ValueError(f"Unknown cohort '{normalized}'. Expected one of: {valid}.")

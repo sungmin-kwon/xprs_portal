@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import contextmanager
 
 import pandas as pd
 
@@ -32,6 +33,14 @@ class FakeS2:
 class EmptyEvidenceAgent:
     s2 = FakeS2()
 
+    def __init__(self):
+        self.batch_entries = 0
+
+    @contextmanager
+    def interactive_request_batch(self, _progress_callback=None):
+        self.batch_entries += 1
+        yield
+
     def retrieve_gene_context(self, _gene, top_k=10, progress_callback=None):
         return [], [], "RAG_DENSE_PRIMARY_DISEASE"
 
@@ -50,10 +59,11 @@ class CountingLLM:
 class SummaryEvidenceGuardTests(unittest.TestCase):
     def test_summary_stops_before_llm_drafting_when_no_citable_evidence_exists(self):
         llm = CountingLLM()
+        evidence = EmptyEvidenceAgent()
         agent = ExplanationAgent(
             llm=llm,
             gene_agent=FakeGeneAgent(),
-            evidence_agent=EmptyEvidenceAgent(),
+            evidence_agent=evidence,
             ot_agent=None,
         )
         progress = []
@@ -66,6 +76,7 @@ class SummaryEvidenceGuardTests(unittest.TestCase):
             )
 
         self.assertEqual(llm.calls, 0)
+        self.assertEqual(evidence.batch_entries, 1)
         self.assertIn("rate-limiting", str(raised.exception))
         self.assertIn("did not generate an uncited interpretation", str(raised.exception))
         self.assertTrue(any("Summary stopped" in message for message in progress))

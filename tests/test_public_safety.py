@@ -13,6 +13,7 @@ from routes.admin_documents import (
     admin_documents_page,
     establish_admin_access,
 )
+from routes.health import semanticscholar_health
 
 
 def request_with_admin_token(token: str | None = None, cookie: str | None = None) -> Request:
@@ -68,6 +69,12 @@ class AdminAccessTests(unittest.TestCase):
     def test_admin_cookie_authenticates_subsequent_requests(self):
         with patch.dict(os.environ, {"XPRS_ADMIN_TOKEN": "test-admin-token"}):
             _require_admin_access(request_with_admin_token(cookie="test-admin-token"))
+
+    def test_active_semantic_scholar_probe_requires_admin_access(self):
+        with patch.dict(os.environ, {"XPRS_ADMIN_TOKEN": "test-admin-token"}):
+            with self.assertRaises(HTTPException) as raised:
+                semanticscholar_health(request_with_admin_token(), probe=True)
+        self.assertEqual(raised.exception.status_code, 404)
 
 
 class EphemeralSessionTests(unittest.TestCase):

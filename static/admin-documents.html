@@ -4,100 +4,74 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow, noarchive" />
-  <title>XPRS Literature Index</title>
+  <title>XPRS Retrieval Admin</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/admin-documents.css?v=3" />
-  <script src="/static/admin-documents.js?v=3" defer></script>
+  <link rel="stylesheet" href="/static/admin-documents.css?v=15" />
+  <script src="/static/admin-documents.js?v=15" defer></script>
 </head>
 <body>
-  <aside class="gene-panel" aria-label="Indexed genes">
-    <div class="brand-row">
-      <img src="/static/favicon.svg" alt="" />
-      <div>
-        <span class="eyebrow">XPRS admin</span>
-        <strong>Literature index</strong>
-      </div>
-    </div>
-
+  <aside class="gene-panel" aria-label="Literature index navigation">
+    <div class="brand-row"><img src="/static/favicon.svg" alt="" /><div><span class="eyebrow">XPRS admin</span><strong>Retrieval index</strong></div></div>
+    <nav class="view-nav" aria-label="Admin views">
+      <button type="button" data-view="coverage" class="is-active"><span>Coverage</span><small>Query and index state</small></button>
+      <button type="button" data-view="documents"><span>Documents</span><small>Stored literature</small></button>
+    </nav>
     <label class="field-label" for="gene-search">Find a gene</label>
-    <div class="search-wrap">
-      <span aria-hidden="true">⌕</span>
-      <input id="gene-search" type="search" placeholder="e.g. ESR1" autocomplete="off" />
-    </div>
+    <div class="search-wrap"><span aria-hidden="true">⌕</span><input id="gene-search" type="search" placeholder="e.g. ESR1" autocomplete="off" /></div>
     <div id="gene-list-status" class="list-status" aria-live="polite">Loading index…</div>
-    <nav id="gene-list" class="gene-list" aria-label="Gene documents"></nav>
+    <nav id="gene-list" class="gene-list" aria-label="Genes in retrieval index"></nav>
   </aside>
 
   <main class="document-shell">
     <header class="page-header">
-      <div>
-        <span class="eyebrow">Read-only ChromaDB browser</span>
-        <h1 id="page-title">Indexed documents</h1>
-      </div>
+      <div><span class="eyebrow">XPRS administration</span><h1 id="page-title">Literature retrieval</h1></div>
       <a class="portal-link" href="/dashboard">Return to portal</a>
     </header>
 
-    <section class="stats-grid" aria-label="Index summary">
-      <article>
-        <span>Documents</span>
-        <strong id="stat-documents">—</strong>
-      </article>
-      <article>
-        <span>Genes</span>
-        <strong id="stat-genes">—</strong>
-      </article>
-      <article>
-        <span>General pool</span>
-        <strong id="stat-general">—</strong>
-      </article>
-      <article>
-        <span>Phenotype pool</span>
-        <strong id="stat-phenotype">—</strong>
-      </article>
+    <section id="coverage-view" class="admin-view">
+      <section class="stats-grid" aria-label="Retrieval summary">
+        <article><span>Indexed documents</span><strong id="stat-documents">—</strong></article>
+        <article><span>Indexed genes</span><strong id="stat-genes">—</strong></article>
+        <article><span>Tracked query pools</span><strong id="stat-planned">—</strong><small id="stat-planned-detail"></small></article>
+        <article><span>Cached query pools</span><strong id="stat-cached">—</strong></article>
+      </section>
+
+      <section class="health-grid" aria-label="Retrieval services">
+        <article class="s2-health-card"><span>Semantic Scholar</span><strong id="health-s2">—</strong><small id="health-s2-detail"></small><button id="s2-key-check" type="button">Check API key</button></article>
+        <article><span>Background enrichment</span><strong id="health-queue">—</strong><small id="health-queue-detail"></small><details id="queue-backlog" class="queue-backlog" hidden><summary id="queue-backlog-summary">View requests</summary><ol id="queue-backlog-list"></ol></details></article>
+        <article><span>Interactive cooldown</span><strong id="health-runtime">—</strong><small id="health-runtime-detail"></small></article>
+      </section>
+
+      <section class="coverage-toolbar" aria-label="Coverage filters">
+        <label><span>State</span><select id="coverage-state"><option value="all">All states</option><option value="missing">Not retrieved</option><option value="partial">Coverage incomplete</option><option value="indexed">Evidence available</option><option value="cache_only">Awaiting indexing</option><option value="empty">No eligible evidence</option></select></label>
+        <label><span>Query pool</span><select id="coverage-pool"><option value="all">All query pools</option><option value="general">General</option></select></label>
+        <p id="coverage-count" aria-live="polite"></p>
+      </section>
+
+      <div id="retrieval-notice" class="retrieval-notice" role="status" aria-live="polite" hidden></div>
+
+      <div class="coverage-legend" aria-label="Coverage state key">
+        <span><i class="status-dot complete"></i>Search finished</span><span><i class="status-dot indexed"></i>Evidence available</span><span><i class="status-dot cache_only"></i>Awaiting indexing</span><span><i class="status-dot empty"></i>No eligible papers</span><span><i class="status-dot missing"></i>Not searched</span>
+        <small>Query pools record how a paper was found. General uses the gene name alone, so it can include papers about any disease and overlap with explicit gene-plus-disease pools.</small>
+      </div>
+
+      <section class="coverage-table-wrap">
+        <table class="coverage-table"><thead><tr><th>Gene</th><th>General query</th><th>Phenotype queries</th><th>Documents</th><th>Coverage</th></tr></thead><tbody id="coverage-table-body"></tbody></table>
+        <div id="coverage-empty" class="empty-state" hidden>No genes match these filters.</div>
+      </section>
     </section>
 
-    <section class="toolbar" aria-label="Document filters">
-      <label>
-        <span>Pool</span>
-        <select id="pool-filter">
-          <option value="all">All pools</option>
-          <option value="general">General queries</option>
-          <option value="phenotype">Phenotype queries</option>
-          <option value="opentargets">Open Targets</option>
-          <option value="other">Other</option>
-        </select>
-      </label>
-      <label>
-        <span>Query phenotype</span>
-        <select id="phenotype-filter">
-          <option value="">All phenotypes</option>
-        </select>
-      </label>
-      <label class="document-search-label">
-        <span>Search within this gene</span>
-        <input id="document-search" type="search" placeholder="Title, abstract, or paper ID" autocomplete="off" />
-      </label>
-      <label>
-        <span>Sort</span>
-        <select id="sort-filter">
-          <option value="citations_desc">Citations: high to low</option>
-          <option value="title">Title: A–Z</option>
-          <option value="pool">Pool, then title</option>
-        </select>
-      </label>
+    <section id="documents-view" class="admin-view" hidden>
+      <section class="toolbar" aria-label="Document filters">
+        <label><span>Pool</span><select id="pool-filter"><option value="all">All pools</option><option value="general">General (gene-only query)</option><option value="phenotype">Phenotype (gene + disease)</option><option value="opentargets">Open Targets</option><option value="other">Other</option></select></label>
+        <label><span>Query phenotype</span><select id="phenotype-filter"><option value="">All phenotypes</option></select></label>
+        <label class="document-search-label"><span>Search within this gene</span><input id="document-search" type="search" placeholder="Title, abstract, or paper ID" autocomplete="off" /></label>
+        <label><span>Sort</span><select id="sort-filter"><option value="citations_desc">Citations: high to low</option><option value="title">Title: A–Z</option><option value="pool">Pool, then title</option></select></label>
+      </section>
+      <div class="results-heading"><p id="results-count" aria-live="polite">No gene selected</p></div>
+      <section id="document-list" class="document-list" aria-busy="false"></section>
+      <nav id="pagination" class="pagination" aria-label="Document pages" hidden><button id="previous-page" type="button">Previous</button><span id="page-indicator"></span><button id="next-page" type="button">Next</button></nav>
     </section>
-
-    <div class="results-heading">
-      <p id="results-count" aria-live="polite">No gene selected</p>
-    </div>
-
-    <section id="document-list" class="document-list" aria-busy="false"></section>
-
-    <nav id="pagination" class="pagination" aria-label="Document pages" hidden>
-      <button id="previous-page" type="button">Previous</button>
-      <span id="page-indicator"></span>
-      <button id="next-page" type="button">Next</button>
-    </nav>
   </main>
 </body>
 </html>

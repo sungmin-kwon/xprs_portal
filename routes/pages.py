@@ -5,20 +5,30 @@ from config import STATIC_DIR
 
 router = APIRouter()
 
+PAGE_HEADERS = {
+    "Cache-Control": "no-store, max-age=0",
+    "Pragma": "no-cache",
+}
+
 
 @router.get("/")
 def home():
-    return FileResponse(STATIC_DIR / "home.html")
+    return FileResponse(STATIC_DIR / "home.html", headers=PAGE_HEADERS)
 
 
 @router.get("/dashboard")
 def dashboard():
-    return FileResponse(STATIC_DIR / "dashboard.html")
+    return FileResponse(STATIC_DIR / "dashboard.html", headers=PAGE_HEADERS)
 
 
 @router.get("/about")
 def about():
-    return FileResponse(STATIC_DIR / "about.html")
+    return FileResponse(STATIC_DIR / "about.html", headers=PAGE_HEADERS)
+
+
+@router.get("/cohort-analysis")
+def cohort_analysis_page():
+    return FileResponse(STATIC_DIR / "cohort_analysis.html", headers=PAGE_HEADERS)
 
 
 @router.get("/favicon.ico")

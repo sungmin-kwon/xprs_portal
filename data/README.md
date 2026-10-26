@@ -3,9 +3,13 @@
 The complete processed breast-cancer dataset contains 503 East Asian samples
 from the 1000 Genomes Project. A public clone uses the tracked
 [`demo/`](demo/) profile, which exposes one detailed profile under the alias
-`DEMO_HG00436` while retaining a relabeled PRS reference distribution. KFDA
+`DEMO_HG00436` while retaining a relabeled PRS reference distribution. K-PREDICT
 cohort data are private, are not present here, and must never be added to the
 public repository.
+
+Private-cohort deployments must use a data root outside this repository. The
+root `.gitignore` defensively excludes common private-cohort RDS and rare-finding TSV
+filenames, but ignore rules are not an access-control mechanism.
 
 ## Recorded upstream inputs
 
@@ -35,11 +39,6 @@ distribution archive, checksums, and redistribution statement are prepared.
 See [`DATA_ACCESS.md`](../DATA_ACCESS.md) for the bundled demo profile, the
 author-request process for the complete processed dataset, and the possible
 future Git LFS/release path.
-
-`preindex_gene_frequency.csv` is also ignored. Although it contains aggregate
-gene frequencies rather than individual identifiers, the local copy was built
-from the complete 503-sample profile. Full-profile installations can regenerate
-it with `python scripts/preindex_frequent_genes.py`.
 
 ## Required publication metadata
 

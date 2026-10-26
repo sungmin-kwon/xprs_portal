@@ -93,6 +93,12 @@ DISEASE_REGISTRY: dict[str, DiseaseConfig] = {
     "pancreatic_cancer": _unavailable_disease(
         "pancreatic_cancer", "Pancreatic Cancer", "Pancreatic", "gastroenterology", "pancreatic cancer"
     ),
+    "coronary_artery_disease": _unavailable_disease(
+        "coronary_artery_disease", "Coronary Artery Disease", "CAD", "cardiology", "coronary artery disease"
+    ),
+    "myocardial_infarction": _unavailable_disease(
+        "myocardial_infarction", "Myocardial Infarction", "MI", "cardiology", "myocardial infarction"
+    ),
 }
 
 

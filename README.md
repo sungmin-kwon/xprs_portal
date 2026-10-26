@@ -2,23 +2,23 @@
 
 XPRS Portal is a FastAPI application for exploring individual gene contributions
 to a polygenic risk score (PRS). It combines cohort-level visualizations,
-gene-level contribution rankings, Semantic Scholar literature, Open Targets
+gene-level contribution rankings, biomedical literature, Open Targets
 associations, and an OpenRouter-powered explanatory chatbot.
 
 The software is distributed under GPL-3.0 in keeping with the upstream XPRS
 project. See `NOTICE.md` for attribution and third-party material notices.
 
-The current public cohort is derived from the 1000 Genomes Project. The cohort
-catalog also includes a private KFDA multi-disease cohort placeholder, but KFDA
-data are not bundled or enabled.
+The public cohort is derived from the 1000 Genomes Project. The same codebase
+can also serve K-PREDICT as an authenticated private deployment from an external
+data root. K-PREDICT data are never bundled or committed to this repository.
 
 A fresh clone runs against the bundled `DEMO_HG00436` profile. The complete
 processed 503-sample XPRS dataset is distributed separately; see
 [`DATA_ACCESS.md`](DATA_ACCESS.md).
 
-## Current disease support
+## Disease support
 
-The interface presents the planned KFDA disease order:
+The interface presents this K-PREDICT disease order:
 
 1. Breast Cancer
 2. Type 2 Diabetes
@@ -28,17 +28,24 @@ The interface presents the planned KFDA disease order:
 6. Thyroid Cancer
 7. Prostate Cancer
 8. Pancreatic Cancer
+9. Coronary Artery Disease
+10. Myocardial Infarction
 
-Only breast cancer currently has XPRS model data and is selectable. Literature
-retrieval can still answer explicit questions about other diseases when papers
-for the selected genes are available.
+An authenticated K-PREDICT deployment enables whichever validated disease
+artifacts are present in its configured private release. The public 1000 Genomes
+demo remains breast-cancer-only. Cohort and disease availability are evaluated
+independently, so enabling a K-PREDICT disease never exposes it in the public
+cohort.
+
+Literature retrieval can still answer explicit questions about other diseases
+when papers for the selected genes are available.
 
 ## Stack
 
 - FastAPI and Pydantic backend
 - Vanilla HTML, CSS, JavaScript, and Plotly frontend
 - OpenRouter for generation and GPT-5 mini reference extraction
-- Semantic Scholar Graph API for literature discovery
+- Europe PMC REST API with Semantic Scholar fallback/augmentation for literature discovery
 - ChromaDB dense retrieval with BGE-M3 embeddings
 - MedCPT cross-encoder reranking
 - Pandas/Parquet plot-data cache
@@ -51,29 +58,60 @@ credentials are not supported or required by the current setup.
 ## Literature retrieval flow
 
 For each gene, the portal maintains separate Chroma metadata pools for general
-literature and phenotype-specific literature. A request follows this sequence:
+literature and phenotype-specific literature. Provider-specific query responses
+are cached separately, while eligible records share one source-tagged Chroma
+collection. A request follows this sequence:
 
-1. Reuse pre-indexed general and breast-cancer pools when the gene appears in
-   the frequent-gene sweep; less-frequent genes retain the same on-demand path.
-2. Analyze the question as `primary_disease`, `other_disease`, or
+1. Reuse any indexed general and primary-disease pools. For a cold gene, query
+   the public Europe PMC REST API and index up to 25 source results.
+2. If fewer than five eligible Europe PMC papers survive filtering, query
+   Semantic Scholar once as a fallback/augmentation source.
+3. If the combined provider yield remains below five and the Semantic Scholar
+   result pool can continue, retrieve at most one additional S2 page
+   synchronously. This is the only pagination that can extend the user's first
+   response.
+4. Queue incomplete Semantic Scholar fallback pools for one shared background worker. It waits 30 seconds,
+   yields to interactive retrieval, and continues from the cached offset rather
+   than repeating earlier searches.
+5. Analyze the question as `primary_disease`, `other_disease`, or
    `disease_neutral`.
-3. Retrieve a fixed union of dense candidates from relevant phenotype and
+6. Retrieve a fixed union of dense candidates from relevant phenotype and
    general pools.
-4. For an explicitly named non-breast disease, fetch and index a disease-specific
-   Semantic Scholar pool on demand if it is not already present.
-5. Rerank the candidate union with `ncbi/MedCPT-Cross-Encoder`.
-6. Apply a small metadata adjustment:
+7. For an explicitly named non-primary disease, populate a disease-specific
+   Europe PMC pool on demand and use Semantic Scholar only when that pool is sparse.
+8. Rerank the candidate union with `ncbi/MedCPT-Cross-Encoder`.
+9. Apply a small metadata adjustment:
    - direct requested-disease evidence receives a soft boost;
    - general mechanistic evidence remains available as fallback;
    - other-disease evidence is retained rather than discarded;
-   - neutral questions modestly prefer general evidence, with breast cancer used
-     only as a tie-breaking context.
-7. Return the highest-ranked papers with `disease_match`, `source_pool`, raw
+   - neutral questions modestly prefer general evidence, with the active
+     primary disease used only as a tie-breaking context.
+10. Return the highest-ranked papers with `disease_match`, `source_pool`, raw
    reranker score, and target-phenotype metadata.
 
-This is not a hard disease quota. A substantially stronger paper from another
-disease can still outrank a weak breast-cancer paper. Correction, erratum,
-retraction, and expression-of-concern notices are excluded during indexing.
+Semantic Scholar background enrichment, when activated as a fallback, stops independently for each gene/pool after reaching 30
+eligible general papers, 20 primary-disease papers, or 15 papers for another
+explicitly named disease. Canonical phenotype queries can fall through to up to
+two configured phenotype aliases; ambiguous short symbols can also fall through
+to broader symbol queries. Each strategy is capped at 50 raw results, and a
+low-yield strategy gives way to the next strategy after two consecutive pages
+that add no eligible documents. Results are deduplicated across strategies.
+Eligibility requires a
+paper ID, abstract, validated gene identity, and at least one citation;
+correction, erratum, retraction, and expression-of-concern notices are excluded.
+Short symbols that can also be ordinary acronyms are searched with gene-sense
+context and require either an official name/alias match or semantic identity
+validation, so broader fallback queries cannot make acronym collisions citable.
+A versioned final citation gate prevents records produced by older
+lexical-only rules from being used while their pool is rebuilt. These corpus
+limits do not depend on the answer-generation model.
+
+Disease-aware ranking is not a hard quota. A substantially stronger paper from
+another disease can still outrank a weak primary-disease paper.
+
+Reference links prefer PubMed Central when a PMCID is available and PubMed when
+only a PMID is available. Semantic Scholar remains the link destination for
+fallback records without an NCBI identifier.
 
 ## Repository layout
 
@@ -82,18 +120,18 @@ agents/                 Retrieval, conversation, evidence, and explanation agent
 routes/                 FastAPI route modules
 static/                 Landing page, dashboard, CSS/JS, and disease-scoped plots
 data/                   Public-data manifest/provenance; runtime data is external
-r/                      Reproducible legacy R inputs/scripts for plot-data generation
+docs/                   Data-contract and deployment documentation
+r/                      Documentation for the ignored legacy RDS input location
 ref/                    Curated XPRS/PRS methodology notes
 benchmarks/             Retrieval questions, scripts, and lightweight reports
 scripts/                Maintenance and benchmark utilities
 tests/                  Focused retrieval-policy and ingestion tests
-preindexing.py          Frequency ranking, checkpointing, and pool indexing
 server.py               FastAPI entry point
 runtime_agents.py       Shared agent/model construction
 config.py               Environment and path configuration
 ```
 
-Runtime directories (`logs/`, `cache_s2/`, and `chroma/`), local environments,
+Runtime directories (`logs/`, provider caches, and `chroma/`), local environments,
 secrets, source-paper copies, large cohort artifacts, generated plots, and
 generated benchmark corpora are excluded through `.gitignore`.
 
@@ -109,6 +147,9 @@ cp .env.example .env
 
 Populate `OPENROUTER_API_KEY` and, optionally, `S2_API_KEY`. Semantic Scholar can
 fall back to its slower public endpoint when its key is absent or rejected.
+Every OpenRouter request is routed with Zero Data Retention required and provider
+data collection denied. The application refuses to call OpenRouter when that
+policy is disabled.
 
 The repository's `.env.example` selects the bundled one-individual demo data.
 See `DATA_ACCESS.md` for the complete processed-data profile. Maintainers with
@@ -117,6 +158,14 @@ the reviewed `r/data.RDS` source can rebuild the full Python plot cache with:
 ```bash
 python build_parquet.py
 ```
+
+This conversion utility is limited to the legacy public breast-cancer profile.
+It is not the importer for private multi-disease data.
+
+The private cohort contract and audit workflow are documented in
+[`docs/private-cohort-onboarding.md`](docs/private-cohort-onboarding.md).
+The corresponding importer and independent release validator are
+`scripts/import_kpredict_data.py` and `scripts/validate_kpredict_import.py`.
 
 Run locally:
 
@@ -127,76 +176,39 @@ uvicorn server:app --host 127.0.0.1 --port 9009
 The first retrieval initializes BGE-M3 and MedCPT. Hugging Face model weights
 are downloaded to the user cache when not already available.
 
-## Frequent-gene pre-indexing
+## Read-only retrieval administration
 
-The pre-indexing script builds a reproducible frequency manifest by counting
-each gene's appearances in every available individual's 10 strongest
-risk-increasing and 10 strongest risk-lowering contributions. Both directions
-receive equal weight. Placeholder identifiers such as `NA_4` are retained in
-the local audit manifest but excluded from external queries.
+The unlinked `/admin/documents` page combines retrieval-coverage monitoring
+with the earlier gene-by-gene ChromaDB document browser. Its coverage table is
+cohort-neutral: it reports every gene observed in a provider cache or ChromaDB,
+along with cached query responses, indexed documents, pagination
+completion, background enrichment, and active cooldowns. It does not divide
+genes into the legacy public-cohort plan and an "outside plan" group.
 
-The default hybrid policy pre-indexes the 200 most frequent queryable genes. In
-the current 503-individual cohort, these cover 43.6% of all 10,060 top/bottom
-slots and require at most 400 Semantic Scholar queries: one general and one
-breast-cancer query per gene. Everything outside the cutoff is indexed on
-demand. Regenerate the manifest and preview the selection without network use:
+For missing or interrupted pools, an administrator can issue one manual
+literature query from the coverage table. This action uses the same
+serialized request lock, rate-limit cooldown, cache, document eligibility
+rules, Chroma upsert path, and background enrichment queue as chatbot-driven
+retrieval. Cached papers are processed before any upstream request; when the
+cached set does not meet the evidence target, the existing background queue may
+continue pagination under its normal rate-limit policy.
 
-```bash
-python scripts/preindex_frequent_genes.py
-```
+The Semantic Scholar status card also provides an explicit API-key check. It
+sends one keyed, one-result request only when clicked, reports authentication
+failure separately from rate limiting or network failure, and never exposes the
+key. Active probes on the general health endpoint require the same admin token;
+ordinary health reads are non-probing.
 
-For the actual sweep, stop the portal first so the maintenance process is the
-only writer to embedded Chroma, then run:
+The General and phenotype-specific pools describe query provenance rather than
+mutually exclusive subject categories. A gene-only General search may return a
+breast-cancer paper that is also returned by a `gene + breast cancer` search.
+Both provenance records can be retained in ChromaDB, while retrieval candidate
+assembly deduplicates matching Semantic Scholar paper IDs before reranking.
 
-```bash
-python scripts/preindex_frequent_genes.py --run
-```
-
-When `--run` is present, the script uses the project's `.venv/bin/python`
-(or the legacy `.xprs_portal/bin/python` environment, when present), so invoking
-it from the base Conda environment still uses the portal's installed
-dependencies. It reports a clear setup error if neither environment exists.
-
-The demo configuration writes its frequency manifest under the ignored
-`cache_s2/` runtime directory. The existing full-cohort manifest remains a
-local, ignored derivative and is not included in the public repository.
-
-The checkpoint at `cache_s2/preindex_state.json` is written atomically after
-each gene. Re-running the same command resumes completed work, retries failures,
-and reconstructs missing Chroma pools from successful JSON caches. Use
-`--max-genes`, `--min-occurrences`, `--sweep-n`, and `--query-delay` to tune the
-policy; `--request-timeout` and `--max-attempts` tune pre-index network failure
-handling. `--max-genes 0` selects every queryable gene above the occurrence
-threshold. An exclusive process lock prevents the maintenance sweep and web
-server from writing embedded Chroma at the same time; the port check provides
-an earlier human-readable warning when both processes share a network
-namespace.
-
-Semantic Scholar requests are spaced by at least two seconds with a small
-randomized jitter. The first HTTP 429 opens the circuit immediately without
-retrying that query. The checkpoint records `Retry-After` when supplied and an
-escalating persistent cooldown (5, 10, 20, then up to 30 minutes). Starting
-the script before `cooldown_until` exits with temporary-failure code 75 without
-loading models or making an API request. After expiry, the first missing
-literature query itself becomes the half-open probe, avoiding a separate
-health-check call. Any successful API query resets the consecutive-429
-escalation, including a successful general pool followed by a failed phenotype
-pool. Pre-index searches use a 45-second read timeout and never retry a read
-timeout because the server may still be processing it. Connection failures and
-HTTP 5xx responses receive at most two attempts; exhausted transient failures
-retain a five-minute cooldown. HTTP 200 with zero eligible documents remains a
-valid completed pool, while non-transient errors such as HTTP 400 are recorded
-against that gene without treating the entire API as unavailable.
-
-## Read-only literature index browser
-
-An unlinked administration page at `/admin/documents` lists the documents
-currently stored in ChromaDB by gene. It supports general-query,
-phenotype-query, and Open Targets pool filters; a dynamic query-phenotype
-selector; title/abstract search; citation sorting; and expandable stored text.
-Pool labels describe retrieval provenance, while extracted phenotype chips
-describe the contents of each title and abstract. The page and its API never
-return vector embeddings and do not provide any database mutation operations.
+The Documents view retains the general-query, phenotype-query, and Open
+Targets filters; dynamic query-phenotype selector; title/abstract search;
+citation sorting; and expandable stored text. The page and its APIs never
+return vector embeddings and do not provide database mutation operations.
 
 Set `XPRS_ADMIN_TOKEN` and open the page once as
 `/admin/documents#token=VALUE`. URL fragments are not transmitted in HTTP
@@ -227,9 +239,10 @@ are written as mode-0600 JSON files under the ignored
 participant/session codes supplied in the form, but deliberately omit IP
 address and browser metadata.
 
-The survey icon is shown in the primary-page sidebars only while
-`XPRS_EVALUATION_TOKEN` is configured. It remains hidden in the default public
-configuration, where the evaluation route also returns 404.
+The overview and dashboard retain a disabled survey icon as a reminder that the
+study UI is deferred. The methodology page exposes its survey link only when
+`XPRS_EVALUATION_TOKEN` is configured; otherwise the evaluation route returns
+404.
 
 Export the collected records to an analysis-ready CSV, including the
 prespecified rating-group means, task indicators, and comprehension scores:
@@ -250,13 +263,16 @@ The complete key-free template is in `.env.example`. The principal settings are:
 - `OPENROUTER_API_KEY`, `LLM_MODEL`
 - `REFERENCE_EXTRACTION_PROVIDER=openrouter`
 - `REFERENCE_EXTRACTION_MODEL=openai/gpt-5-mini`
-- `S2_API_KEY`
-- `S2_API_KEY_MIN_INTERVAL_SECONDS`, `S2_PUBLIC_MIN_INTERVAL_SECONDS`
+- `EUROPE_PMC_CACHE_DIR`, `S2_API_KEY`
+- `S2_API_KEY_MIN_INTERVAL_SECONDS`, `S2_PUBLIC_MIN_INTERVAL_SECONDS`,
+  `S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS`
+- `KPREDICT_ENABLED`, `KPREDICT_DATA_ROOT`, `XPRS_KPREDICT_TOKEN`
+- `LITERATURE_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS`
 - `RERANKER_ENABLED`, `RERANKER_MODEL`, `RERANKER_CANDIDATE_K`
 - `RERANKER_BATCH_SIZE`, `RERANKER_MAX_LENGTH`
 - `SESSION_LOGGING_ENABLED`
 - `EPHEMERAL_SESSION_LIMIT`
-- `XPRS_ADMIN_TOKEN` for the unlinked Chroma document browser
+- `XPRS_ADMIN_TOKEN` for the unlinked retrieval administration page
 - `XPRS_EVALUATION_TOKEN`, `EVALUATION_RESPONSES_DIR`, and
   `XPRS_COOKIE_SECURE` for the internal pilot survey
 - optional path overrides such as `DATA_DIR`, `CHROMA_DIR`, `S2_CACHE_DIR`,
@@ -268,11 +284,20 @@ The complete key-free template is in `.env.example`. The principal settings are:
 python -m unittest discover -s tests -v
 ```
 
+Before committing or publishing, also run the repository hygiene check:
+
+```bash
+python scripts/check_public_repo.py
+```
+
+It checks tracked and unignored files for common credential formats, internal
+storage paths, evaluation responses, and private-cohort filenames without
+printing any matched secret value.
+
 The focused suite covers disease-intent resolution, Korean disease aliases,
 unknown named phenotypes, soft primary-disease prioritization, explicit
-other-disease override, reranker ordering, ingestion hygiene, equal weighting
-of risk-increasing/risk-lowering frequency, checkpoint persistence, and
-idempotent pre-indexing.
+other-disease override, reranker ordering, multi-provider ingestion, source
+identity, and repository hygiene.
 
 Retrieval comparison reports are retained under `benchmarks/`. Generated
 corpora, abstracts, embeddings, Chroma/LanceDB indexes, and blinded-review files
@@ -288,8 +313,9 @@ are intentionally excluded from the public repository surface.
 - `GET /api/individuals` — available individual IDs
 - `POST /api/summary/start` — asynchronous summary generation
 - `POST /api/chat/start` — asynchronous follow-up question
+- `GET /api/tasks/{task_id}` — recoverable asynchronous task status and result
 - `GET /api/tasks/{task_id}/events` — progress stream
-- `GET /api/health/semanticscholar` — Semantic Scholar status/probe
+- `GET /api/health/semanticscholar` — non-probing Semantic Scholar status
 - `GET /api/health/rag` — dense store and reranker configuration status
 - `POST /api/report/pdf` — PDF report
 
@@ -312,6 +338,13 @@ Persistent logging is disabled by default; bounded in-memory sessions preserve
 follow-up and report functionality until the process restarts. Enable disk logs
 only for a controlled deployment with an appropriate retention policy. Never
 publish `.env`, `logs/`, Semantic Scholar caches, or Chroma runtime files.
+
+Private K-PREDICT inputs are a separate controlled-deployment concern.
+They must live outside the repository data root, remain behind server-side
+authentication, and never be written to public static plot files. Individual
+IDs, genotypes, variants, HGVS values, and individual contribution data must
+not be sent to Semantic Scholar or an externally hosted language model without
+an approved data-governance policy.
 
 ## License and attribution
 

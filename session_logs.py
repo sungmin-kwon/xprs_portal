@@ -184,7 +184,7 @@ def build_chat_markdown(session: dict[str, Any]) -> str:
         else f"- Legacy Threshold Used: {session.get('threshold_used') if session.get('threshold_used') is not None else session.get('sig_threshold')}"
     )
     lines = [
-        f"# XPRS Session Chat Export",
+        "# XPRS Session Chat Export",
         "",
         f"- Session ID: {session.get('session_id') or ''}",
         f"- Individual ID: {session.get('individual_id') or ''}",
@@ -239,8 +239,14 @@ def save_session_log(individual_id: str, session_id: str, payload: dict) -> None
         json.dump(payload, f, ensure_ascii=False, indent=2)
 
 
-def maybe_save_session_log(individual_id: str, session_id: str, payload: dict) -> None:
-    if SESSION_LOGGING_ENABLED:
+def maybe_save_session_log(
+    individual_id: str,
+    session_id: str,
+    payload: dict,
+    *,
+    force_ephemeral: bool = False,
+) -> None:
+    if SESSION_LOGGING_ENABLED and not force_ephemeral:
         save_session_log(individual_id, session_id, payload)
         return
     payload["updated_at"] = datetime.now().isoformat()

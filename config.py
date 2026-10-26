@@ -20,9 +20,13 @@ REF_DIR = _resolve_path(os.getenv("REF_DIR"), APP_BASE_DIR / "ref")
 PLOTS_DIR = _resolve_path(os.getenv("PLOTS_DIR"), STATIC_DIR / "plots")
 LOG_DIR = _resolve_path(os.getenv("LOG_DIR"), RUNTIME_DIR / "logs")
 S2_CACHE_DIR = _resolve_path(os.getenv("S2_CACHE_DIR"), RUNTIME_DIR / "cache_s2")
+EUROPE_PMC_CACHE_DIR = _resolve_path(
+    os.getenv("EUROPE_PMC_CACHE_DIR"),
+    RUNTIME_DIR / "cache_literature" / "europe_pmc",
+)
 S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS = max(
     1,
-    int(os.getenv("S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS", "60")),
+    int(os.getenv("S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS", "30")),
 )
 S2_RUNTIME_RATE_LIMIT_COOLDOWN_MAX_SECONDS = max(
     S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS,
@@ -115,6 +119,7 @@ def ensure_runtime_dirs() -> None:
         PLOTS_DIR,
         LOG_DIR,
         S2_CACHE_DIR,
+        EUROPE_PMC_CACHE_DIR,
         CHROMA_DIR,
         PLOT_DATA_CACHE_DIR,
         EVALUATION_RESPONSES_DIR,

@@ -19,23 +19,36 @@ let activeLoadingAnimatedBaseText = "";
 let geneSelectionPreviewRequestId = 0;
 let currentManhattanData = null;
 let currentDensityData = null;
+let currentDiseaseEvidence = null;
 let dashboardPlotResizeObserver = null;
 let dashboardPlotResizeFrame = null;
 let phenotypeLabelsKo = {};
 let currentDiseaseSlug = "breast_cancer";
+let currentCohortSlug = "1000_genomes";
 let diseaseRegistry = {};
+let individualSearchIndex = [];
+let individualSearchTimer = null;
+let renderedIndividualKey = "";
+let rareDetailSequence = 0;
+let pdfDownloadInProgress = false;
+const rareDetailItems = new Map();
 
 const LANGUAGE_PREFERENCE_KEY = "xprs.language";
 const THEME_PREFERENCE_KEY = "xprs.theme";
 const INDIVIDUAL_PREFERENCE_KEY = "xprs.individual_id";
+const INDIVIDUAL_SEARCH_LIMIT = 200;
+const INDIVIDUAL_SEARCH_DEBOUNCE_MS = 120;
 
 const UI_TEXT = {
   en: {
     portalTitle: "XPRS Information Portal – BREAST CANCER",
     aboutXprs: "About XPRS",
     diseaseOverview: "Disease overview",
+    cohortAnalysis: "Cohort Analysis",
     breastCancerPortal: "Breast cancer portal",
     userEvaluation: "User evaluation survey",
+    publicCohortLabel: "1000 Genomes (Public)",
+    privateCohortLabel: "K-PREDICT (Private)",
     changeIndividual: "Change Individual",
     changeIid: "Change IID",
     manhattanTitle: "Individual Manhattan Plot",
@@ -62,6 +75,8 @@ const UI_TEXT = {
     genePreviewNone: "No contributing genes are available.",
     genePreviewGenes: (genes) => `Genes included: [${genes.join(", ")}]`,
     citedCount: (n) => `Cited ${n}`,
+    viewOnPubMedPmc: "View on PubMed/PMC",
+    viewOnSemanticScholar: "View on Semantic Scholar",
     switchToKorean: "Switch to Korean",
     switchToEnglish: "Switch to English",
     darkMode: "Dark Mode",
@@ -73,29 +88,70 @@ const UI_TEXT = {
     generateSummary: "Generate Summary",
     summaryLoading: "Generating Summary...",
     loadingIndividuals: "Loading individuals...",
-    loadedIndividuals: (n) => `Loaded ${n} from the 1000 Genomes Project`,
+    loadedIndividuals: (count, shown = count) => shown < count
+      ? `${count} individuals found · showing first ${shown}`
+      : `${count} individual${count === 1 ? "" : "s"} found`,
     exportLabel: "Download",
     downloadPdfReport: "Download Full PDF Report",
     downloadChatMd: "Download Chat (.md)",
     downloadChatJson: "Download Chat (.json)",
     exportUnavailable: "Generate a summary first to enable downloads.",
     exportPdfLoading: "Preparing PDF report...",
+    exportPdfRetrying: "Connection interrupted. Retrying the PDF download...",
     exportChatLoading: "Preparing chat export...",
     expandPlot: "Expand plot",
     closeExpandedPlot: "Close expanded plot",
+    zdrDisclosure: "K-PREDICT summaries use an external zero-data-retention route; IDs and variant-level data are excluded.",
+    rareDiseaseFindings: "Disease-linked findings",
+    rareActiveDiseaseFindings: (disease) => `${disease} panel findings`,
+    rareOtherDiseasePanels: "Other disease panels",
+    rareOtherFindings: "Other rare findings",
+    rareUnassignedFindings: "Other findings",
+    rareNoActiveDiseaseFindings: (disease) => `No panel-linked findings are recorded for ${disease}.`,
+    rareGroupCounts: (alerts, carriers) => `${alerts} alerts · ${carriers} carriers`,
+    rareMoreFindings: (count) => `${count} additional findings are not shown in this compact view.`,
+    rareNoFindings: "No curated rare-variant findings are recorded for this individual.",
+    rareFindingSummary: (total, alerts, carriers) => `${total} findings · ${alerts} alerts · ${carriers} carriers`,
+    viewRareDetails: "View rare-variant details",
+    integratedEvidenceEyebrow: "COMMON + RARE VARIANT EVIDENCE",
+    integratedEvidenceTitle: "Disease Evidence Summary",
+    evidenceButtonLabel: "Evidence",
+    openIntegratedEvidence: "Open integrated evidence view",
+    closeIntegratedEvidence: "Close integrated evidence view",
+    evidenceContext: (disease, individual) => `${disease} · ${individual}`,
+    commonVariantEvidence: "Common-variant evidence",
+    commonVariantDescription: "PRS and gene contributions from the disease-specific XPRS model",
+    cohortPercentile: "Within-cohort percentile",
+    rawPrs: "Raw PRS",
+    riskIncreasingGenes: "Strongest risk-increasing contributions",
+    riskLoweringGenes: "Strongest risk-lowering contributions",
+    geneContribution: "Gene contribution",
+    manhattanContributionScale: "Same contribution scale as the Individual Manhattan Plot",
+    noIncreasingGenes: "No positive gene contributions are available.",
+    noLoweringGenes: "No negative gene contributions are available.",
+    rareVariantEvidence: "Rare-variant evidence",
+    rareVariantDescription: "Curated findings linked to the active disease panel",
+    rareNoDiseasePanelFindings: "No rare findings are linked to this disease panel.",
+    evidenceAlert: "Alert",
+    evidenceCarrier: "Carrier",
+    evidenceBoundary: "Common- and rare-variant results are separate evidence layers. They are not combined into one risk score, and neither confirms the other.",
+    evidenceLoadFailed: "The integrated evidence view is unavailable.",
   },
   ko: {
     portalTitle: "XPRS 정보 포털 – 유방암",
     aboutXprs: "XPRS 소개",
     diseaseOverview: "질환 위험 개요",
+    cohortAnalysis: "코호트 분석",
     breastCancerPortal: "유방암 포털",
     userEvaluation: "사용성 평가 설문",
+    publicCohortLabel: "1000 Genomes (공개)",
+    privateCohortLabel: "K-PREDICT (비공개)",
     changeIndividual: "IID 변경",
     changeIid: "IID 변경",
-    manhattanTitle: "개인 맨해튼 플롯",
-    densityTitle: "PRS 밀도 분포",
+    manhattanTitle: "개인별 맨해튼 플롯",
+    densityTitle: "PRS 분포",
     rareVariantTitle: "희귀 변이 분석",
-    rareVariantUnavailable: "희귀 변이 데이터가 코호트에 추가되면 이용할 수 있습니다",
+    rareVariantUnavailable: "이 코호트에는 희귀 변이 데이터가 없습니다.",
     disclaimerTitle: "⚠️ 임상적 고지",
     disclaimerBody: "이 도구는 통계적 연관성과 과학 문헌을 바탕으로 정보를 제공하며, <strong>진단 도구가 아닙니다</strong>. 유전 위험 점수는 확률적 지표이며 특정 건강 결과를 보장하지 않습니다. 임상적 판단은 전문 의료진 또는 유전상담사와 상의해 주세요.",
     chatbotTitle: "유전 정보 챗봇",
@@ -107,15 +163,17 @@ const UI_TEXT = {
     noPaperYet: "선택된 논문이 없습니다.",
     landingEyebrow: "XPRS 정보 포털 : 유방암",
     landingTitle: "XPRS 요약 설정",
-    individualId: "Individual ID",
+    individualId: "개인 ID",
     individualSearchPlaceholder: "개인 ID 검색",
     geneCountLabel: "요약에 포함할 유전자 수",
     geneCountHint: "이 개인에서 기여도가 가장 높은 유전자 중 상세히 해석할 개수를 선택합니다",
     geneCountValue: (count) => `${count}개 유전자`,
     genePreviewLoading: "기여도가 높은 유전자 불러오는 중...",
-    genePreviewNone: "사용 가능한 기여 유전자가 없습니다.",
+    genePreviewNone: "해석할 기여 유전자가 없습니다.",
     genePreviewGenes: (genes) => `포함할 유전자: [${genes.join(", ")}]`,
     citedCount: (n) => `${n}회 인용`,
+    viewOnPubMedPmc: "PubMed/PMC에서 보기",
+    viewOnSemanticScholar: "Semantic Scholar에서 보기",
     switchToKorean: "한국어로 전환",
     switchToEnglish: "영어로 전환",
     darkMode: "다크 모드",
@@ -127,16 +185,54 @@ const UI_TEXT = {
     generateSummary: "XPRS 요약 생성",
     summaryLoading: "요약 생성 중...",
     loadingIndividuals: "개인 목록 불러오는 중...",
-    loadedIndividuals: (n) => `1000 Genomes Project 데이터에서 ${n}명의 Individual ID 적재 완료`,
+    loadedIndividuals: (count, shown = count) => shown < count
+      ? `총 ${count}명 · 처음 ${shown}명 표시`
+      : `총 ${count}명`,
     exportLabel: "내려받기",
     downloadPdfReport: "상세 PDF 보고서 내려받기",
     downloadChatMd: "채팅 내려받기 (.md)",
     downloadChatJson: "채팅 내려받기 (.json)",
     exportUnavailable: "내려받기를 사용하려면 먼저 요약을 생성하세요.",
     exportPdfLoading: "PDF 보고서를 준비하는 중...",
+    exportPdfRetrying: "연결이 끊어졌습니다. PDF 내려받기를 다시 시도하는 중...",
     exportChatLoading: "채팅 파일을 준비하는 중...",
     expandPlot: "플롯 확대",
     closeExpandedPlot: "확대 플롯 닫기",
+    zdrDisclosure: "K-PREDICT 요약은 외부 무저장(ZDR) 경로를 사용하며 ID와 변이 수준 데이터는 전송하지 않습니다.",
+    rareDiseaseFindings: "질환 연관 희귀 변이",
+    rareActiveDiseaseFindings: (disease) => `${disease} 패널 연관 변이`,
+    rareOtherDiseasePanels: "다른 질환 패널",
+    rareOtherFindings: "기타 희귀 변이",
+    rareUnassignedFindings: "기타 변이",
+    rareNoActiveDiseaseFindings: (disease) => `${disease} 패널에 해당하는 변이가 없습니다.`,
+    rareGroupCounts: (alerts, carriers) => `주의 ${alerts}건 · 보인자 ${carriers}건`,
+    rareMoreFindings: (count) => `추가 ${count}건은 간략 보기에서 생략했습니다.`,
+    rareNoFindings: "이 개인에게 등록된 희귀 변이 소견이 없습니다.",
+    rareFindingSummary: (total, alerts, carriers) => `총 ${total}건 · 주의 ${alerts}건 · 보인자 ${carriers}건`,
+    viewRareDetails: "희귀 변이 상세 보기",
+    integratedEvidenceEyebrow: "일반 변이 + 희귀 변이 근거",
+    integratedEvidenceTitle: "질환별 통합 근거 요약",
+    evidenceButtonLabel: "통합 보기",
+    openIntegratedEvidence: "통합 근거 보기",
+    closeIntegratedEvidence: "통합 근거 닫기",
+    evidenceContext: (disease, individual) => `${disease} · ${individual}`,
+    commonVariantEvidence: "일반 변이 근거",
+    commonVariantDescription: "질환별 XPRS 모델의 PRS와 유전자 기여도",
+    cohortPercentile: "코호트 내 백분위",
+    rawPrs: "원시 PRS",
+    riskIncreasingGenes: "위험을 높이는 주요 유전자 기여",
+    riskLoweringGenes: "위험을 낮추는 주요 유전자 기여",
+    geneContribution: "유전자 기여도",
+    manhattanContributionScale: "개인별 맨해튼 플롯과 동일한 기여도 척도",
+    noIncreasingGenes: "양의 유전자 기여도가 없습니다.",
+    noLoweringGenes: "음의 유전자 기여도가 없습니다.",
+    rareVariantEvidence: "희귀 변이 근거",
+    rareVariantDescription: "현재 질환 패널과 연결된 선별 소견",
+    rareNoDiseasePanelFindings: "이 질환 패널과 연결된 희귀 변이 소견이 없습니다.",
+    evidenceAlert: "주의",
+    evidenceCarrier: "보인자",
+    evidenceBoundary: "일반 변이와 희귀 변이 결과는 서로 다른 근거입니다. 하나의 위험 점수로 합산하지 않으며, 어느 한쪽이 다른 쪽을 확증하지 않습니다.",
+    evidenceLoadFailed: "통합 근거 보기를 불러올 수 없습니다.",
   }
 };
 
@@ -149,6 +245,8 @@ const DISEASE_NAMES_KO = {
   thyroid_cancer: "갑상선암",
   prostate_cancer: "전립선암",
   pancreatic_cancer: "췌장암",
+  coronary_artery_disease: "관상동맥질환",
+  myocardial_infarction: "심근경색",
 };
 
 // ----------------------------
@@ -182,6 +280,20 @@ function getActiveDiseaseSlug() {
   return currentDiseaseSlug || "breast_cancer";
 }
 
+function getActiveCohortSlug() {
+  return currentCohortSlug || "1000_genomes";
+}
+
+function isPrivatePreview() {
+  return getActiveCohortSlug() === "kpredict";
+}
+
+function syncPrivatePrivacyDisclosure() {
+  const disclosure = $("kpredict-zdr-disclosure");
+  if (!disclosure) return;
+  disclosure.hidden = !isPrivatePreview();
+}
+
 function t(key) {
   const bundle = UI_TEXT[currentLanguage] || UI_TEXT.en;
   const fallback = UI_TEXT.en[key];
@@ -204,13 +316,6 @@ function savePreference(key, value) {
   }
 }
 
-function syncEvaluationAvailability(enabled) {
-  document.querySelectorAll("[data-evaluation-link]").forEach((link) => {
-    link.hidden = !enabled;
-    link.style.display = enabled ? "" : "none";
-  });
-}
-
 function syncLanguageInUrl() {
   const url = new URL(window.location.href);
   if (url.searchParams.get("language") === currentLanguage) return;
@@ -220,6 +325,30 @@ function syncLanguageInUrl() {
     "",
     `${url.pathname}${url.search}${url.hash}`,
   );
+}
+
+function syncDashboardNavigation() {
+  const cohortAnalysisLink = $("cohort-analysis-link");
+  if (cohortAnalysisLink) {
+    cohortAnalysisLink.hidden = !isPrivatePreview();
+  }
+  const overviewLink = $("overview-back-link");
+  if (overviewLink) {
+    const params = new URLSearchParams({
+      cohort: getActiveCohortSlug(),
+      language: currentLanguage,
+    });
+    const individualId = currentIndividualId || lastSelectedIndividualId || "";
+    if (individualId) params.set("individual_id", individualId);
+    overviewLink.href = `/?${params.toString()}`;
+  }
+
+  const cohortLabel = $("dashboard-cohort-label-text");
+  if (cohortLabel) {
+    cohortLabel.textContent = isPrivatePreview()
+      ? t("privateCohortLabel")
+      : t("publicCohortLabel");
+  }
 }
 
 function updateUIText() {
@@ -261,6 +390,8 @@ function updateUIText() {
   syncIndividualSelectorButton();
   syncLandingDisclaimerButton();
   syncPlotOverlayUI();
+  syncPrivatePrivacyDisclosure();
+  syncDashboardNavigation();
   applyDiseaseMetadataToUI();
   updateGeneCountControl();
   restoreSelectedIndividual();
@@ -374,9 +505,11 @@ function commitIndividualSelection(pid) {
   const params = new URLSearchParams({
     individual_id: pid,
     disease: getActiveDiseaseSlug(),
+    cohort: getActiveCohortSlug(),
     language: currentLanguage,
   });
   window.history.replaceState({}, "", `/dashboard?${params.toString()}`);
+  syncDashboardNavigation();
 }
 
 function syncIndividualSearchDisplay(pid = getSelectedIndividualId()) {
@@ -417,7 +550,6 @@ async function updateGeneSelectionPreview() {
     previewEl.textContent = "";
     return;
   }
-
   const requestId = ++geneSelectionPreviewRequestId;
   previewEl.textContent = t("genePreviewLoading");
 
@@ -425,6 +557,7 @@ async function updateGeneSelectionPreview() {
     const res = await postJSON("/api/summary_preview", {
       individual_id: pid,
       disease: getActiveDiseaseSlug(),
+      cohort: getActiveCohortSlug(),
       gene_count: getSummaryGeneCount(),
       language: currentLanguage,
     });
@@ -499,7 +632,8 @@ function hideLandingDisclaimer() {
 function syncModalActivityState() {
   const hasOpenModal =
     $("landing-overlay")?.classList.contains("is-open") ||
-    $("plot-overlay")?.classList.contains("is-open");
+    $("plot-overlay")?.classList.contains("is-open") ||
+    $("evidence-overlay")?.classList.contains("is-open");
   document.body.classList.toggle("modal-active", Boolean(hasOpenModal));
 }
 
@@ -513,6 +647,16 @@ function syncPlotOverlayUI() {
   if (closeBtn) {
     closeBtn.setAttribute("aria-label", t("closeExpandedPlot"));
     closeBtn.setAttribute("title", t("closeExpandedPlot"));
+  }
+  const evidenceBtn = $("evidence-summary-btn");
+  if (evidenceBtn) {
+    evidenceBtn.setAttribute("aria-label", t("openIntegratedEvidence"));
+    evidenceBtn.setAttribute("title", t("openIntegratedEvidence"));
+  }
+  const evidenceCloseBtn = $("close-evidence-overlay-btn");
+  if (evidenceCloseBtn) {
+    evidenceCloseBtn.setAttribute("aria-label", t("closeIntegratedEvidence"));
+    evidenceCloseBtn.setAttribute("title", t("closeIntegratedEvidence"));
   }
 }
 
@@ -548,6 +692,178 @@ function closePlotOverlay() {
   if (expandedPlot && window.Plotly) {
     window.Plotly.purge(expandedPlot);
   }
+  syncModalActivityState();
+}
+
+function syncEvidenceSummaryButton() {
+  const btn = $("evidence-summary-btn");
+  if (!btn) return;
+  btn.hidden = !isPrivatePreview();
+  btn.disabled = !isPrivatePreview() || !currentDiseaseEvidence;
+}
+
+function evidenceGeneRows(items, emptyKey) {
+  if (!Array.isArray(items) || !items.length) {
+    return `<p class="evidence-empty">${escapeHtml(t(emptyKey))}</p>`;
+  }
+  return `<div class="evidence-gene-list">${items.map((item) => {
+    const score = Number(item.contribution);
+    const scoreText = Number.isFinite(score)
+      ? `${score >= 0 ? "+" : ""}${score.toFixed(2)}`
+      : "—";
+    const direction = score >= 0 ? "is-increasing" : "is-lowering";
+    return `<div class="evidence-gene-row">
+      <strong>${escapeHtml(String(item.gene || "—"))}</strong>
+      <span class="evidence-score ${direction}" title="${escapeHtml(t("geneContribution"))}">${escapeHtml(scoreText)}</span>
+    </div>`;
+  }).join("")}</div>`;
+}
+
+function rareDetailDiseaseName(slug, fallback = "") {
+  if (currentLanguage === "ko") {
+    return DISEASE_NAMES_KO[slug] || fallback || slug;
+  }
+  return fallback || diseaseRegistry[slug]?.display_name || slug;
+}
+
+function registerRareDetailItem(item) {
+  const key = `rare-detail-${++rareDetailSequence}`;
+  rareDetailItems.set(key, item);
+  return key;
+}
+
+function rareDetailTrigger(item) {
+  const key = registerRareDetailItem(item);
+  const label = t("viewRareDetails");
+  return `<button class="rare-detail-trigger" type="button" data-rare-detail-key="${key}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}">
+    <span class="material-symbols-outlined" aria-hidden="true">info</span>
+  </button>`;
+}
+
+function openRareDetail(key) {
+  const item = rareDetailItems.get(key);
+  if (!item) return;
+  window.XPRSRareVariantDrawer?.open(item, {
+    language: currentLanguage,
+    diseaseLabel: rareDetailDiseaseName,
+  });
+}
+
+function evidenceRareRows(items) {
+  if (!Array.isArray(items) || !items.length) {
+    return `<p class="evidence-empty">${escapeHtml(t("rareNoDiseasePanelFindings"))}</p>`;
+  }
+  return `<div class="evidence-rare-list">${items.map((item) => {
+    const call = item.moi_call === "carrier" ? t("evidenceCarrier") : t("evidenceAlert");
+    const callClass = item.moi_call === "carrier" ? "is-carrier" : "is-alert";
+    const variant = item.hgvs || item.variant || item.rsid || "—";
+    const details = [item.clnsig, item.consequence].filter(Boolean).join(" · ");
+    return `<article class="evidence-rare-row">
+      <div class="evidence-rare-row__heading">
+        <strong>${escapeHtml(String(item.gene || "—"))}</strong>
+        <div class="rare-finding-item__actions">
+          <span class="evidence-call ${callClass}">${escapeHtml(call)}</span>
+          ${rareDetailTrigger(item)}
+        </div>
+      </div>
+      <div class="evidence-rare-row__variant">${clinvarVariantLink(item.hgvs, variant)}</div>
+      ${details ? `<small>${escapeHtml(details)}</small>` : ""}
+    </article>`;
+  }).join("")}</div>`;
+}
+
+function renderDiseaseEvidence(data) {
+  const container = $("evidence-overlay-body");
+  if (!container || !data) return;
+  const common = data.common_variant || {};
+  const rare = data.rare_variant || {};
+  const percentile = Number(common.percentile);
+  const prs = Number(common.prs_value);
+  const disease = currentLanguage === "ko"
+    ? (DISEASE_NAMES_KO[data.disease] || data.disease_label || activeDiseaseDisplayName())
+    : (data.disease_label || activeDiseaseDisplayName());
+  const findings = Array.isArray(rare.findings) ? rare.findings : [];
+  const alertCount = Number(rare.alert_count || 0);
+  const carrierCount = Number(rare.carrier_count || 0);
+
+  container.innerHTML = `<div class="evidence-summary">
+    <div class="evidence-context">${escapeHtml(t("evidenceContext")(disease, data.individual_id || ""))}</div>
+    <div class="evidence-layer-grid">
+      <section class="evidence-layer evidence-layer--common">
+        <div class="evidence-layer__heading">
+          <span class="material-symbols-outlined" aria-hidden="true">query_stats</span>
+          <div><h3>${escapeHtml(t("commonVariantEvidence"))}</h3><p>${escapeHtml(t("commonVariantDescription"))}</p></div>
+        </div>
+        <div class="evidence-metrics">
+          <div class="evidence-metric">
+            <span>${escapeHtml(t("cohortPercentile"))}</span>
+            <strong>${Number.isFinite(percentile) ? `${percentile.toFixed(1)}%` : "—"}</strong>
+          </div>
+          <div class="evidence-metric">
+            <span>${escapeHtml(t("rawPrs"))}</span>
+            <strong>${Number.isFinite(prs) ? prs.toFixed(3) : "—"}</strong>
+          </div>
+        </div>
+        <div class="evidence-gene-groups">
+          <div>
+            <h4>${escapeHtml(t("riskIncreasingGenes"))}</h4>
+            ${evidenceGeneRows(common.increasing_genes, "noIncreasingGenes")}
+          </div>
+          <div>
+            <h4>${escapeHtml(t("riskLoweringGenes"))}</h4>
+            ${evidenceGeneRows(common.lowering_genes, "noLoweringGenes")}
+          </div>
+        </div>
+        <div class="evidence-normalization">${escapeHtml(t("manhattanContributionScale"))}</div>
+      </section>
+      <section class="evidence-layer evidence-layer--rare">
+        <div class="evidence-layer__heading">
+          <span class="material-symbols-outlined" aria-hidden="true">genetics</span>
+          <div><h3>${escapeHtml(t("rareVariantEvidence"))}</h3><p>${escapeHtml(t("rareVariantDescription"))}</p></div>
+        </div>
+        <div class="evidence-rare-counts">
+          <span class="evidence-call is-alert">${escapeHtml(t("evidenceAlert"))} ${alertCount}</span>
+          <span class="evidence-call is-carrier">${escapeHtml(t("evidenceCarrier"))} ${carrierCount}</span>
+        </div>
+        ${evidenceRareRows(findings)}
+      </section>
+    </div>
+    <div class="evidence-boundary"><span class="material-symbols-outlined" aria-hidden="true">info</span><p>${escapeHtml(t("evidenceBoundary"))}</p></div>
+  </div>`;
+}
+
+async function loadDiseaseEvidence(pid) {
+  currentDiseaseEvidence = null;
+  syncEvidenceSummaryButton();
+  if (!isPrivatePreview()) return null;
+  const params = new URLSearchParams({
+    individual_id: pid,
+    disease: getActiveDiseaseSlug(),
+    gene_limit: "2",
+  });
+  const response = await fetch(`/api/kpredict/disease-evidence?${params.toString()}`);
+  if (!response.ok) throw new Error(`Integrated evidence unavailable: HTTP ${response.status}`);
+  currentDiseaseEvidence = await response.json();
+  renderDiseaseEvidence(currentDiseaseEvidence);
+  syncEvidenceSummaryButton();
+  return currentDiseaseEvidence;
+}
+
+function openEvidenceOverlay() {
+  if (!currentDiseaseEvidence) return;
+  renderDiseaseEvidence(currentDiseaseEvidence);
+  const overlay = $("evidence-overlay");
+  if (!overlay) return;
+  overlay.classList.add("is-open");
+  overlay.setAttribute("aria-hidden", "false");
+  syncModalActivityState();
+  $("close-evidence-overlay-btn")?.focus();
+}
+
+function closeEvidenceOverlay() {
+  const overlay = $("evidence-overlay");
+  overlay?.classList.remove("is-open");
+  overlay?.setAttribute("aria-hidden", "true");
   syncModalActivityState();
 }
 
@@ -594,6 +910,11 @@ function applyLanguage(language) {
     clearChat();
   }
   renderReferencesList(currentReferences);
+  if (currentDiseaseEvidence) renderDiseaseEvidence(currentDiseaseEvidence);
+  window.XPRSRareVariantDrawer?.refresh({
+    language: currentLanguage,
+    diseaseLabel: rareDetailDiseaseName,
+  });
   updateGeneSelectionPreview();
 }
 
@@ -668,6 +989,23 @@ function escapeHtml(str) {
     .replaceAll(">", "&gt;");
 }
 
+function clinvarSearchUrl(value) {
+  const hgvs = String(value || "").trim();
+  return hgvs
+    ? `https://www.ncbi.nlm.nih.gov/clinvar/?term=${encodeURIComponent(hgvs)}`
+    : "";
+}
+
+function clinvarVariantLink(hgvs, label) {
+  const url = clinvarSearchUrl(hgvs);
+  if (!url) return escapeHtml(label);
+  return `<a class="clinvar-variant-link" href="${url}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" aria-label="${escapeHtml(`${label} — ClinVar`)}">
+    <span>${escapeHtml(label)}</span>
+    <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+    <span class="clinvar-variant-link__source">ClinVar</span>
+  </a>`;
+}
+
 function renderManhattanPlotly(manhattan, containerId, options = {}) {
   const el = document.getElementById(containerId);
   if (!el) throw new Error(`Missing container #${containerId}`);
@@ -675,10 +1013,10 @@ function renderManhattanPlotly(manhattan, containerId, options = {}) {
 
   const pts = manhattan?.points || [];
   const xs = pts.map(p => p.x);
-  const ys = pts.map(p => p.variance);
+  const ys = pts.map(p => Number(p.contribution ?? p.variance));
 
   // hover fields
-  const customdata = pts.map(p => [p.gene, p.chr, p.pos, p.variance]);
+  const customdata = pts.map(p => [p.gene, p.chr, p.pos, Number(p.contribution ?? p.variance)]);
 
   const centers = manhattan?.chr_centers || [];
   const tickvals = centers.map(c => c.center);
@@ -694,7 +1032,7 @@ function renderManhattanPlotly(manhattan, containerId, options = {}) {
       "Gene: %{customdata[0]}<br>" +
       "Chromosome: %{customdata[1]}<br>" +
       "Position: %{customdata[2]}<br>" +
-      "Variance: %{customdata[3]:.3e}" +
+      "Gene contribution: %{customdata[3]:.3e}" +
       "<extra></extra>",
     marker: {
       size: expanded ? 8 : 6,
@@ -943,11 +1281,9 @@ async function loadAppInfo() {
       if (data.model) {
         activeModelName = data.model;
       }
-      syncEvaluationAvailability(data.evaluation_enabled === true);
     }
   } catch (e) {
     console.warn("Failed to load model info:", e);
-    syncEvaluationAvailability(false);
   }
 }
 
@@ -994,7 +1330,10 @@ function resetVisualizations() {
   const densityPlot = $("density-plot");
   currentManhattanData = null;
   currentDensityData = null;
+  currentDiseaseEvidence = null;
   closePlotOverlay();
+  closeEvidenceOverlay();
+  syncEvidenceSummaryButton();
 
   if (window.Plotly) {
     if (manhattanPlot) {
@@ -1023,6 +1362,9 @@ function resetConversationState() {
 }
 
 function resetDashboardForIndividualChange() {
+  window.XPRSRareVariantDrawer?.close();
+  rareDetailItems.clear();
+  rareDetailSequence = 0;
   resetConversationState();
   resetVisualizations();
 }
@@ -1208,6 +1550,70 @@ function renderMath(containerEl) {
   }
 }
 
+function normalizeLatexExpression(expression) {
+  return String(expression || "")
+    // Markdown-style escaping is invalid for subscripts inside LaTeX math.
+    .replace(/\\_/g, "_")
+    // Some models substitute Markdown emphasis markers for intended named
+    // subscripts, e.g. CS*{\mathrm{gene},j}.
+    .replace(/\\?\*\{\\mathrm\{([^{}]+)\}([^{}]*)\}/g, "_{\\mathrm{$1}$2}")
+    // Canonicalize flattened forms that remain readable to a person but do not
+    // carry mathematical structure for KaTeX.
+    .replace(/\bCS\s*SNP\s*,\s*i\b/gi, "CS_{\\mathrm{SNP},i}")
+    .replace(/\bCS\s*gene\s*,\s*j\b/gi, "CS_{\\mathrm{gene},j}")
+    .replace(/\bA\s*gene\s*,\s*j\b/gi, "A_{\\mathrm{gene},j}")
+    .replace(/\bG\s*0\s*,\s*i\b/g, "G_{0,i}")
+    .replace(/\bG\s*i\b/g, "G_i")
+    .replace(/\bp\s*i\b/g, "p_i")
+    .replace(/β\s*std\s*,\s*i/g, "\\beta_{\\mathrm{std},i}")
+    .replace(/∑\s*i\s*∈\s*j/g, "\\sum_{i \\in j}")
+    .replace(/β/g, "\\beta")
+    .replace(/∑/g, "\\sum ")
+    .replace(/∈/g, "\\in ")
+    .replace(/⋅/g, "\\cdot ")
+    .replace(/−/g, "-")
+    .replace(/mean⁡?\s*population\s*\(/gi, "\\operatorname{mean}_{\\mathrm{population}}(");
+}
+
+function normalizeDelimitedMath(text) {
+  return String(text || "").replace(
+    /\$\$([\s\S]*?)\$\$|\\\[([\s\S]*?)\\\]|\\\(([\s\S]*?)\\\)|\$([^\n$]+?)\$/g,
+    (match, displayDollar, displayBracket, inlineParen, inlineDollar) => {
+      if (displayDollar !== undefined) {
+        return `$$${normalizeLatexExpression(displayDollar)}$$`;
+      }
+      if (displayBracket !== undefined) {
+        return `\\[${normalizeLatexExpression(displayBracket)}\\]`;
+      }
+      if (inlineParen !== undefined) {
+        return `\\(${normalizeLatexExpression(inlineParen)}\\)`;
+      }
+      if (inlineDollar !== undefined) {
+        return `$${normalizeLatexExpression(inlineDollar)}$`;
+      }
+      return match;
+    },
+  );
+}
+
+function renderMarkdownWithProtectedMath(text) {
+  const mathExpressions = [];
+  const protectedText = String(text || "").replace(
+    /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$[^\n$]+?\$/g,
+    (expression) => {
+      const token = `XPRSMATHTOKEN${mathExpressions.length}END`;
+      mathExpressions.push(expression);
+      return token;
+    },
+  );
+  const rendered = window.marked
+    ? window.marked.parse(protectedText)
+    : escapeHtml(protectedText).replace(/\n/g, "<br>");
+  return rendered.replace(/XPRSMATHTOKEN(\d+)END/g, (_match, index) => {
+    return escapeHtml(mathExpressions[Number(index)] || "");
+  });
+}
+
 function normalizeMathMarkup(text) {
   let normalized = String(text || "");
 
@@ -1256,6 +1662,9 @@ function normalizeMathMarkup(text) {
       const trimmed = String(line || "").trim();
       if (!trimmed) return match;
       if (trimmed.startsWith("$")) return match;
+      // A prose sentence containing valid inline math must remain prose. Wrapping
+      // it creates nested dollar delimiters that no TeX renderer can parse.
+      if (trimmed.includes("$") || trimmed.includes("\\(") || trimmed.includes("\\[")) return match;
       if (trimmed.startsWith("- ") || trimmed.startsWith("* ") || /^\d+\.\s/.test(trimmed)) return match;
       if (!(/[=_^\\]/.test(trimmed))) return match;
       if (!(/[A-Za-z]/.test(trimmed))) return match;
@@ -1263,7 +1672,7 @@ function normalizeMathMarkup(text) {
     }
   );
 
-  return normalized;
+  return normalizeDelimitedMath(normalized);
 }
 
 function addMessage(role, text, options = {}) {
@@ -1289,7 +1698,7 @@ function addMessage(role, text, options = {}) {
       ? ""
       : `<div class="msg-model-label">Generated with ${escapeHtml(modelName)}</div>`;
     const normalizedText = normalizeMathMarkup(text || "");
-    const rendered = window.marked ? window.marked.parse(normalizedText) : normalizedText;
+    const rendered = renderMarkdownWithProtectedMath(normalizedText);
     bubble.innerHTML = `${individualLabel}${rendered}${modelLabel}`;
     renderMath(bubble);
     injectOpenTargetsCitations(bubble);
@@ -1426,10 +1835,10 @@ function bustCache(url) {
   return `${url}${sep}t=${Date.now()}`;
 }
 
-async function postJSON(url, payload) {
+async function postJSON(url, payload, { headers = {} } = {}) {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(payload),
   });
 
@@ -1440,8 +1849,44 @@ async function postJSON(url, payload) {
   return res.json();
 }
 
+const TASK_START_RETRY_DELAYS_MS = [0, 600, 1600];
+const TASK_RECOVERY_TIMEOUT_MS = 5 * 60 * 1000;
+
+function createTaskRequestId() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  return `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function startTaskWithRecovery(startUrl, payload, onProgress) {
+  const requestId = createTaskRequestId();
+  let lastError = null;
+  for (let attempt = 0; attempt < TASK_START_RETRY_DELAYS_MS.length; attempt += 1) {
+    const delay = TASK_START_RETRY_DELAYS_MS[attempt];
+    if (delay) await wait(delay);
+    try {
+      return await postJSON(startUrl, payload, {
+        headers: { "X-XPRS-Request-ID": requestId },
+      });
+    } catch (error) {
+      lastError = error;
+      // HTTP errors are deterministic; retry only browser/network failures.
+      if (!(error instanceof TypeError)) throw error;
+      if (attempt + 1 < TASK_START_RETRY_DELAYS_MS.length && onProgress) {
+        onProgress("Connection interrupted while starting the task; retrying automatically");
+      }
+    }
+  }
+  throw new Error(
+    `Could not reach the server after automatic retries${lastError?.message ? `: ${lastError.message}` : "."}`,
+  );
+}
+
 function updateExportButtons() {
-  const enabled = Boolean(activeSessionId && activeSummaryIndividualId);
+  const enabled = Boolean(activeSessionId && activeSummaryIndividualId) && !pdfDownloadInProgress;
   const menuBtn = $("export-menu-btn");
   if (menuBtn) {
     menuBtn.disabled = !enabled;
@@ -1535,16 +1980,38 @@ function triggerBlobDownload(blob, filename) {
 }
 
 async function fetchDownload(url, options = {}, fallbackFilename = "download.bin") {
-  const res = await fetch(url, options);
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${txt}`);
+  const retryDelaysMs = options.networkRetryDelaysMs || [0];
+  const requestOptions = { ...options };
+  delete requestOptions.networkRetryDelaysMs;
+  delete requestOptions.onNetworkRetry;
+
+  let lastError = null;
+  for (let attempt = 0; attempt < retryDelaysMs.length; attempt += 1) {
+    const delay = retryDelaysMs[attempt];
+    if (delay) await wait(delay);
+    try {
+      const res = await fetch(url, requestOptions);
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`${res.status} ${res.statusText}: ${txt}`);
+      }
+      const blob = await res.blob();
+      return {
+        blob,
+        filename: getFilenameFromResponse(res, fallbackFilename),
+      };
+    } catch (error) {
+      lastError = error;
+      // HTTP failures are deterministic. A TypeError instead means that the
+      // request or response stream was interrupted; downloads are read-only
+      // and can be retried safely.
+      if (!(error instanceof TypeError) || attempt + 1 >= retryDelaysMs.length) {
+        throw error;
+      }
+      options.onNetworkRetry?.(attempt + 1);
+    }
   }
-  const blob = await res.blob();
-  return {
-    blob,
-    filename: getFilenameFromResponse(res, fallbackFilename),
-  };
+  throw lastError || new Error("Download failed");
 }
 
 async function capturePlotImage(containerId) {
@@ -1570,7 +2037,10 @@ async function downloadPdfReport() {
     setStatus($("chat-status"), t("exportUnavailable"));
     return;
   }
+  if (pdfDownloadInProgress) return;
 
+  pdfDownloadInProgress = true;
+  updateExportButtons();
   setStatus($("chat-status"), t("exportPdfLoading"));
   try {
     const [densityImage, manhattanImage] = await Promise.all([
@@ -1580,6 +2050,8 @@ async function downloadPdfReport() {
     const { blob, filename } = await fetchDownload("/api/report/pdf", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      networkRetryDelaysMs: [0, 750],
+      onNetworkRetry: () => setStatus($("chat-status"), t("exportPdfRetrying")),
       body: JSON.stringify({
         session_id: activeSessionId,
         individual_id: activeSummaryIndividualId,
@@ -1591,6 +2063,8 @@ async function downloadPdfReport() {
     }, `xprs_report_${activeSummaryIndividualId}.pdf`);
     triggerBlobDownload(blob, filename);
   } finally {
+    pdfDownloadInProgress = false;
+    updateExportButtons();
     closeExportMenu();
     setStatus($("chat-status"), "");
   }
@@ -1618,18 +2092,51 @@ async function downloadChatExport(kind) {
 }
 
 async function runTaskStream(startUrl, payload, { onProgress } = {}) {
-  const { task_id: taskId } = await postJSON(startUrl, payload);
+  const { task_id: taskId } = await startTaskWithRecovery(startUrl, payload, onProgress);
   if (!taskId) throw new Error("Task start failed: missing task_id");
 
   return await new Promise((resolve, reject) => {
     const es = new EventSource(`/api/tasks/${encodeURIComponent(taskId)}/events`);
     let settled = false;
+    let recoveryStarted = false;
+    let recoveryTimer = null;
+    const recoveryDeadline = Date.now() + TASK_RECOVERY_TIMEOUT_MS;
 
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
+      if (recoveryTimer !== null) window.clearTimeout(recoveryTimer);
       es.close();
       fn(value);
+    };
+
+    const pollTaskStatus = async () => {
+      if (settled) return;
+      try {
+        const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+          cache: "no-store",
+        });
+        if (response.ok) {
+          const state = await response.json();
+          if (state.status === "complete") {
+            finish(resolve, state.result || {});
+            return;
+          }
+          if (state.status === "failed") {
+            finish(reject, new Error(state.error || "Task failed"));
+            return;
+          }
+        }
+      } catch (_) {
+        // EventSource and status polling recover independently. Keep trying
+        // until one succeeds or the bounded recovery period expires.
+      }
+
+      if (Date.now() >= recoveryDeadline) {
+        finish(reject, new Error("The connection to the running task could not be restored."));
+        return;
+      }
+      recoveryTimer = window.setTimeout(pollTaskStatus, 2000);
     };
 
     es.addEventListener("progress", (event) => {
@@ -1659,15 +2166,20 @@ async function runTaskStream(startUrl, payload, { onProgress } = {}) {
     });
 
     es.onerror = () => {
-      if (!settled) {
-        finish(reject, new Error("Task stream connection lost"));
+      if (settled || recoveryStarted) return;
+      recoveryStarted = true;
+      if (onProgress) {
+        onProgress("Connection interrupted; recovering the running task automatically");
       }
+      // EventSource will reconnect by itself. Polling the durable task state in
+      // parallel also recovers a completion event lost during the interruption.
+      pollTaskStatus();
     };
   });
 }
 
 function setImage(imgEl, placeholderEl, metaEl, url, metaText) {
-  // NEW: guard for removed elements
+  // Guard for controls removed from the current dashboard.
   if (!imgEl || !placeholderEl) {
     // still allow meta updates if present
     setStatus(metaEl, metaText || "—");
@@ -1750,7 +2262,6 @@ function renderReferencesList(refs) {
         }</span>`
       : "";
 
-    // Paper refs are clickable
     if (r.paperId) {
       return `
         <div class="ref-item" data-paper-id="${escapeHtml(r.paperId)}" data-ref-number="${n}">
@@ -1782,6 +2293,21 @@ function renderReferencesList(refs) {
   }).join("");
 }
 
+function preferredNcbiPaperUrl(record) {
+  const pmcid = String(record?.pmcid || "").trim();
+  if (pmcid) {
+    return `https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(pmcid)}/`;
+  }
+  const pmid = String(record?.pmid || "").trim();
+  if (pmid) {
+    return `https://pubmed.ncbi.nlm.nih.gov/${encodeURIComponent(pmid)}/`;
+  }
+
+  const disclaimer = String(record?.openAccessPdf?.disclaimer || "");
+  const pmcMatch = disclaimer.match(/https:\/\/pmc\.ncbi\.nlm\.nih\.gov\/articles\/PMC\d+/i);
+  return pmcMatch ? `${pmcMatch[0]}/` : "";
+}
+
 function renderPaper(paper) {
   const panel = $("paper-body");
   if (!panel) return;
@@ -1804,21 +2330,11 @@ function renderPaper(paper) {
     fullAuthorList = authorDisplay;
   }
 
-  // 2. PMC Link Extraction
-  let pmcLinkHtml = "";
-  const disclaimer = paper?.openAccessPdf?.disclaimer || "";
-  const pmcMatch = disclaimer.match(/https:\/\/pmc\.ncbi\.nlm\.nih\.gov\/articles\/PMC\d+/);
-  
-  if (pmcMatch) {
-    const pmcUrl = pmcMatch[0];
-    pmcLinkHtml = `
-      <div class="paper-links__item">
-        <a href="${pmcUrl}" target="_blank" rel="noreferrer" class="paper-link paper-link--pmc">
-          <span>View on PubMed Central</span> ↗
-        </a>
-      </div>
-    `;
-  }
+  // 2. Prefer the authoritative NCBI destination. Semantic Scholar remains
+  // available as the link of last resort for records without PMID/PMCID data.
+  const ncbiUrl = preferredNcbiPaperUrl(paper);
+  const destinationUrl = ncbiUrl || paper?.url || "";
+  const destinationLabel = ncbiUrl ? t("viewOnPubMedPmc") : t("viewOnSemanticScholar");
 
   // 3. Render
   const journalBits = [
@@ -1849,16 +2365,13 @@ function renderPaper(paper) {
 
       <div class="paper-view__footer">
         <div class="paper-links">
-          ${
-            paper?.url
-              ? `<div class="paper-links__item">
-                  <a href="${paper.url}" target="_blank" rel="noreferrer" class="paper-link">
-                    <span>View on Semantic Scholar</span> ↗
-                  </a>
-                </div>`
-              : ""
-          }
-          ${pmcLinkHtml}
+          ${destinationUrl
+            ? `<div class="paper-links__item">
+                <a href="${escapeHtml(destinationUrl)}" target="_blank" rel="noreferrer" class="paper-link">
+                  <span>${escapeHtml(destinationLabel)}</span> ↗
+                </a>
+              </div>`
+            : ""}
         </div>
       </div>
     </div>
@@ -1883,34 +2396,178 @@ function injectPaperIds(containerEl) {
 // ----------------------------
 async function loadIndividuals() {
   setStatus($("individual-status"), t("loadingIndividuals"));
-  const res = await fetch("/api/individuals");
+  const params = new URLSearchParams({
+    cohort: getActiveCohortSlug(),
+    disease: getActiveDiseaseSlug(),
+  });
+  const res = await fetch(`/api/individuals?${params.toString()}`);
   if (!res.ok) throw new Error(`Failed to load individuals: HTTP ${res.status}`);
   const data = await res.json();
   allIndividuals = Array.isArray(data.individuals) ? data.individuals : [];
-  renderIndividualOptions(allIndividuals);
-  setStatus($("individual-status"), t("loadedIndividuals")(allIndividuals.length));
+  individualSearchIndex = allIndividuals.map((pid) => ({
+    pid,
+    searchValue: pid.toLowerCase(),
+  }));
+  renderedIndividualKey = "";
+  renderIndividualOptions(allIndividuals, {
+    selectFallback: true,
+    syncSearch: true,
+    refreshPreview: true,
+  });
 }
 
-function renderIndividualOptions(individuals) {
+function rareFindingCard(item) {
+  const significance = [item.clnsig, item.tier, item.moi_call].filter(Boolean).join(" · ");
+  const primaryVariant = item.hgvs || item.variant || item.rsid || "—";
+  const primaryVariantMarkup = clinvarVariantLink(item.hgvs, primaryVariant);
+  const detail = [item.hgvs && item.variant ? item.variant : null, item.genotype, item.consequence]
+    .filter(Boolean)
+    .join(" · ");
+  return `<article class="rare-finding-item">
+    <div class="rare-finding-item__heading">
+      <strong>${escapeHtml(String(item.gene || "Unknown gene"))}</strong>
+      <div class="rare-finding-item__actions">
+        <span>${escapeHtml(significance)}</span>
+        ${rareDetailTrigger(item)}
+      </div>
+    </div>
+    <div class="rare-finding-item__variant">${primaryVariantMarkup}</div>
+    ${detail ? `<div>${escapeHtml(detail)}</div>` : ""}
+    ${item.clinvar_conditions ? `<div class="rare-finding-item__condition">${escapeHtml(String(item.clinvar_conditions))}</div>` : ""}
+  </article>`;
+}
+
+function rareFindingCards(items) {
+  const visible = items.slice(0, 20);
+  const remaining = items.length - visible.length;
+  return `${visible.map(rareFindingCard).join("")}
+    ${remaining > 0 ? `<p class="rare-finding-more">${escapeHtml(t("rareMoreFindings")(remaining))}</p>` : ""}`;
+}
+
+function rareDiseaseGroupLabel(group) {
+  if (currentLanguage === "ko") {
+    return DISEASE_NAMES_KO[group.disease] || group.disease_label || group.disease;
+  }
+  return group.disease_label || diseaseRegistry[group.disease]?.display_name || group.disease;
+}
+
+function rareGroupCountText(group) {
+  return t("rareGroupCounts")(Number(group.alert_count || 0), Number(group.carrier_count || 0));
+}
+
+async function loadRareFindings(pid) {
+  const container = $("rare-variant-content");
+  if (!container) return;
+  if (!isPrivatePreview()) {
+    container.innerHTML = `<div class="viz-empty-state"><span class="material-symbols-outlined" aria-hidden="true">genetics</span><p>${t("rareVariantUnavailable")}</p></div>`;
+    return;
+  }
+  container.innerHTML = `<div class="viz-empty-state"><span class="loading-spinner"></span></div>`;
+  const params = new URLSearchParams({ individual_id: pid, disease: getActiveDiseaseSlug() });
+  const response = await fetch(`/api/kpredict/rare-findings?${params.toString()}`);
+  if (!response.ok) throw new Error(`Rare-variant data unavailable: HTTP ${response.status}`);
+  const data = await response.json();
+  const fallbackActiveItems = Array.isArray(data.disease_findings) ? data.disease_findings : [];
+  const fallbackOtherItems = Array.isArray(data.other_findings) ? data.other_findings : [];
+  const activeGroup = data.active_disease_group || {
+    disease: getActiveDiseaseSlug(),
+    disease_label: activeDiseaseDisplayName(),
+    finding_count: fallbackActiveItems.length,
+    alert_count: fallbackActiveItems.filter((item) => item.moi_call === "alert").length,
+    carrier_count: fallbackActiveItems.filter((item) => item.moi_call === "carrier").length,
+    findings: fallbackActiveItems,
+  };
+  const otherDiseaseGroups = Array.isArray(data.other_disease_groups) ? data.other_disease_groups : [];
+  const unassignedGroup = data.unassigned_group || {
+    finding_count: fallbackOtherItems.length,
+    alert_count: fallbackOtherItems.filter((item) => item.moi_call === "alert").length,
+    carrier_count: fallbackOtherItems.filter((item) => item.moi_call === "carrier").length,
+    findings: fallbackOtherItems,
+  };
+  const activeItems = Array.isArray(activeGroup.findings) ? activeGroup.findings : [];
+  const unassignedItems = Array.isArray(unassignedGroup.findings) ? unassignedGroup.findings : [];
+  if (!data.finding_count && !activeItems.length && !otherDiseaseGroups.length && !unassignedItems.length) {
+    container.innerHTML = `<div class="viz-empty-state"><span class="material-symbols-outlined" aria-hidden="true">genetics</span><p>${t("rareNoFindings")}</p></div>`;
+    return;
+  }
+  const activeLabel = rareDiseaseGroupLabel(activeGroup);
+  const activeSection = `<section class="rare-finding-group rare-finding-group--active">
+    <h4>${escapeHtml(t("rareActiveDiseaseFindings")(activeLabel))} <span>(${activeItems.length})</span></h4>
+    ${activeItems.length
+      ? rareFindingCards(activeItems)
+      : `<p class="rare-finding-empty">${escapeHtml(t("rareNoActiveDiseaseFindings")(activeLabel))}</p>`}
+  </section>`;
+  const otherPanelCount = otherDiseaseGroups.reduce(
+    (total, group) => total + Number(group.finding_count || 0),
+    0,
+  );
+  const otherPanelSections = otherDiseaseGroups.length
+    ? `<div class="rare-finding-subheading">${escapeHtml(t("rareOtherDiseasePanels"))} <span>(${otherPanelCount})</span></div>
+      ${otherDiseaseGroups.map((group) => {
+        const items = Array.isArray(group.findings) ? group.findings : [];
+        return `<details class="rare-finding-collapsible">
+          <summary><span>${escapeHtml(rareDiseaseGroupLabel(group))} (${items.length})</span><small>${escapeHtml(rareGroupCountText(group))}</small></summary>
+          <div class="rare-finding-collapsible__body">${rareFindingCards(items)}</div>
+        </details>`;
+      }).join("")}`
+    : "";
+  const unassignedSection = unassignedItems.length
+    ? `<details class="rare-finding-collapsible rare-finding-collapsible--unassigned">
+        <summary><span>${escapeHtml(t("rareUnassignedFindings"))} (${unassignedItems.length})</span><small>${escapeHtml(rareGroupCountText(unassignedGroup))}</small></summary>
+        <div class="rare-finding-collapsible__body">${rareFindingCards(unassignedItems)}</div>
+      </details>`
+    : "";
+  container.innerHTML = `<div class="rare-finding-summary">${escapeHtml(t("rareFindingSummary")(data.finding_count, data.alert_count, data.carrier_count))}</div>
+    ${activeSection}
+    ${otherPanelSections}
+    ${unassignedSection}`;
+}
+
+function renderIndividualOptions(
+  individuals,
+  { selectFallback = false, syncSearch = false, refreshPreview = false } = {},
+) {
   const sel = $("individual-id");
   if (!sel) return;
-  const preferredSelection = getSelectedIndividualId() || lastSelectedIndividualId || "";
-  sel.innerHTML = "";
-  individuals.forEach((pid) => {
-    const opt = document.createElement("option");
-    opt.value = pid;
-    opt.textContent = pid;
-    sel.appendChild(opt);
-  });
-  if (individuals.length > 0) {
-    sel.value = individuals.includes(preferredSelection) ? preferredSelection : individuals[0];
-    lastSelectedIndividualId = sel.value;
-    syncIndividualSearchDisplay(sel.value);
-  } else {
-    lastSelectedIndividualId = null;
-    syncIndividualSearchDisplay("");
+  const preferredSelection = lastSelectedIndividualId || getSelectedIndividualId() || "";
+  let visible = individuals.slice(0, INDIVIDUAL_SEARCH_LIMIT);
+  if (
+    preferredSelection
+    && individuals.includes(preferredSelection)
+    && !visible.includes(preferredSelection)
+  ) {
+    visible = [preferredSelection, ...visible.slice(0, INDIVIDUAL_SEARCH_LIMIT - 1)];
   }
-  updateGeneSelectionPreview();
+  const nextSelection = visible.includes(preferredSelection)
+    ? preferredSelection
+    : (selectFallback ? visible[0] || "" : "");
+  const renderKey = `${nextSelection}\n${visible.join("\n")}`;
+  if (renderKey !== renderedIndividualKey) {
+    const fragment = document.createDocumentFragment();
+    visible.forEach((pid) => {
+      const option = document.createElement("option");
+      option.value = pid;
+      option.textContent = pid;
+      fragment.appendChild(option);
+    });
+    sel.replaceChildren(fragment);
+    if (nextSelection) {
+      sel.value = nextSelection;
+    } else {
+      sel.selectedIndex = -1;
+    }
+    renderedIndividualKey = renderKey;
+  }
+  if (nextSelection) {
+    lastSelectedIndividualId = nextSelection;
+    if (syncSearch) syncIndividualSearchDisplay(nextSelection);
+  } else if (selectFallback) {
+    lastSelectedIndividualId = null;
+    if (syncSearch) syncIndividualSearchDisplay("");
+  }
+  sel.disabled = visible.length === 0;
+  setStatus($("individual-status"), t("loadedIndividuals")(individuals.length, visible.length));
+  if (refreshPreview) updateGeneSelectionPreview();
 }
 
 function selectIndividualById(pid) {
@@ -1929,9 +2586,15 @@ function filterIndividuals() {
   const term = ($("individual-search")?.value || "").trim().toLowerCase();
   const filtered = !term
     ? allIndividuals
-    : allIndividuals.filter((pid) => pid.toLowerCase().includes(term));
+    : individualSearchIndex
+        .filter((entry) => entry.searchValue.includes(term))
+        .map((entry) => entry.pid);
   renderIndividualOptions(filtered);
-  setStatus($("individual-status"), t("loadedIndividuals")(filtered.length));
+}
+
+function scheduleIndividualFilter() {
+  window.clearTimeout(individualSearchTimer);
+  individualSearchTimer = window.setTimeout(filterIndividuals, INDIVIDUAL_SEARCH_DEBOUNCE_MS);
 }
 
 // ----------------------------
@@ -1943,6 +2606,7 @@ async function loadPlotsForIndividual(pid) {
   const payload = await postJSON("/api/plotdata", {
     individual_id: pid,
     disease: getActiveDiseaseSlug(),
+    cohort: getActiveCohortSlug(),
   });
 
   try {
@@ -1979,6 +2643,22 @@ async function loadPlotsForIndividual(pid) {
   }
 
   setStatus($("viz-status"), "");
+  const [rareResult, evidenceResult] = await Promise.allSettled([
+    loadRareFindings(pid),
+    loadDiseaseEvidence(pid),
+  ]);
+  if (rareResult.status === "rejected") {
+    console.warn(rareResult.reason);
+    const container = $("rare-variant-content");
+    if (container) container.innerHTML = `<div class="viz-empty-state"><p>${escapeHtml(rareResult.reason?.message || String(rareResult.reason))}</p></div>`;
+  }
+  if (evidenceResult.status === "rejected") {
+    console.warn(evidenceResult.reason);
+    currentDiseaseEvidence = null;
+    syncEvidenceSummaryButton();
+    const container = $("evidence-overlay-body");
+    if (container) container.innerHTML = `<div class="viz-empty-state"><p>${escapeHtml(t("evidenceLoadFailed"))}</p></div>`;
+  }
   return payload;
 }
 
@@ -2032,6 +2712,7 @@ async function generateSummary() {
     const summary = await runTaskStream("/api/summary/start", {
       individual_id: pid,
       disease: getActiveDiseaseSlug(),
+      cohort: getActiveCohortSlug(),
       gene_count: geneCount,
       language,
       model: selectedGenerationModel,
@@ -2092,6 +2773,7 @@ async function sendFollowup() {
     const res = await runTaskStream("/api/chat/start", {
       individual_id: pid,
       disease: getActiveDiseaseSlug(),
+      cohort: getActiveCohortSlug(),
       query: q,
       session_id: activeSessionId,
       language: currentLanguage,
@@ -2213,6 +2895,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const params = dashboardUrlParams();
   const initialIndividualId = params.get("individual_id")
     || readPreference(INDIVIDUAL_PREFERENCE_KEY, "");
+  lastSelectedIndividualId = initialIndividualId || null;
   const requestedLanguage = params.get("language");
   currentLanguage = requestedLanguage === "ko" || requestedLanguage === "en"
     ? requestedLanguage
@@ -2220,6 +2903,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   savePreference(LANGUAGE_PREFERENCE_KEY, currentLanguage);
   syncLanguageInUrl();
   currentDiseaseSlug = params.get("disease") || params.get("phenotype") || "breast_cancer";
+  currentCohortSlug = params.get("cohort") || "1000_genomes";
   if (!initialIndividualId) {
     openLandingModal();
   }
@@ -2234,6 +2918,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   await loadAppInfo();
   await loadModels();
   await loadIndividuals();
+  syncPrivatePrivacyDisclosure();
   if (initialIndividualId && selectIndividualById(initialIndividualId)) {
     commitIndividualSelection(initialIndividualId);
     closeLandingModal(true);
@@ -2293,16 +2978,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       updateGeneSelectionPreview();
       closeIndividualDropdown();
     });
-    individualSelect.addEventListener("input", () => {
-      lastSelectedIndividualId = individualSelect.value || lastSelectedIndividualId;
-      syncIndividualSearchDisplay(lastSelectedIndividualId);
-      updateGeneSelectionPreview();
-    });
-    individualSelect.addEventListener("click", () => {
-      lastSelectedIndividualId = individualSelect.value || lastSelectedIndividualId;
-      syncIndividualSearchDisplay(lastSelectedIndividualId);
-      updateGeneSelectionPreview();
-    });
   }
 
   const individualSearch = $("individual-search");
@@ -2315,7 +2990,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       individualSearch.select();
       openIndividualDropdown();
     });
-    individualSearch.addEventListener("input", filterIndividuals);
+    individualSearch.addEventListener("input", scheduleIndividualFilter);
   }
 
   const summaryGeneCount = $("summary-gene-count");
@@ -2370,6 +3045,25 @@ window.addEventListener("DOMContentLoaded", async () => {
     closePlotOverlay();
   });
 
+  $("evidence-summary-btn")?.addEventListener("click", () => {
+    openEvidenceOverlay();
+  });
+
+  $("close-evidence-overlay-btn")?.addEventListener("click", () => {
+    closeEvidenceOverlay();
+  });
+
+  $("evidence-overlay-backdrop")?.addEventListener("click", () => {
+    closeEvidenceOverlay();
+  });
+
+  const rareDetailClickHandler = (event) => {
+    const trigger = event.target?.closest?.("[data-rare-detail-key]");
+    if (trigger) openRareDetail(trigger.dataset.rareDetailKey);
+  };
+  $("rare-variant-content")?.addEventListener("click", rareDetailClickHandler);
+  $("evidence-overlay-body")?.addEventListener("click", rareDetailClickHandler);
+
   document.addEventListener("click", (e) => {
     const wrap = document.querySelector(".export-menu-wrap");
     if (!wrap) return;
@@ -2387,6 +3081,15 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape") return;
+    const rareDetailOverlay = $("rare-detail-overlay");
+    if (rareDetailOverlay && !rareDetailOverlay.hidden) {
+      window.XPRSRareVariantDrawer?.close();
+      return;
+    }
+    if ($("evidence-overlay")?.classList.contains("is-open")) {
+      closeEvidenceOverlay();
+      return;
+    }
     if ($("plot-overlay")?.classList.contains("is-open")) {
       closePlotOverlay();
       return;
@@ -2410,5 +3113,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   syncManhattanPopoutButton();
+  syncEvidenceSummaryButton();
   syncPlotOverlayUI();
 });

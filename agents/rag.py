@@ -65,6 +65,7 @@ class RAGAgent:
         self._reranker = None
         self._reranker_error: str | None = None
         self._reranker_lock = threading.Lock()
+        self._upsert_lock = threading.Lock()
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         return self._emb_model.encode(texts, normalize_embeddings=True).tolist()
@@ -72,16 +73,20 @@ class RAGAgent:
     def upsert_docs(self, docs: List[Dict[str, Any]]) -> None:
         if not docs:
             return
-        ids = [d["id"] for d in docs]
-        texts = [d["text"] for d in docs]
-        metas = [d.get("meta", {}) for d in docs]
-        embs = self.embed(texts)
-        self._collection.upsert(
-            ids=ids,
-            embeddings=embs,
-            documents=texts,
-            metadatas=metas,
-        )
+        # Interactive retrieval and the background Semantic Scholar paginator
+        # share one embedded Chroma collection. Serialize embedding/upsert work
+        # so the background worker cannot race a cold interactive request.
+        with self._upsert_lock:
+            ids = [d["id"] for d in docs]
+            texts = [d["text"] for d in docs]
+            metas = [d.get("meta", {}) for d in docs]
+            embs = self.embed(texts)
+            self._collection.upsert(
+                ids=ids,
+                embeddings=embs,
+                documents=texts,
+                metadatas=metas,
+            )
 
     def gene_is_indexed(self, gene: str) -> bool:
         existing = self._collection.get(
@@ -94,6 +99,37 @@ class RAGAgent:
     def has_documents(self, where: Dict[str, Any]) -> bool:
         existing = self._collection.get(where=where, limit=1, include=[])
         return len(existing["ids"]) > 0
+
+    def documents_use_gene_identity_policy(
+        self,
+        where: Dict[str, Any],
+        policy_version: int,
+    ) -> bool:
+        """Whether every document in a Semantic Scholar pool is current."""
+        existing = self._collection.get(where=where, include=["metadatas"])
+        ids = existing.get("ids") or []
+        metadata_rows = existing.get("metadatas") or []
+        if not ids:
+            return False
+        for raw_metadata in metadata_rows:
+            metadata = dict(raw_metadata or {})
+            try:
+                stored_version = int(
+                    metadata.get("gene_identity_policy_version") or 0
+                )
+            except (TypeError, ValueError):
+                stored_version = 0
+            if (
+                stored_version != int(policy_version)
+                or metadata.get("gene_identity_validated") is not True
+            ):
+                return False
+        return True
+
+    def delete_documents(self, where: Dict[str, Any]) -> None:
+        """Remove one exactly scoped pool before rebuilding its documents."""
+        with self._upsert_lock:
+            self._collection.delete(where=where)
 
     @staticmethod
     def _admin_pool_label(metadata: Dict[str, Any]) -> str:
@@ -124,8 +160,10 @@ class RAGAgent:
         metadata_rows = result.get("metadatas") or []
         genes: dict[str, Counter[str]] = {}
         gene_phenotypes: dict[str, Counter[str]] = {}
+        gene_sources: dict[str, Counter[str]] = {}
         pool_totals: Counter[str] = Counter()
         phenotype_totals: Counter[str] = Counter()
+        source_totals: Counter[str] = Counter()
 
         for raw_metadata in metadata_rows:
             metadata = dict(raw_metadata or {})
@@ -134,6 +172,9 @@ class RAGAgent:
                 continue
             pool = self._admin_pool_label(metadata)
             genes.setdefault(gene, Counter())[pool] += 1
+            source = str(metadata.get("source") or "unknown").strip().lower()
+            gene_sources.setdefault(gene, Counter())[source] += 1
+            source_totals[source] += 1
             pool_totals[pool] += 1
             query_phenotype = str(metadata.get("phenotype") or "").strip()
             if pool == "phenotype" and query_phenotype:
@@ -149,6 +190,7 @@ class RAGAgent:
                     "total": sum(counts.values()),
                     "pools": dict(sorted(counts.items())),
                     "phenotypes": dict(sorted(gene_phenotypes.get(gene, {}).items())),
+                    "sources": dict(sorted(gene_sources.get(gene, {}).items())),
                 }
             )
 
@@ -157,6 +199,7 @@ class RAGAgent:
             "gene_count": len(gene_rows),
             "pools": dict(sorted(pool_totals.items())),
             "phenotypes": dict(sorted(phenotype_totals.items())),
+            "sources": dict(sorted(source_totals.items())),
             "genes": gene_rows,
         }
 
@@ -193,7 +236,9 @@ class RAGAgent:
 
             title = str(metadata.get("title") or "").strip()
             text = str(document or "")
-            paper_id = str(metadata.get("paperId") or "").strip()
+            paper_id = str(
+                metadata.get("publication_id") or metadata.get("paperId") or ""
+            ).strip()
             if needle and needle not in "\n".join((title, text, paper_id)).casefold():
                 continue
 
@@ -205,6 +250,7 @@ class RAGAgent:
                     "source": str(metadata.get("source") or ""),
                     "phenotype": metadata.get("phenotype"),
                     "paper_id": paper_id or None,
+                    "publication_id": paper_id or None,
                     "title": title or "Untitled document",
                     "url": metadata.get("url"),
                     "journal": metadata.get("journal"),
@@ -247,6 +293,123 @@ class RAGAgent:
             "offset": start,
             "limit": page_size,
             "documents": items[start : start + page_size],
+        }
+
+    @staticmethod
+    def _publication_identifiers(metadata: Dict[str, Any]) -> set[str]:
+        """Return equivalent, case-insensitive identifiers for one record."""
+        values: set[str] = set()
+        for key in ("publication_id", "paperId", "pmid", "pmcid", "doi"):
+            value = str(metadata.get(key) or "").strip()
+            if not value:
+                continue
+            folded = value.casefold()
+            values.add(folded)
+            if ":" in value:
+                values.add(value.split(":", 1)[1].strip().casefold())
+            elif key == "pmid":
+                values.add(f"pmid:{folded}")
+            elif key == "pmcid":
+                values.add(f"pmcid:{folded}")
+            elif key == "doi":
+                values.add(f"doi:{folded}")
+        return values
+
+    def find_indexed_paper(
+        self,
+        paper_id: str,
+        genes: list[str] | tuple[str, ...],
+    ) -> Dict[str, Any] | None:
+        """Return a cited paper from Chroma without embeddings or network I/O.
+
+        References are generated from indexed documents, so Chroma is the
+        authoritative viewer source. Provider caches remain useful fallbacks
+        for older records but are not required for newly generated citations.
+        """
+        wanted = str(paper_id or "").strip()
+        if not wanted:
+            return None
+        wanted_ids = self._publication_identifiers({"publication_id": wanted})
+        gene_names = [str(gene).strip() for gene in genes if str(gene).strip()]
+        candidates: list[tuple[str, Dict[str, Any]]] = []
+
+        for gene in gene_names:
+            result = self._collection.get(
+                where={"gene": gene},
+                include=["documents", "metadatas"],
+            )
+            documents = result.get("documents") or []
+            metadata_rows = result.get("metadatas") or []
+            candidates.extend(
+                (str(document or ""), dict(metadata or {}))
+                for document, metadata in zip(documents, metadata_rows)
+            )
+
+        matches = [
+            (document, metadata)
+            for document, metadata in candidates
+            if wanted_ids & self._publication_identifiers(metadata)
+        ]
+
+        # A combined citation can outlive a changed gene label. Exact metadata
+        # lookup is a bounded fallback and avoids scanning the whole collection.
+        if not matches:
+            exact_values = {wanted}
+            if ":" in wanted:
+                exact_values.add(wanted.split(":", 1)[1].strip())
+            elif wanted.isdigit():
+                exact_values.add(f"PMID:{wanted}")
+            elif wanted.upper().startswith("PMC"):
+                exact_values.add(f"PMCID:{wanted}")
+            elif "/" in wanted:
+                exact_values.add(f"DOI:{wanted}")
+            for field in ("publication_id", "paperId", "pmid", "pmcid", "doi"):
+                for identifier in exact_values:
+                    result = self._collection.get(
+                        where={field: identifier},
+                        include=["documents", "metadatas"],
+                    )
+                    documents = result.get("documents") or []
+                    metadata_rows = result.get("metadatas") or []
+                    candidates.extend(
+                        (str(document or ""), dict(metadata or {}))
+                        for document, metadata in zip(documents, metadata_rows)
+                    )
+            matches = [
+                (document, metadata)
+                for document, metadata in candidates
+                if wanted_ids & self._publication_identifiers(metadata)
+            ]
+        if not matches:
+            return None
+
+        # Prefer the richest duplicate when a paper appears in multiple pools.
+        document, metadata = max(
+            matches,
+            key=lambda item: sum(
+                bool(item[1].get(key))
+                for key in ("journal", "authors", "year", "pmid", "pmcid", "doi", "url")
+            ),
+        )
+        title = str(metadata.get("title") or "").strip()
+        abstract = document.strip()
+        if title and abstract.startswith(title):
+            abstract = abstract[len(title) :].lstrip()
+        return {
+            "paperId": str(
+                metadata.get("publication_id") or metadata.get("paperId") or wanted
+            ).strip(),
+            "title": title or "Untitled",
+            "year": metadata.get("year"),
+            "authors": metadata.get("authors") or "",
+            "journal": metadata.get("journal") or None,
+            "citationCount": self._citation_value(metadata),
+            "abstract": abstract,
+            "url": metadata.get("url") or metadata.get("provider_url") or "",
+            "pmid": str(metadata.get("pmid") or "").strip() or None,
+            "pmcid": str(metadata.get("pmcid") or "").strip() or None,
+            "doi": str(metadata.get("doi") or "").strip() or None,
+            "openAccessPdf": {},
         }
 
     def query(

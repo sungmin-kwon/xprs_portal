@@ -4,10 +4,28 @@ import re
 import threading
 from typing import Any, Callable
 
+from config import PHENOTYPE_ALIASES
 from phenotype_utils import infer_phenotypes_from_text, normalize_phenotype_values
 from text_utils import unique_preserving_order
 
 logger = logging.getLogger(__name__)
+
+
+# Increment this whenever the rules that decide whether an acronym denotes the
+# intended gene change. The version is stored in both the JSON cache and Chroma
+# metadata so old lexical-only matches cannot silently remain citable.
+GENE_IDENTITY_POLICY_VERSION = 2
+GENE_SEARCH_STRATEGY_VERSION = 2
+
+# Short symbols are particularly prone to acronym collisions. A small curated
+# identity record improves both search precision and deterministic validation;
+# other short symbols are sent through the semantic identity check below.
+GENE_IDENTITY_OVERRIDES: dict[str, dict[str, Any]] = {
+    "GML": {
+        "name": "glycosylphosphatidylinositol anchored molecule like",
+        "aliases": ["LY6DL", "GPI-anchored molecule-like protein"],
+    },
+}
 
 
 def _extract_json_object(raw: str) -> dict[str, Any]:
@@ -31,6 +49,115 @@ def _normalize_gene_symbol(value: str) -> str:
     if not re.fullmatch(r"[A-Z][A-Z0-9-]{1,19}", token):
         return ""
     return token
+
+
+def gene_identity_profile(gene: str) -> dict[str, Any]:
+    symbol = _normalize_gene_symbol(gene)
+    override = GENE_IDENTITY_OVERRIDES.get(symbol, {})
+    return {
+        "symbol": symbol,
+        "name": str(override.get("name") or "").strip(),
+        "aliases": [
+            str(alias).strip()
+            for alias in override.get("aliases", [])
+            if str(alias).strip()
+        ],
+        "requires_semantic_validation": bool(symbol and len(symbol) <= 3),
+    }
+
+
+def gene_search_query(gene: str, phenotype: str | None = None) -> str:
+    """Build a plain-text Semantic Scholar query with gene-sense context."""
+    profile = gene_identity_profile(gene)
+    terms = [profile["symbol"] or str(gene).strip()]
+    if profile["name"]:
+        terms.append(profile["name"])
+        terms.extend(profile["aliases"][:1])
+    elif profile["requires_semantic_validation"]:
+        terms.extend(["human gene", "genomics"])
+    if phenotype:
+        terms.append(str(phenotype).strip())
+    return " ".join(term for term in terms if term).strip()
+
+
+def gene_search_strategies(
+    gene: str,
+    phenotype: str | None = None,
+) -> list[dict[str, str]]:
+    """Return ordered, deduplicated Semantic Scholar recall strategies.
+
+    The first query remains the most identity-specific query used for an
+    interactive cache miss. Later strategies are consumed incrementally by
+    rescue/background pagination. Broad acronym searches are safe to include
+    here because every returned paper must still pass the independent gene
+    identity gate before it can enter RAG or the reference list.
+    """
+    profile = gene_identity_profile(gene)
+    symbol = profile["symbol"] or str(gene).strip()
+    canonical_phenotype = str(phenotype or "").strip().lower()
+    candidates: list[tuple[str, str]] = [
+        ("identity", gene_search_query(gene, phenotype)),
+    ]
+
+    if canonical_phenotype:
+        # Disease names have common alternatives in the literature (for
+        # example T2D and type II diabetes). Use at most two to bound upstream
+        # traffic; the eligible-document target usually stops the sweep sooner.
+        aliases = PHENOTYPE_ALIASES.get(canonical_phenotype, [])[:2]
+        identity_terms = [symbol]
+        if profile["name"]:
+            identity_terms.append(profile["name"])
+            identity_terms.extend(profile["aliases"][:1])
+        elif profile["requires_semantic_validation"]:
+            identity_terms.extend(["human gene", "genomics"])
+        for index, alias in enumerate(aliases, start=1):
+            candidates.append((f"phenotype_alias_{index}", " ".join([
+                *identity_terms,
+                str(alias).strip(),
+            ])))
+
+    if profile["requires_semantic_validation"]:
+        suffix = canonical_phenotype
+        candidates.extend([
+            ("symbol_gene", " ".join(term for term in [symbol, "gene", suffix] if term)),
+            ("symbol_recall", " ".join(term for term in [symbol, suffix] if term)),
+        ])
+
+    seen: set[str] = set()
+    strategies: list[dict[str, str]] = []
+    for name, query in candidates:
+        normalized = " ".join(str(query).split()).strip()
+        if not normalized or normalized.casefold() in seen:
+            continue
+        seen.add(normalized.casefold())
+        strategies.append({"name": name, "query": normalized})
+    return strategies
+
+
+def _identity_name_is_present(text: str, profile: dict[str, Any]) -> bool:
+    haystack = (text or "").casefold()
+    identity_terms = [profile.get("name") or "", *(profile.get("aliases") or [])]
+    return any(
+        len(str(term).strip()) >= 4 and str(term).strip().casefold() in haystack
+        for term in identity_terms
+    )
+
+
+def paper_gene_identity_is_valid(record: dict[str, Any], gene: str) -> bool:
+    try:
+        policy_version = int(record.get("gene_identity_policy_version") or 0)
+    except (TypeError, ValueError):
+        policy_version = 0
+    if policy_version != GENE_IDENTITY_POLICY_VERSION:
+        return False
+    if record.get("gene_identity_validated") is not True:
+        return False
+    target = _normalize_gene_symbol(gene)
+    extracted = {
+        _normalize_gene_symbol(value)
+        for value in parse_metadata_list(record.get("extracted_genes"))
+    }
+    return bool(target and target in extracted)
 
 
 class ReferenceMetadataExtractor:
@@ -77,6 +204,7 @@ class ReferenceMetadataExtractor:
         if not self.llm_chat or not batch:
             return {}
 
+        seed_profile = gene_identity_profile(seed_gene or "")
         compact_items = []
         for item in batch:
             compact_items.append(
@@ -85,6 +213,8 @@ class ReferenceMetadataExtractor:
                     "title": item.get("title") or "",
                     "abstract": self._compact_abstract(item.get("abstract") or ""),
                     "seed_gene": seed_gene or "",
+                    "seed_gene_full_name": seed_profile.get("name") or "",
+                    "seed_gene_aliases": seed_profile.get("aliases") or [],
                 }
             )
 
@@ -104,6 +234,10 @@ class ReferenceMetadataExtractor:
                             "Return JSON only. The JSON must have an 'items' array. "
                             "Each item must contain paper_id, genes, and phenotypes. "
                             "genes must be gene symbols explicitly mentioned in the text. "
+                            "The seed symbol may be an ambiguous acronym. Include the seed gene in genes only when "
+                            "the text uses that symbol, its full name, or an alias to denote the intended human gene "
+                            "or its gene product. Do not count unrelated expansions such as a method, chemical, "
+                            "organization, lesion, material, or statistical model that happens to use the same acronym. "
                             "phenotypes must be disease or phenotype names explicitly mentioned or clearly denoted in the text. "
                             "Do not infer diseases that are not stated. "
                             "Do not include generic words like cancer, disease, tumor, neoplasm, or disorder by themselves."
@@ -234,18 +368,23 @@ class ReferenceMetadataExtractor:
         changed = False
         pending_batch: list[dict[str, Any]] = []
         pending_index_by_id: dict[str, int] = {}
+        seed_profile = gene_identity_profile(seed_gene or "")
+        normalized_seed_gene = seed_profile.get("symbol") or ""
 
         for idx, paper in enumerate(papers):
             paper_id = extract_s2_paper_id(paper)
             if not paper_id:
                 continue
-            if paper.get("entity_extraction_complete") is True:
-                continue
-            existing_genes = parse_metadata_list(paper.get("extracted_genes"))
-            existing_phenotypes = parse_metadata_list(paper.get("extracted_phenotypes"))
-            if existing_genes or existing_phenotypes:
-                paper["entity_extraction_complete"] = True
-                changed = True
+            try:
+                existing_policy_version = int(
+                    paper.get("gene_identity_policy_version") or 0
+                )
+            except (TypeError, ValueError):
+                existing_policy_version = 0
+            if (
+                paper.get("entity_extraction_complete") is True
+                and existing_policy_version == GENE_IDENTITY_POLICY_VERSION
+            ):
                 continue
 
             title = paper.get("title", "")
@@ -253,21 +392,37 @@ class ReferenceMetadataExtractor:
             text = "\n".join(part for part in [title, abstract] if part).strip()
 
             heuristic_genes: list[str] = []
-            if seed_gene and text_mentions_gene(text, seed_gene):
-                normalized_seed_gene = _normalize_gene_symbol(seed_gene)
-                if normalized_seed_gene:
+            identity_method = ""
+            symbol_is_present = bool(
+                seed_gene and text_mentions_gene(text, seed_gene)
+            )
+            identity_name_is_present = bool(
+                seed_gene and _identity_name_is_present(text, seed_profile)
+            )
+            requires_semantic_validation = bool(
+                seed_profile.get("requires_semantic_validation")
+            )
+            if seed_gene and normalized_seed_gene:
+                if identity_name_is_present:
                     heuristic_genes = [normalized_seed_gene]
+                    identity_method = "official_name_or_alias"
+                elif symbol_is_present and not requires_semantic_validation:
+                    heuristic_genes = [normalized_seed_gene]
+                    identity_method = "unambiguous_symbol"
 
             heuristic_phenotypes = infer_phenotypes_from_text(text)
 
             paper["extracted_genes"] = heuristic_genes
             paper["extracted_phenotypes"] = heuristic_phenotypes
+            paper["gene_identity_policy_version"] = GENE_IDENTITY_POLICY_VERSION
+            paper["gene_identity_validated"] = bool(heuristic_genes)
+            paper["gene_identity_method"] = identity_method or "rejected"
+            paper["entity_extraction_complete"] = False
             changed = True
 
-            # A seeded Semantic Scholar result that does not mention the seed
-            # gene is discarded by papers_to_docs. Sending it to the LLM cannot
-            # affect the index, so mark it complete and avoid a costly no-op.
-            if seed_gene and not heuristic_genes:
+            # A result with neither the symbol nor an official identity term
+            # cannot refer to the requested gene and does not need an LLM call.
+            if seed_gene and not symbol_is_present and not identity_name_is_present:
                 paper["entity_extraction_complete"] = True
                 logger.info(
                     '[REF_EXTRACT] skipped non-matching paperId=%s for seed_gene="%s"',
@@ -276,19 +431,24 @@ class ReferenceMetadataExtractor:
                 )
                 continue
 
-            # Heuristic extraction already produced curated metadata, so skip the LLM path.
+            # An official name/alias or a longer unambiguous symbol is enough
+            # for deterministic identity validation.
             if heuristic_genes or heuristic_phenotypes:
-                paper["entity_extraction_complete"] = True
-                logger.info(
-                    '[REF_EXTRACT] heuristic paperId=%s title="%s" genes=%s phenotypes=%s',
-                    paper_id,
-                    (title or "").strip(),
-                    heuristic_genes,
-                    heuristic_phenotypes,
-                )
-                continue
+                if heuristic_genes:
+                    paper["entity_extraction_complete"] = True
+                    logger.info(
+                        '[REF_EXTRACT] heuristic paperId=%s title="%s" genes=%s phenotypes=%s identity=%s',
+                        paper_id,
+                        (title or "").strip(),
+                        heuristic_genes,
+                        heuristic_phenotypes,
+                        identity_method,
+                    )
+                    continue
 
-            if self.use_llm and self.llm_chat:
+            # Short symbols such as GML require semantic disambiguation when
+            # only the acronym itself appears.
+            if symbol_is_present and self.use_llm and self.llm_chat:
                 pending_batch.append(
                     {
                         "paper_id": paper_id,
@@ -297,6 +457,8 @@ class ReferenceMetadataExtractor:
                     }
                 )
                 pending_index_by_id[paper_id] = idx
+            else:
+                paper["entity_extraction_complete"] = True
 
         if self.use_llm and not self._llm_temporarily_disabled and self.llm_chat and pending_batch:
             logger.info(
@@ -329,12 +491,24 @@ class ReferenceMetadataExtractor:
                         paper["extracted_genes"] = llm_genes
                         paper["extracted_phenotypes"] = llm_phenotypes
                         changed = True
+                    seed_confirmed = bool(
+                        normalized_seed_gene
+                        and normalized_seed_gene in {
+                            _normalize_gene_symbol(value) for value in llm_genes
+                        }
+                    )
+                    paper["gene_identity_policy_version"] = GENE_IDENTITY_POLICY_VERSION
+                    paper["gene_identity_validated"] = seed_confirmed
+                    paper["gene_identity_method"] = (
+                        "semantic_validation" if seed_confirmed else "semantic_rejection"
+                    )
                     logger.info(
-                        '[REF_EXTRACT] merged paperId=%s title="%s" genes=%s phenotypes=%s',
+                        '[REF_EXTRACT] merged paperId=%s title="%s" genes=%s phenotypes=%s identity=%s',
                         paper_id,
                         (paper.get("title") or "").strip(),
                         paper.get("extracted_genes"),
                         paper.get("extracted_phenotypes"),
+                        paper.get("gene_identity_method"),
                     )
                 if batch_succeeded:
                     for item in batch:
@@ -354,16 +528,26 @@ class ReferenceMetadataExtractor:
         return papers, changed
 
 
-def extract_s2_paper_id(record: dict[str, Any]) -> str:
-    """
-    Try to get a stable Semantic Scholar paperId.
-    Priority:
-      1) record["paperId"] (preferred)
-      2) parse from semanticscholar URL: /paper/<paperId>
-    """
-    pid = (record.get("paperId") or record.get("paper_id") or "").strip()
+def extract_publication_id(record: dict[str, Any]) -> str:
+    """Return a stable, provider-neutral publication identifier."""
+    pid = str(
+        record.get("publication_id")
+        or record.get("paperId")
+        or record.get("paper_id")
+        or ""
+    ).strip()
     if pid:
         return pid
+
+    pmid = str(record.get("pmid") or "").strip()
+    if pmid:
+        return f"PMID:{pmid}"
+    pmcid = str(record.get("pmcid") or "").strip()
+    if pmcid:
+        return f"PMCID:{pmcid}"
+    doi = str(record.get("doi") or "").strip()
+    if doi:
+        return f"DOI:{doi.lower()}"
 
     url = (record.get("url") or "").strip()
     match = re.search(r"semanticscholar\.org/paper/([0-9a-fA-F]{40})", url)
@@ -371,6 +555,39 @@ def extract_s2_paper_id(record: dict[str, Any]) -> str:
         return match.group(1)
 
     return ""
+
+
+def extract_s2_paper_id(record: dict[str, Any]) -> str:
+    """Backward-compatible alias for callers not yet renamed."""
+    return extract_publication_id(record)
+
+
+def split_reference_genes(gene_text: str) -> list[str]:
+    """Split a merged reference gene label while preserving display order."""
+    genes: list[str] = []
+    seen: set[str] = set()
+    for token in (gene_text or "").split(","):
+        gene = token.strip()
+        key = gene.upper()
+        if not gene or key in seen:
+            continue
+        seen.add(key)
+        genes.append(gene)
+    return genes
+
+
+def publication_dedup_key(record: dict[str, Any]) -> str:
+    """Return a provider-neutral key when shared identifiers are available."""
+    pmid = str(record.get("pmid") or "").strip()
+    if pmid:
+        return f"PMID:{pmid}"
+    pmcid = str(record.get("pmcid") or "").strip().upper()
+    if pmcid:
+        return f"PMCID:{pmcid}"
+    doi = str(record.get("doi") or "").strip().lower()
+    if doi:
+        return f"DOI:{doi}"
+    return extract_publication_id(record)
 
 
 def extract_journal_name(record: dict[str, Any]) -> str:
@@ -486,7 +703,7 @@ def build_reference_hit(
     meta = meta or {}
     if not text_has_usable_abstract(text):
         return None
-    if not text_mentions_gene(text, gene):
+    if (meta.get("source") or "").strip().lower() in {"semanticscholar", "europe_pmc"} and not paper_gene_identity_is_valid(meta, gene):
         return None
     if has_zero_citation_count(meta):
         return None
@@ -498,15 +715,21 @@ def build_reference_hit(
 
     return text, {
         "title": title,
-        "paperId": extract_s2_paper_id(meta) or None,
+        "paperId": extract_publication_id(meta) or None,
+        "publicationId": extract_publication_id(meta) or None,
         "source": (meta.get("source") or "unknown").strip(),
         "gene": gene,
         "url": (meta.get("url") or "").strip(),
+        "pmid": (meta.get("pmid") or "").strip() or None,
+        "pmcid": (meta.get("pmcid") or "").strip() or None,
+        "doi": (meta.get("doi") or "").strip() or None,
         "phenotype": ", ".join(inferred_phenotypes)
         or (meta.get("phenotype") or "").strip()
         or None,
         "inferred_phenotypes": inferred_phenotypes,
         "journal": (meta.get("journal") or "").strip() or None,
+        "year": meta.get("year"),
+        "authors": meta.get("authors") or None,
         "citationCount": meta.get("citationCount"),
     }
 
@@ -530,7 +753,7 @@ def process_reference_hits(
 
 
 def reference_identity(ref: dict[str, Any]) -> tuple[Any, ...]:
-    paper_id = extract_s2_paper_id(ref)
+    paper_id = publication_dedup_key(ref)
     if paper_id:
         return ("paperId", paper_id)
 
@@ -555,10 +778,10 @@ def merge_references_preserve_numbers(
     used_numbers: set[int] = set()
 
     for ref in existing_refs or []:
-        if not extract_s2_paper_id(ref):
+        if not extract_publication_id(ref):
             continue
         ref_copy = dict(ref)
-        ref_copy["paperId"] = extract_s2_paper_id(ref_copy)
+        ref_copy["paperId"] = extract_publication_id(ref_copy)
         try:
             n = int(ref_copy.get("n"))
         except (TypeError, ValueError):
@@ -574,7 +797,7 @@ def merge_references_preserve_numbers(
     next_n = max(used_numbers, default=0) + 1
 
     for ref in sorted(current_refs or [], key=lambda x: x.get("n", 0)):
-        paper_id = extract_s2_paper_id(ref)
+        paper_id = extract_publication_id(ref)
         if not paper_id:
             continue
 

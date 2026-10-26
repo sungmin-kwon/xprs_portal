@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import pandas as pd
+from pathlib import Path
+
+from kpredict_data import gene_contribution_frame
 
 
 class GeneImportanceAgent:
@@ -82,7 +85,51 @@ class GeneImportanceAgent:
         return bottom
 
 
+class KPredictGeneImportanceAgent:
+    """Read one K-PREDICT contribution column without loading the full matrix."""
+
+    def __init__(self, root: Path, disease: str, default_top_n: int = 5):
+        self.root = Path(root)
+        self.disease = disease
+        self.default_top_n = default_top_n
+        self.default_thr = None
+
+    def _frame(self, pid: str) -> pd.DataFrame:
+        frame = gene_contribution_frame(self.root, self.disease, pid)
+        # The handoff appends asterisks to repeated region-level symbols to
+        # keep row labels unique. Literature retrieval needs canonical symbols,
+        # and one symbol should not occupy several summary slots.
+        frame["Gene"] = frame["Gene"].str.replace(r"\*+$", "", regex=True)
+        return frame
+
+    def get_top_genes(
+        self,
+        pid: str,
+        top_n: int | None = None,
+        thr: float | None = None,
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        del thr
+        count = top_n or self.default_top_n
+        top = (
+            self._frame(pid)
+            .sort_values("contribution", ascending=False)
+            .drop_duplicates("Gene", keep="first")
+            .head(count)
+            .copy()
+        )
+        return top, pd.DataFrame(columns=top.columns)
+
+    def get_bottom_genes(self, pid: str, bottom_n: int | None = None) -> pd.DataFrame:
+        count = bottom_n or self.default_top_n
+        return (
+            self._frame(pid)
+            .sort_values("contribution", ascending=True)
+            .drop_duplicates("Gene", keep="first")
+            .head(count)
+            .copy()
+        )
+
+
 # ============================================================
 # 5. Evidence Assembly Agent (RAG + OT + S2)
 # ============================================================
-

@@ -9,31 +9,38 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/home.css?v=12" />
+  <link rel="stylesheet" href="/static/home.css?v=35" />
+  <link rel="stylesheet" href="/static/rare_variant_detail.css?v=1" />
 </head>
 <body>
-  <nav class="sidebar" aria-label="Disease navigation" data-i18n-aria="diseaseNavigation">
-    <a class="nav-brand" href="/about" title="About XPRS" data-i18n-title="aboutXprs">
-      <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
-    </a>
-    <a class="nav-item is-active" href="/" title="Disease overview" data-i18n-title="diseaseOverview">
-      <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
-    </a>
-    <a id="sidebar-breast-portal" class="nav-item" href="/dashboard" title="Breast cancer portal" data-i18n-title="breastCancerPortal">
-      <span class="material-symbols-outlined" aria-hidden="true">vaccines</span>
-    </a>
-    <a class="nav-item" href="/evaluation" title="User evaluation survey" data-i18n-title="userEvaluation" data-evaluation-link hidden>
-      <span class="material-symbols-outlined" aria-hidden="true">assignment</span>
-    </a>
-  </nav>
-
   <div class="page-shell">
     <header class="topbar">
-      <div>
+      <div class="topbar-heading">
+        <a class="topbar-brand" href="/" aria-label="XPRS Portal">
+          <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
+        </a>
         <h1 data-i18n="pageTitle">XPRS Disease Overview</h1>
       </div>
       <div class="topbar-actions">
-        <div class="topbar-status" id="disease-count-status">Loading diseases...</div>
+        <div class="select-wrap topbar-cohort-select">
+          <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+          <select id="cohort-select" aria-label="Available cohorts" data-i18n-aria="availableCohorts" disabled>
+            <option data-i18n="loadingCohorts">Loading cohorts...</option>
+          </select>
+          <span class="material-symbols-outlined select-caret" aria-hidden="true">expand_more</span>
+        </div>
+        <a id="cohort-analysis-link" class="topbar-link" href="/cohort-analysis" hidden>
+          <span class="material-symbols-outlined" aria-hidden="true">analytics</span>
+          <span data-i18n="cohortAnalysis">Cohort Analysis</span>
+        </a>
+        <a class="topbar-link" href="/about">
+          <span class="material-symbols-outlined" aria-hidden="true">info</span>
+          <span data-i18n="aboutXprs">About XPRS</span>
+        </a>
+        <span class="topbar-link topbar-link--disabled-icon" title="User evaluation survey" aria-label="User evaluation survey" data-i18n-title="userEvaluation" data-i18n-aria="userEvaluation" aria-disabled="true">
+          <span class="material-symbols-outlined" aria-hidden="true">assignment</span>
+        </span>
+        <span class="topbar-divider" aria-hidden="true"></span>
         <button id="language-toggle-top" class="language-toggle-button" type="button" aria-label="Switch to Korean" title="Switch to Korean">
           <span class="material-symbols-outlined" aria-hidden="true">language</span>
           <span class="language-toggle-label" aria-hidden="true">EN</span>
@@ -41,10 +48,6 @@
         <button id="theme-toggle-top" class="theme-icon-button" type="button" aria-label="Dark mode" title="Dark mode">
           <span class="theme-icon" aria-hidden="true">☾</span>
         </button>
-        <a class="about-link" href="/about">
-          <span class="material-symbols-outlined" aria-hidden="true">info</span>
-          <span data-i18n="aboutXprs">About XPRS</span>
-        </a>
       </div>
     </header>
 
@@ -52,14 +55,20 @@
       <section class="control-panel" aria-labelledby="individual-selector-title">
         <div class="panel-title-row">
           <span class="material-symbols-outlined" aria-hidden="true">person_search</span>
-          <h2 id="individual-selector-title" data-i18n="cohortAndIndividual">Cohort &amp; Individual</h2>
+          <h2 id="individual-selector-title" data-i18n="individualSelection">Individual Selection</h2>
         </div>
 
-        <label for="cohort-select" data-i18n="cohort">Cohort</label>
-        <div class="select-wrap">
-          <span class="material-symbols-outlined" aria-hidden="true">groups</span>
-          <select id="cohort-select" aria-label="Available cohorts" data-i18n-aria="availableCohorts"></select>
-          <span class="material-symbols-outlined select-caret" aria-hidden="true">expand_more</span>
+        <div id="risk-filter-tools" class="risk-filter-tools" hidden>
+          <button id="risk-filter-open-btn" class="risk-filter-trigger" type="button">
+            <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+            <span data-i18n="findIndividualsByRisk">Find individuals by risk</span>
+          </button>
+          <div id="risk-filter-active" class="risk-filter-active" hidden>
+            <span id="risk-filter-active-text"></span>
+            <button id="risk-filter-clear-btn" type="button" data-i18n-title="clearRiskFilter" data-i18n-aria="clearRiskFilter">
+              <span class="material-symbols-outlined" aria-hidden="true">close</span>
+            </button>
+          </div>
         </div>
 
         <label for="individual-search" data-i18n="individualId">ID</label>
@@ -77,9 +86,20 @@
             <h2 id="disease-grid-title" data-i18n="riskOverview">Overall Individual Risk Overview</h2>
             <p id="grid-subtitle"></p>
           </div>
-          <button id="refresh-grid-btn" class="icon-btn" type="button" title="Refresh risk cards" aria-label="Refresh risk cards" data-i18n-title="refreshRiskCards" data-i18n-aria="refreshRiskCards">
-            <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
-          </button>
+          <div class="disease-panel-actions">
+            <div class="risk-tint-key" role="img" aria-label="Plot shading reflects within-cohort PRS percentile" title="Plot shading reflects within-cohort PRS percentile" data-i18n-aria="riskTintLegend" data-i18n-title="riskTintLegend">
+              <span data-i18n="lowerPrsPercentile">Lower PRS percentile</span>
+              <span class="risk-tint-key__bar" aria-hidden="true"></span>
+              <span data-i18n="higherPrsPercentile">Higher PRS percentile</span>
+            </div>
+            <button id="cross-disease-heatmap-btn" class="analysis-btn" type="button" hidden>
+              <span class="material-symbols-outlined" aria-hidden="true">grid_on</span>
+              <span data-i18n="geneHeatmap">Gene Heatmap</span>
+            </button>
+            <button id="refresh-grid-btn" class="icon-btn" type="button" title="Refresh risk cards" aria-label="Refresh risk cards" data-i18n-title="refreshRiskCards" data-i18n-aria="refreshRiskCards">
+              <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
+            </button>
+          </div>
         </div>
 
         <div id="disease-grid" class="disease-grid" aria-live="polite">
@@ -89,9 +109,150 @@
           </div>
         </div>
       </section>
+
+      <aside id="rare-overview-panel" class="rare-overview-panel" aria-labelledby="rare-overview-title" hidden>
+        <header class="rare-overview-header">
+          <div>
+            <p class="rare-overview-eyebrow" data-i18n="individualFindings">Individual findings</p>
+            <h2 id="rare-overview-title" data-i18n="rareVariantOverview">Rare Variants</h2>
+            <p id="rare-overview-subtitle"></p>
+          </div>
+          <span class="material-symbols-outlined" aria-hidden="true">genetics</span>
+        </header>
+        <div id="rare-overview-summary" class="rare-overview-summary" hidden></div>
+        <div id="rare-overview-content" class="rare-overview-content" aria-live="polite">
+          <div class="rare-overview-state" data-i18n="loadingRareVariants">Loading rare variants...</div>
+        </div>
+      </aside>
     </main>
   </div>
 
-  <script src="/static/home.js?v=14"></script>
+  <div id="kpredict-access-overlay" class="analysis-modal-overlay" hidden>
+    <section class="analysis-modal analysis-modal--access" role="dialog" aria-modal="true" aria-labelledby="kpredict-access-title" aria-describedby="kpredict-access-subtitle">
+      <header class="analysis-modal__header">
+        <div>
+          <p class="analysis-modal__eyebrow" data-i18n="restrictedCohort">Restricted cohort</p>
+          <h2 id="kpredict-access-title" data-i18n="kpredictAccessTitle">Access K-PREDICT</h2>
+          <p id="kpredict-access-subtitle" class="analysis-modal__subtitle" data-i18n="kpredictAccessSubtitle">Enter a K-PREDICT or administrator access code to continue.</p>
+        </div>
+        <button id="kpredict-access-close-btn" class="analysis-modal__close" type="button" data-i18n-title="closeKpredictAccess" data-i18n-aria="closeKpredictAccess">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </header>
+      <form id="kpredict-access-form" class="kpredict-access-form">
+        <label for="kpredict-access-code" data-i18n="accessCode">Access code</label>
+        <div class="kpredict-access-input-wrap">
+          <span class="material-symbols-outlined" aria-hidden="true">key</span>
+          <input id="kpredict-access-code" type="password" autocomplete="current-password" spellcheck="false" data-i18n-placeholder="accessCodePlaceholder" placeholder="Enter access code">
+        </div>
+        <div id="kpredict-access-status" class="kpredict-access-status" role="alert" aria-live="polite"></div>
+        <div class="kpredict-access-actions">
+          <button id="kpredict-access-cancel-btn" class="secondary-btn" type="button" data-i18n="cancel">Cancel</button>
+          <button id="kpredict-access-submit-btn" class="analysis-btn" type="submit">
+            <span class="material-symbols-outlined" aria-hidden="true">lock_open</span>
+            <span data-i18n="continueAction">Continue</span>
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div id="risk-filter-overlay" class="analysis-modal-overlay" hidden>
+    <section class="analysis-modal analysis-modal--filter" role="dialog" aria-modal="true" aria-labelledby="risk-filter-title">
+      <header class="analysis-modal__header">
+        <div>
+          <p class="analysis-modal__eyebrow" data-i18n="cohortFinder">Cohort finder</p>
+          <h2 id="risk-filter-title" data-i18n="riskFilterTitle">Find Individuals by Disease Risk</h2>
+          <p class="analysis-modal__subtitle" data-i18n="riskFilterSubtitle">Filter the full K-PREDICT cohort using disease-specific percentiles.</p>
+        </div>
+        <button id="risk-filter-close-btn" class="analysis-modal__close" type="button" data-i18n-title="closeRiskFilter" data-i18n-aria="closeRiskFilter">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </header>
+      <form id="risk-filter-form" class="risk-filter-form">
+        <div class="risk-filter-fields">
+          <label>
+            <span data-i18n="diseaseModel">Disease model</span>
+            <select id="risk-filter-disease"></select>
+          </label>
+          <label>
+            <span data-i18n="percentileBand">Percentile band</span>
+            <select id="risk-filter-band">
+              <option value="top_1" data-i18n="riskBandTop1">Top 1%</option>
+              <option value="top_5" data-i18n="riskBandTop5">Top 5%</option>
+              <option value="top_10" data-i18n="riskBandTop10" selected>Top 10%</option>
+              <option value="top_25" data-i18n="riskBandTop25">Top 25%</option>
+              <option value="middle_50" data-i18n="riskBandMiddle50">Middle 50%</option>
+              <option value="bottom_25" data-i18n="riskBandBottom25">Bottom 25%</option>
+              <option value="bottom_10" data-i18n="riskBandBottom10">Bottom 10%</option>
+              <option value="bottom_5" data-i18n="riskBandBottom5">Bottom 5%</option>
+              <option value="bottom_1" data-i18n="riskBandBottom1">Bottom 1%</option>
+              <option value="all" data-i18n="riskBandAll">All applicable individuals</option>
+            </select>
+          </label>
+          <label>
+            <span data-i18n="resultOrder">Result order</span>
+            <select id="risk-filter-order">
+              <option value="desc" data-i18n="highestFirst">Highest percentile first</option>
+              <option value="asc" data-i18n="lowestFirst">Lowest percentile first</option>
+            </select>
+          </label>
+        </div>
+        <div id="risk-filter-status" class="risk-filter-status" aria-live="polite"></div>
+        <p class="analysis-modal__note" data-i18n="riskFilterNote">Percentiles describe position within the disease-specific applicable K-PREDICT reference population. They are not absolute disease probabilities.</p>
+        <div class="risk-filter-actions">
+          <button id="risk-filter-cancel-btn" class="secondary-btn" type="button" data-i18n="cancel">Cancel</button>
+          <button id="risk-filter-apply-btn" class="analysis-btn" type="submit">
+            <span class="material-symbols-outlined" aria-hidden="true">filter_alt</span>
+            <span data-i18n="applyRiskFilter">Apply filter</span>
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div id="gene-heatmap-overlay" class="analysis-modal-overlay" hidden>
+    <section class="analysis-modal" role="dialog" aria-modal="true" aria-labelledby="gene-heatmap-title">
+      <header class="analysis-modal__header">
+        <div>
+          <p class="analysis-modal__eyebrow" data-i18n="exploratoryAnalysis">Cross-Disease Comparison</p>
+          <h2 id="gene-heatmap-title" data-i18n="geneHeatmapTitle">Gene Contributions Across Diseases</h2>
+          <p id="gene-heatmap-subtitle" class="analysis-modal__subtitle"></p>
+        </div>
+        <button id="gene-heatmap-close-btn" class="analysis-modal__close" type="button" data-i18n-title="closeGeneHeatmap" data-i18n-aria="closeGeneHeatmap">
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </header>
+      <div class="analysis-modal__body">
+        <div class="heatmap-tabs" role="tablist" aria-label="Gene comparison view" data-i18n-aria="geneComparisonView">
+          <button id="individual-heatmap-tab" class="heatmap-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="individual-heatmap-panel" data-i18n="individualGeneProfile">Selected Individual</button>
+          <button id="population-architecture-tab" class="heatmap-tab" type="button" role="tab" aria-selected="false" aria-controls="population-architecture-panel">
+            <span data-i18n="populationArchitecture">Population Architecture</span>
+            <small data-i18n="prototype">Prototype</small>
+          </button>
+        </div>
+        <section id="individual-heatmap-panel" class="heatmap-panel" role="tabpanel" aria-labelledby="individual-heatmap-tab">
+          <div id="gene-heatmap-status" class="heatmap-status"></div>
+          <div id="gene-heatmap-plot" class="gene-heatmap-plot" hidden></div>
+          <p id="gene-heatmap-note" class="analysis-modal__note" hidden></p>
+        </section>
+        <section id="population-architecture-panel" class="heatmap-panel" role="tabpanel" aria-labelledby="population-architecture-tab" hidden>
+          <form id="population-architecture-controls" class="architecture-controls">
+            <label><span data-i18n="architectureThreshold">High-variance threshold</span><select id="architecture-threshold"><option value="97.5" data-i18n="topTwoPointFivePercent">Top 2.5%</option><option value="99" selected data-i18n="topOnePercent">Top 1%</option><option value="99.5" data-i18n="topHalfPercent">Top 0.5%</option></select></label>
+            <label><span data-i18n="architectureMinimumDiseases">Shared across at least</span><select id="architecture-min-diseases"><option value="2" data-i18n="twoDiseases">2 diseases</option><option value="3" selected data-i18n="threeDiseases">3 diseases</option><option value="4" data-i18n="fourDiseases">4 diseases</option></select></label>
+            <button class="analysis-btn" type="submit" data-i18n="updateComparison">Update comparison</button>
+          </form>
+          <div id="population-architecture-status" class="heatmap-status"></div>
+          <div id="population-architecture-plot" class="gene-heatmap-plot" hidden></div>
+          <p id="population-architecture-note" class="analysis-modal__note" hidden></p>
+        </section>
+      </div>
+    </section>
+  </div>
+
+  <div id="rare-summary-tooltip" class="rare-summary-tooltip" role="tooltip" hidden></div>
+
+  <script src="/static/rare_variant_detail.js?v=1"></script>
+  <script src="/static/home.js?v=44"></script>
 </body>
 </html>

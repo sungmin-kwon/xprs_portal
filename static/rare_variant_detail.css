@@ -1,0 +1,358 @@
+.rare-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  justify-content: flex-end;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.rare-detail-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.rare-detail-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 16, 28, 0.42);
+  backdrop-filter: blur(3px);
+}
+
+.rare-detail-drawer {
+  position: relative;
+  z-index: 1;
+  width: min(520px, 100vw);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: var(--ink, var(--panel-text, #1f2933));
+  background: var(--panel, var(--panel-bg, #ffffff));
+  border-left: 1px solid var(--border, #dfe7ee);
+  box-shadow: -18px 0 50px rgba(8, 16, 28, 0.2);
+  transform: translateX(28px);
+  transition: transform 180ms ease;
+}
+
+.rare-detail-overlay.is-open .rare-detail-drawer {
+  transform: translateX(0);
+}
+
+.rare-detail-header {
+  padding: 1.2rem 1.25rem 1rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border, #dfe7ee);
+}
+
+.rare-detail-header p,
+.rare-detail-header h2 {
+  margin: 0;
+}
+
+#rare-detail-eyebrow {
+  color: var(--primary, var(--accent-color, #27609d));
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+}
+
+.rare-detail-header h2 {
+  margin-top: 0.32rem;
+  font-size: 1.28rem;
+  overflow-wrap: anywhere;
+}
+
+#rare-detail-subtitle {
+  margin-top: 0.3rem;
+  color: var(--muted, #66727d);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.rare-detail-close {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  padding: 0;
+  border: 1px solid var(--border, #dfe7ee);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted, #66727d);
+  background: var(--panel-soft, #f8fafc);
+  cursor: pointer;
+}
+
+.rare-detail-close:hover,
+.rare-detail-close:focus-visible {
+  color: var(--primary, var(--accent-color, #27609d));
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(39, 96, 157, 0.14);
+}
+
+.rare-detail-body {
+  flex: 1;
+  min-height: 0;
+  padding: 1rem 1.25rem 1.5rem;
+  overflow-y: auto;
+}
+
+.rare-detail-status {
+  padding: 0.85rem 0.9rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  border-radius: 11px;
+  background: rgba(39, 96, 157, 0.08);
+}
+
+.rare-detail-status.is-alert {
+  background: rgba(180, 35, 24, 0.08);
+}
+
+.rare-detail-status.is-carrier {
+  background: rgba(146, 100, 13, 0.1);
+}
+
+.rare-detail-status p {
+  margin: 0;
+  color: var(--muted, #66727d);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.rare-detail-call {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.48rem;
+  border-radius: 999px;
+  color: var(--primary, var(--accent-color, #27609d));
+  background: rgba(39, 96, 157, 0.1);
+  font-size: 0.65rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.rare-detail-call.is-alert {
+  color: #b42318;
+  background: #fef3f2;
+}
+
+.rare-detail-call.is-carrier {
+  color: #8a5a08;
+  background: #fff3da;
+}
+
+.rare-detail-section {
+  margin-top: 1.15rem;
+}
+
+.rare-detail-section > h3 {
+  margin: 0 0 0.58rem;
+  color: var(--ink, var(--panel-text, #1f2933));
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.rare-detail-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border, #dfe7ee);
+  border-radius: 9px;
+  background: var(--border, #dfe7ee);
+}
+
+.rare-detail-field {
+  min-width: 0;
+  padding: 0.68rem 0.72rem;
+  background: var(--panel-soft, #f8fafc);
+}
+
+.rare-detail-field.is-wide {
+  grid-column: 1 / -1;
+}
+
+.rare-detail-field dt {
+  color: var(--muted, #66727d);
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.rare-detail-field dd {
+  margin: 0.24rem 0 0;
+  color: var(--ink, var(--panel-text, #1f2933));
+  font-size: 0.77rem;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.rare-detail-field.is-monospace dd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+}
+
+.rare-detail-assignments {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.rare-detail-assignment {
+  padding: 0.75rem;
+  border: 1px solid var(--border, #dfe7ee);
+  border-radius: 9px;
+  background: var(--panel-soft, #f8fafc);
+}
+
+.rare-detail-assignment > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.rare-detail-assignment > header strong {
+  font-size: 0.78rem;
+}
+
+.rare-detail-assignment > .rare-detail-grid {
+  margin-top: 0.65rem;
+}
+
+.rare-detail-empty {
+  margin: 0;
+  padding: 0.8rem;
+  border: 1px dashed var(--border, #dfe7ee);
+  border-radius: 9px;
+  color: var(--muted, #66727d);
+  font-size: 0.76rem;
+}
+
+.rare-detail-clinvar {
+  margin-top: 1.15rem;
+  min-height: 40px;
+  padding: 0 0.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid rgba(39, 96, 157, 0.28);
+  border-radius: 8px;
+  color: var(--primary, var(--accent-color, #27609d));
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.rare-detail-clinvar:hover,
+.rare-detail-clinvar:focus-visible {
+  background: rgba(39, 96, 157, 0.08);
+}
+
+.rare-detail-clinvar .material-symbols-outlined {
+  font-size: 16px;
+}
+
+.rare-detail-boundary {
+  margin: 1.15rem 0 0;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border, #dfe7ee);
+  color: var(--muted, #66727d);
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.rare-detail-trigger {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  border: 1px solid var(--border, #dfe7ee);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted, #66727d);
+  background: transparent;
+  cursor: pointer;
+}
+
+.rare-detail-trigger:hover,
+.rare-detail-trigger:focus-visible {
+  color: var(--primary, var(--accent-color, #27609d));
+  background: rgba(39, 96, 157, 0.08);
+  outline: none;
+}
+
+.rare-detail-trigger .material-symbols-outlined {
+  font-size: 17px;
+}
+
+body.dark-theme .rare-detail-drawer {
+  color: #e5edf5;
+  background: #121c27;
+  border-color: #2a3b4d;
+}
+
+body.dark-theme .rare-detail-header,
+body.dark-theme .rare-detail-boundary {
+  border-color: #2a3b4d;
+}
+
+body.dark-theme .rare-detail-close,
+body.dark-theme .rare-detail-field,
+body.dark-theme .rare-detail-assignment {
+  color: #c7d2df;
+  background: #182534;
+  border-color: #2a3b4d;
+}
+
+body.dark-theme .rare-detail-grid {
+  border-color: #2a3b4d;
+  background: #2a3b4d;
+}
+
+body.dark-theme .rare-detail-section > h3,
+body.dark-theme .rare-detail-field dd {
+  color: #e5edf5;
+}
+
+body.dark-theme .rare-detail-call.is-alert {
+  color: #ffaaa2;
+  background: rgba(180, 35, 24, 0.22);
+}
+
+body.dark-theme .rare-detail-call.is-carrier {
+  color: #f2c66d;
+  background: rgba(146, 100, 13, 0.24);
+}
+
+@media (max-width: 580px) {
+  .rare-detail-drawer {
+    width: 100vw;
+  }
+
+  .rare-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rare-detail-field.is-wide {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rare-detail-overlay,
+  .rare-detail-drawer {
+    transition: none;
+  }
+}

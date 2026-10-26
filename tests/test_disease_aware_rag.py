@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -15,6 +16,7 @@ from agents.evidence_assembly import (
 from agents.query_analysis import QueryAnalysisAgent
 from agents.rag import RAGAgent
 from agents.semantic_scholar import SemanticScholarAgent
+from reference_utils import GENE_IDENTITY_POLICY_VERSION
 
 
 class FakeLLM:
@@ -84,6 +86,31 @@ class FakeIndexS2:
         }]
 
 
+class FakeTerminalEmptyS2:
+    def __init__(self):
+        self.recorded = None
+
+    def cached_query_succeeded(self, _gene, _phenotype=None):
+        return True
+
+    def cached_for_gene(self, _gene, limit, phenotype=None, progress_callback=None):
+        return [{"paperId": "irrelevant"}]
+
+    def papers_to_docs(self, _gene, _papers, pool_type, phenotype=None):
+        return []
+
+    def pagination_status(self, _gene, _phenotype=None, **_kwargs):
+        return {
+            "fetch_ok": True,
+            "pagination_complete": True,
+            "enrichment_complete": False,
+            "zero_yield_pages": 0,
+        }
+
+    def record_enrichment_status(self, _gene, _phenotype=None, **kwargs):
+        self.recorded = kwargs
+
+
 class FakeRateLimitedS2:
     def __init__(self):
         self.calls = []
@@ -103,6 +130,25 @@ class FakeRateLimitedS2:
             "last_status_code": 429,
             "last_retry_after_seconds": None,
         }
+
+
+class FakeRescueS2:
+    def __init__(self):
+        self.fetch_calls = 0
+
+    def fetch_next_cached_page(self, *_args, **_kwargs):
+        self.fetch_calls += 1
+        return {"ok": True, "new_papers": []}
+
+
+class FakeEnrichmentQueue:
+    def __init__(self, scheduled=True):
+        self.scheduled = scheduled
+        self.calls = []
+
+    def schedule(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.scheduled
 
 
 class FakeIndexOT:
@@ -127,7 +173,10 @@ def candidate(
         "paperId": paper_id,
         "title": title,
         "citationCount": 5,
+        "extracted_genes": "GENE1",
         "extracted_phenotypes": phenotype,
+        "gene_identity_validated": True,
+        "gene_identity_policy_version": GENE_IDENTITY_POLICY_VERSION,
         "test_score": score,
     }
 
@@ -297,8 +346,9 @@ class EvidenceIndexProgressTests(unittest.TestCase):
         agent._ensure_indexed_for_gene("GENE1", progress_callback=progress.append)
 
         self.assertEqual(s2.calls, [])
-        self.assertTrue(any("is indexed" in message for message in progress))
-        self.assertTrue(any("general query and breast cancer query pools" in message for message in progress))
+        self.assertTrue(any("Vector store reuse" in message for message in progress))
+        self.assertTrue(any("indexed general and breast cancer query pools" in message for message in progress))
+        self.assertTrue(any("no upstream literature request" in message for message in progress))
 
     def test_distinguishes_cached_rebuild_from_required_api_query(self):
         general = self.document("GENE1", "general")
@@ -310,7 +360,8 @@ class EvidenceIndexProgressTests(unittest.TestCase):
         cached_agent._ensure_indexed_for_gene(
             "GENE1", progress_callback=cached_progress.append
         )
-        self.assertTrue(any("loading cached Semantic Scholar results" in message for message in cached_progress))
+        self.assertTrue(any("successful local Semantic Scholar cache exists" in message for message in cached_progress))
+        self.assertTrue(any("without a new upstream request" in message for message in cached_progress))
 
         live_s2 = FakeIndexS2()
         live_agent = EvidenceAssemblyAgent(
@@ -320,7 +371,7 @@ class EvidenceIndexProgressTests(unittest.TestCase):
         live_agent._ensure_indexed_for_gene(
             "GENE1", progress_callback=live_progress.append
         )
-        self.assertTrue(any("a Semantic Scholar query is required" in message for message in live_progress))
+        self.assertTrue(any("No successful local Semantic Scholar cache exists" in message for message in live_progress))
 
     def test_rate_limit_stops_remaining_queries_and_opens_runtime_cooldown(self):
         s2 = FakeRateLimitedS2()
@@ -335,6 +386,40 @@ class EvidenceIndexProgressTests(unittest.TestCase):
         self.assertEqual(agent._s2_rate_limit_streak, 1)
         self.assertTrue(any("Skipping the breast cancer query" in message for message in progress))
         self.assertTrue(any("rate-limit cooldown active" in message for message in progress))
+        self.assertTrue(any("No Semantic Scholar request was sent" in message for message in progress))
+
+    def test_rescue_page_log_does_not_claim_a_request_during_cooldown(self):
+        s2 = FakeRescueS2()
+        agent = EvidenceAssemblyAgent(FakeIndexRAG(), FakeIndexOT(), s2)
+        agent._s2_cooldown_until = time.monotonic() + 60
+        progress = []
+
+        added = agent._fetch_one_rescue_page(
+            "GENE1",
+            pool_type="general",
+            phenotype=None,
+            progress_callback=progress.append,
+        )
+
+        self.assertEqual(added, 0)
+        self.assertEqual(s2.fetch_calls, 0)
+        self.assertTrue(any("Additional Semantic Scholar page not requested" in message for message in progress))
+        self.assertFalse(any("requesting at most one additional" in message for message in progress))
+
+    def test_interactive_batch_does_not_wait_for_semantic_scholar_cooldown(self):
+        agent = EvidenceAssemblyAgent(FakeIndexRAG(), FakeIndexOT(), FakeIndexS2())
+        agent._s2_cooldown_until = time.monotonic() + 1
+        progress = []
+
+        with patch("agents.evidence_assembly.time.sleep") as sleep:
+            with agent.interactive_request_batch(progress.append):
+                pass
+
+        sleep.assert_not_called()
+        self.assertFalse(any(
+            "Waiting before retrieving literature" in message
+            for message in progress
+        ))
 
     def test_repeated_rate_limits_double_the_runtime_cooldown(self):
         s2 = FakeRateLimitedS2()
@@ -347,8 +432,8 @@ class EvidenceIndexProgressTests(unittest.TestCase):
         second_remaining = agent._s2_cooldown_until - time.monotonic()
 
         self.assertEqual(agent._s2_rate_limit_streak, 2)
-        self.assertGreater(first_remaining, 59)
-        self.assertGreater(second_remaining, 119)
+        self.assertGreater(first_remaining, 29)
+        self.assertGreater(second_remaining, 59)
 
     def test_successful_live_request_resets_rate_limit_streak(self):
         agent = EvidenceAssemblyAgent(
@@ -360,6 +445,86 @@ class EvidenceIndexProgressTests(unittest.TestCase):
 
         self.assertEqual(agent._s2_rate_limit_streak, 0)
         self.assertEqual(agent._s2_cooldown_until, 0.0)
+
+    def test_manual_pool_query_uses_the_shared_indexing_path(self):
+        rag = FakeIndexRAG()
+        s2 = FakeIndexS2()
+        agent = EvidenceAssemblyAgent(rag, FakeIndexOT(), s2)
+
+        result = agent.manually_index_pool("GENE1", phenotype="thyroid cancer")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "indexed")
+        self.assertEqual(s2.calls, [("GENE1", "thyroid cancer", 10)])
+        self.assertTrue(rag.has_documents({
+            "$and": [
+                {"gene": "GENE1"},
+                {"pool_type": "phenotype"},
+                {"phenotype": "thyroid cancer"},
+            ]
+        }))
+
+    def test_manual_pool_query_does_not_refetch_an_indexed_pool(self):
+        rag = FakeIndexRAG([self.document("GENE1", "general")])
+        s2 = FakeIndexS2()
+        agent = EvidenceAssemblyAgent(rag, FakeIndexOT(), s2)
+
+        result = agent.manually_index_pool("GENE1")
+
+        self.assertEqual(result["status"], "already_indexed")
+        self.assertEqual(s2.calls, [])
+
+    def test_manual_pool_query_can_continue_an_unfinished_indexed_pool(self):
+        rag = FakeIndexRAG([self.document("GENE1", "general")])
+        s2 = FakeIndexS2(cached={("GENE1", None)})
+        queue = FakeEnrichmentQueue()
+        agent = EvidenceAssemblyAgent(
+            rag,
+            FakeIndexOT(),
+            s2,
+            enrichment_queue=queue,
+        )
+
+        result = agent.manually_index_pool("GENE1")
+
+        self.assertEqual(result["status"], "enrichment_queued")
+        self.assertTrue(result["scheduled"])
+        self.assertTrue(result["documents_present"])
+        self.assertEqual(s2.calls, [])
+        self.assertEqual(queue.calls[0]["gene"], "GENE1")
+        self.assertEqual(queue.calls[0]["pool_type"], "general")
+
+    def test_manual_pool_query_does_not_continue_a_finished_indexed_pool(self):
+        rag = FakeIndexRAG([self.document("GENE1", "general")])
+        s2 = FakeTerminalEmptyS2()
+        queue = FakeEnrichmentQueue()
+        agent = EvidenceAssemblyAgent(
+            rag,
+            FakeIndexOT(),
+            s2,
+            enrichment_queue=queue,
+        )
+
+        result = agent.manually_index_pool("GENE1")
+
+        self.assertEqual(result["status"], "already_complete")
+        self.assertFalse(result["scheduled"])
+        self.assertEqual(queue.calls, [])
+
+    def test_manual_pool_query_persists_terminal_empty_cache_state(self):
+        s2 = FakeTerminalEmptyS2()
+        agent = EvidenceAssemblyAgent(FakeIndexRAG(), FakeIndexOT(), s2)
+
+        result = agent.manually_index_pool("TSBP1-AS1")
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["status"], "no_eligible_documents")
+        self.assertEqual(s2.recorded["eligible_count"], 0)
+        self.assertTrue(s2.recorded["complete"])
+        self.assertEqual(
+            s2.recorded["stop_reason"],
+            "source_exhausted_or_raw_cap",
+        )
 
 
 class RerankerTests(unittest.TestCase):

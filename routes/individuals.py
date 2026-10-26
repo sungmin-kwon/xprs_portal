@@ -6,6 +6,8 @@ from fastapi import APIRouter, Query, Request
 
 from cohort_registry import get_cohort_config
 from disease_registry import get_disease_config, list_diseases
+from kpredict_access import has_kpredict_access, kpredict_root
+from kpredict_data import available_diseases, individual_ids as kpredict_individual_ids
 router = APIRouter()
 
 
@@ -28,6 +30,27 @@ async def list_individuals(
         cohort_config = get_cohort_config(cohort)
     except ValueError:
         return {"individuals": [], "cohort": cohort, "enabled": False, "unavailable_reason": "Unknown cohort."}
+
+    if cohort_config.slug == "kpredict":
+        root = kpredict_root()
+        if root is None or not has_kpredict_access(request):
+            return {
+                "individuals": [],
+                "cohort": cohort_config.slug,
+                "enabled": False,
+                "unavailable_reason": cohort_config.unavailable_reason,
+            }
+        if disease and disease not in available_diseases(root):
+            return {
+                "individuals": [], "disease": disease, "cohort": cohort_config.slug,
+                "enabled": False, "unavailable_reason": "No K-PREDICT data are available for this disease.",
+            }
+        return {
+            "individuals": kpredict_individual_ids(root, disease),
+            "disease": disease,
+            "cohort": cohort_config.slug,
+            "enabled": True,
+        }
 
     if not cohort_config.data_available:
         return {

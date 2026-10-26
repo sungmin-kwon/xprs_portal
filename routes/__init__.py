@@ -9,6 +9,7 @@ from . import (
     health,
     pages,
     individuals,
+    kpredict,
     models,
     phenotype,
     plots,
@@ -26,6 +27,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(diseases.router)
     app.include_router(evaluation.router)
     app.include_router(individuals.router)
+    app.include_router(kpredict.router)
     app.include_router(models.router)
     app.include_router(phenotype.router)
     app.include_router(health.router)

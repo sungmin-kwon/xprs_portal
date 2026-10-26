@@ -2,15 +2,24 @@ from __future__ import annotations
 
 import hmac
 import os
+import re
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
-from config import STATIC_DIR
-from runtime_agents import get_rag_agent
+from config import EUROPE_PMC_CACHE_DIR, S2_CACHE_DIR, STATIC_DIR
+from retrieval_coverage import build_retrieval_coverage
+from runtime_agents import get_rag_agent, get_retrieval_admin_status, get_runtime_agents
 
 router = APIRouter()
+
+
+class ManualRetrievalRequest(BaseModel):
+    gene: str = Field(min_length=1, max_length=64)
+    pool: Literal["general", "phenotype"] = "general"
+    phenotype: str | None = Field(default=None, max_length=100)
 
 
 def _require_admin_access(request: Request) -> None:
@@ -62,6 +71,58 @@ def document_inventory(request: Request, response: Response):
     _require_admin_access(request)
     response.headers["Cache-Control"] = "no-store"
     return get_rag_agent().document_inventory()
+
+
+@router.get("/api/admin/retrieval-coverage", include_in_schema=False)
+def retrieval_coverage(request: Request, response: Response):
+    _require_admin_access(request)
+    response.headers["Cache-Control"] = "no-store"
+    rag = get_rag_agent()
+    runtime = get_retrieval_admin_status()
+    return build_retrieval_coverage(
+        inventory=rag.document_inventory(),
+        cache_dirs={
+            "semanticscholar": S2_CACHE_DIR,
+            "europe_pmc": EUROPE_PMC_CACHE_DIR,
+        },
+        semantic_scholar=runtime["semantic_scholar"],
+        queue_status=runtime["queue"],
+        runtime_status=runtime["runtime_cooldowns"],
+    )
+
+
+@router.post("/api/admin/retrieval-query", include_in_schema=False)
+def manual_retrieval_query(
+    payload: ManualRetrievalRequest,
+    request: Request,
+    response: Response,
+):
+    _require_admin_access(request)
+    response.headers["Cache-Control"] = "no-store"
+    gene = payload.gene.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9._-]{0,63}", gene):
+        raise HTTPException(status_code=422, detail="Invalid gene symbol")
+    phenotype = (payload.phenotype or "").strip().lower() or None
+    if payload.pool == "phenotype" and not phenotype:
+        raise HTTPException(status_code=422, detail="A phenotype is required")
+    if payload.pool == "general":
+        phenotype = None
+
+    progress: list[str] = []
+    evidence = get_runtime_agents()["evidence_agent"]
+    result = evidence.manually_index_pool(
+        gene,
+        phenotype=phenotype,
+        progress_callback=progress.append,
+    )
+    return {"gene": gene, "phenotype": phenotype, "progress": progress, **result}
+
+
+@router.post("/api/admin/semanticscholar-check", include_in_schema=False)
+def semantic_scholar_key_check(request: Request, response: Response):
+    _require_admin_access(request)
+    response.headers["Cache-Control"] = "no-store"
+    return get_runtime_agents()["evidence_agent"].manually_probe_semantic_scholar()
 
 
 @router.get("/api/admin/documents", include_in_schema=False)

@@ -3,12 +3,11 @@ from __future__ import annotations
 import html
 import json
 import logging
-import math
 import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pathlib import Path
+from contextlib import nullcontext
 from typing import Any, Callable, Optional
 
 import pandas as pd
@@ -23,7 +22,7 @@ from config import REF_DIR
 from llm_utils import LLMAgent
 from plot_data import load_plot_data_store
 from reference_utils import (
-    extract_s2_paper_id,
+    extract_publication_id,
     infer_phenotypes_from_text,
     merge_references_preserve_numbers,
     normalize_citations,
@@ -80,9 +79,13 @@ class ExplanationAgent:
         llm: LLMAgent,
         gene_agent: GeneImportanceAgent,
         evidence_agent: EvidenceAssemblyAgent,
-        ot_agent: OpenTargetsAgent,
+        ot_agent: OpenTargetsAgent | None,
         query_agent: Optional[QueryAnalysisAgent] = None,
         conversation_agent: Optional[ConversationAgent] = None,
+        primary_phenotype: str = "breast cancer",
+        disease_display_name: str = "Breast Cancer",
+        risk_profile_provider: Optional[Callable[[str], dict[str, Any]]] = None,
+        minimize_sensitive_context: bool = False,
     ):
         self.llm = llm
         self.gene_agent = gene_agent
@@ -90,7 +93,29 @@ class ExplanationAgent:
         self.ot_agent = ot_agent
         self.query_agent = query_agent
         self.conversation_agent = conversation_agent or ConversationAgent()
+        self.primary_phenotype = primary_phenotype.strip().lower()
+        self.disease_display_name = disease_display_name.strip()
+        self.risk_profile_provider = risk_profile_provider
+        self.minimize_sensitive_context = minimize_sensitive_context
         self.local_reference_agent = LocalReferenceAgent(REF_DIR)
+
+    def _disease_relevance_label(self, language: str) -> str:
+        if normalize_output_language(language) == "ko":
+            return f"{self.disease_display_name} 관련성"
+        return f"{self.disease_display_name} Relevance"
+
+    def _model_ranking_text(self, target_genes: list[str], language: str) -> str:
+        if self.minimize_sensitive_context:
+            if normalize_output_language(language) == "ko":
+                return "\n".join(
+                    f"{index}. {gene} — 선택된 상위 기여 유전자"
+                    for index, gene in enumerate(target_genes, 1)
+                )
+            return "\n".join(
+                f"{index}. {gene} — selected top contributing gene"
+                for index, gene in enumerate(target_genes, 1)
+            )
+        return ""
 
     @staticmethod
     def _extract_json_object(raw: str) -> dict[str, Any]:
@@ -129,6 +154,7 @@ class ExplanationAgent:
                             f"Output language: {output_language}. "
                             "If Korean, use consistent formal 존댓말.\n\n"
                             f"{SAFETY_RULES}\n\n"
+                            f"Primary disease context: {self.disease_display_name}\n"
                             f"Selected gene count: {gene_count}\n"
                             f"Top contributing genes selected for detailed interpretation: {selected_genes}\n"
                             f"Top genes summary:\n{top_genes_summary}"
@@ -161,7 +187,7 @@ class ExplanationAgent:
                     {
                         "role": "user",
                         "content": (
-                            "Return JSON with exactly these keys: why_it_matters, breast_cancer_relevance, clinical_meaning.\n"
+                            "Return JSON with exactly these keys: why_it_matters, disease_relevance, clinical_meaning.\n"
                             "Use only the provided evidence context. Keep each field short and readable.\n"
                             f"Output language: {output_language}. If Korean, use consistent formal 존댓말.\n"
                             "Do not mention Open Targets or structured database evidence.\n"
@@ -169,6 +195,7 @@ class ExplanationAgent:
                             "prognostic, subtype, or resistance associations at the research level — "
                             "do NOT frame this as a personal clinical recommendation for the individual.\n\n"
                             f"{SAFETY_RULES}\n\n"
+                            f"Primary disease context: {self.disease_display_name}\n"
                             f"Gene: {gene}\n"
                             f"Individual contribution: {individual_contribution}\n"
                             f"Citation rules: {citation_rules}\n"
@@ -181,13 +208,13 @@ class ExplanationAgent:
             parsed = self._extract_json_object(raw)
             return {
                 "why_it_matters": str(parsed.get("why_it_matters", "")).strip(),
-                "breast_cancer_relevance": str(parsed.get("breast_cancer_relevance", "")).strip(),
+                "disease_relevance": str(parsed.get("disease_relevance", "")).strip(),
                 "clinical_meaning": str(parsed.get("clinical_meaning", "")).strip(),
             }
         except Exception:
             return {
                 "why_it_matters": "",
-                "breast_cancer_relevance": "",
+                "disease_relevance": "",
                 "clinical_meaning": "",
             }
 
@@ -215,6 +242,7 @@ class ExplanationAgent:
                             "Write a short 3-5 sentence integrative summary using only the provided takeaways.\n"
                             f"Output language: {output_language}. If Korean, use consistent formal 존댓말.\n\n"
                             f"{SAFETY_RULES}\n\n"
+                            f"Primary disease context: {self.disease_display_name}\n"
                             f"Citation rules: {citation_rules}\n"
                             f"Top contributing genes selected for detailed interpretation: {selected_genes}\n"
                             f"Top genes summary:\n{top_genes_summary}\n\n"
@@ -275,6 +303,7 @@ class ExplanationAgent:
                             "Do not use plain square brackets to display equations, and do not leave LaTeX fragments undelimited.\n\n"
                             f"{methodology_instructions}\n"
                             f"{SAFETY_RULES}\n\n"
+                            f"Primary disease context: {self.disease_display_name}\n"
                             f"Largest valid reference number: {n_max}\n\n"
                             f"Background:\n{background}\n\n"
                             f"Evidence context:\n{evidence_context}\n\n"
@@ -340,6 +369,8 @@ class ExplanationAgent:
         return "\n\n".join(part for part in sections if part.strip()).strip()
 
     def _build_verified_database_rows(self, genes: list[str], language: str = "en") -> list[dict[str, Any]]:
+        if self.ot_agent is None:
+            return []
         rows: list[dict[str, Any]] = []
         for gene in genes:
             stats = self.ot_agent.structured_stats(gene, language=language)
@@ -356,6 +387,8 @@ class ExplanationAgent:
         return rows
 
     def _render_verified_databases_section(self, genes: list[str], language: str = "en") -> str:
+        if self.ot_agent is None:
+            return ""
         intro = ui_label(language, "verified_intro")
 
         rows_html: list[str] = []
@@ -458,8 +491,88 @@ class ExplanationAgent:
 
         return re.sub(r"\[(\d+)\]", replace, text)
 
+    @classmethod
+    def _normalize_used_references(
+        cls,
+        answer: str,
+        ref_by_global_id: dict[int, dict[str, Any]],
+        chunk_by_global_id: dict[int, str],
+    ) -> tuple[str, str, list[dict[str, Any]], dict[int, int]]:
+        """Canonicalize citations and return compact, display-numbered refs."""
+        used_ids = [int(value) for value in re.findall(r"\[(\d+)\]", answer)]
+        old_to_display: dict[int, int] = {}
+        display_refs: dict[int, dict[str, Any]] = {}
+        seen_ref_keys: dict[tuple[Any, ...], int] = {}
+        used_valid_ids: list[int] = []
+
+        for citation_id in used_ids:
+            reference = ref_by_global_id.get(citation_id) or {}
+            if not extract_publication_id(reference):
+                continue
+            if citation_id not in used_valid_ids:
+                used_valid_ids.append(citation_id)
+
+            identity = reference_identity(reference)
+            display_number = seen_ref_keys.get(identity)
+            if display_number is None:
+                display_number = len(display_refs) + 1
+                seen_ref_keys[identity] = display_number
+                display_refs[display_number] = dict(reference)
+            else:
+                existing = display_refs[display_number]
+                existing_genes = [
+                    gene.strip()
+                    for gene in str(existing.get("gene") or "").split(",")
+                    if gene.strip()
+                ]
+                new_gene = str(reference.get("gene") or "").strip()
+                if new_gene and new_gene not in existing_genes:
+                    existing["gene"] = ", ".join([*existing_genes, new_gene])
+            old_to_display[citation_id] = display_number
+
+        compact_context = "\n".join(
+            f"[{old_to_display[citation_id]}] {chunk_by_global_id[citation_id]}"
+            for citation_id in used_valid_ids
+            if citation_id in chunk_by_global_id
+        )
+        answer = cls._remap_citations(answer, old_to_display)
+        answer_body = re.sub(r"(?is)##?\s*references.*$", "", answer).rstrip()
+
+        references: list[dict[str, Any]] = []
+        for display_number, reference in sorted(display_refs.items()):
+            paper_id = extract_publication_id(reference)
+            if not paper_id:
+                continue
+            references.append({
+                "n": display_number,
+                "title": str(reference.get("title") or "Untitled").strip() or None,
+                "gene": str(reference.get("gene") or "").strip() or None,
+                "phenotype": str(reference.get("phenotype") or "").strip() or None,
+                "source": str(reference.get("source") or "").strip().lower() or None,
+                "paperId": paper_id,
+                "url": str(reference.get("url") or "").strip() or None,
+                "pmid": str(reference.get("pmid") or "").strip() or None,
+                "pmcid": str(reference.get("pmcid") or "").strip() or None,
+                "doi": str(reference.get("doi") or "").strip() or None,
+                "journal": str(reference.get("journal") or "").strip() or None,
+                "year": reference.get("year"),
+                "authors": reference.get("authors"),
+                "citationCount": reference.get("citationCount"),
+                "disease_match": reference.get("disease_match"),
+                "source_pool": reference.get("source_pool"),
+                "reranker_score": reference.get("reranker_score"),
+                "target_phenotypes": reference.get("target_phenotypes") or [],
+            })
+        return answer_body, compact_context, references, old_to_display
+
     def _get_density_profile(self, pid: str) -> dict[str, Any] | None:
         try:
+            if self.risk_profile_provider is not None:
+                profile = self.risk_profile_provider(pid)
+                return {
+                    "percentile": float(profile["percentile"]),
+                    "prs_value": float(profile["prs_value"]),
+                }
             density = load_plot_data_store().prs_density_data(pid)
         except Exception as exc:
             logger.warning("Failed to load density profile for %s: %s", pid, exc)
@@ -483,12 +596,63 @@ class ExplanationAgent:
             return "risk_relative_higher"
         return "risk_relative_highest"
 
+    @staticmethod
+    def _render_compact_gene_rankings(
+        top_rows: list[dict[str, Any]],
+        bottom_rows: list[dict[str, Any]],
+        language: str,
+    ) -> str:
+        """Render the ten-gene overview used in the compact chat summary.
+
+        The PDF retains population-rank and narrative detail. The chatbot only
+        shows gene symbols and individual contribution values so the ranking is
+        visible without turning the message into a second full report.
+        """
+        top_five = top_rows[:5]
+        bottom_five = bottom_rows[:5]
+        row_count = max(len(top_five), len(bottom_five))
+        if not row_count:
+            return ""
+
+        def cell(rows: list[dict[str, Any]], index: int) -> str:
+            if index >= len(rows):
+                return "<td>—</td>"
+            row = rows[index]
+            gene = html.escape(str(row.get("gene") or "—"))
+            value = float(row.get("individual_contribution") or 0.0)
+            value_text = f"{value:+.2f}"
+            return (
+                "<td>"
+                f"<strong>{gene}</strong>"
+                f'<span class="summary-gene-score">{html.escape(value_text)}</span>'
+                "</td>"
+            )
+
+        rows_html = "".join(
+            f"<tr>{cell(top_five, index)}{cell(bottom_five, index)}</tr>"
+            for index in range(row_count)
+        )
+        table = (
+            '<table class="summary-top-genes-table summary-gene-ranking-table">'
+            "<thead><tr>"
+            f"<th>{html.escape(ui_label(language, 'simple_top_genes'))}</th>"
+            f"<th>{html.escape(ui_label(language, 'simple_bottom_genes'))}</th>"
+            "</tr></thead>"
+            f"<tbody>{rows_html}</tbody>"
+            "</table>"
+        )
+        return "\n".join([
+            f"### {ui_label(language, 'simple_gene_rankings')}",
+            table,
+        ])
+
     def _build_simple_summary(
         self,
         *,
         pid: str,
         density_profile: dict[str, Any] | None,
         top_rows: list[dict[str, Any]],
+        bottom_rows: list[dict[str, Any]],
         gene_sections: list[dict[str, Any]],
         language: str,
     ) -> tuple[str, dict[str, Any]]:
@@ -509,6 +673,11 @@ class ExplanationAgent:
             risk_summary = ui_label(language, "simple_risk_fallback")
 
         risk_context = ui_label(language, "simple_risk_context")
+        ranking_section = self._render_compact_gene_rankings(
+            top_rows,
+            bottom_rows,
+            language,
+        )
         highlight_lines: list[str] = []
         highlight_items: list[dict[str, Any]] = []
 
@@ -531,6 +700,8 @@ class ExplanationAgent:
             risk_summary,
             risk_context,
         ]
+        if ranking_section:
+            markdown_parts.extend(["", ranking_section])
         if highlight_lines:
             markdown_parts.extend([
                 "",
@@ -552,6 +723,11 @@ class ExplanationAgent:
                 "prs_value": density_profile.get("prs_value") if density_profile else None,
                 "relative_position": relative_position,
             },
+            "gene_rankings": {
+                "title": ui_label(language, "simple_gene_rankings"),
+                "top": top_rows[:5],
+                "bottom": bottom_rows[:5],
+            },
             "highlights": highlight_items,
             "note": note_text,
         }
@@ -568,7 +744,7 @@ class ExplanationAgent:
         gene_count: int = 2,
         language: str = "en",
         progress_callback: Optional[Callable[[str], None]] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         build_started_at = time.perf_counter()
         timings: dict[str, float] = {}
 
@@ -617,22 +793,28 @@ class ExplanationAgent:
 
         max_workers = 1 if ENABLE_LLM_REFERENCE_EXTRACTION else min(5, max(1, len(target_genes)))
         fetch_started_at = time.perf_counter()
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_gene = {executor.submit(fetch_gene_data, g): g for g in target_genes}
-            for future in as_completed(future_to_gene):
-                try:
-                    g_sym, c, r, s = future.result()
-                    results_map[g_sym] = (c, r, s)
-                except Exception as exc:
-                    logger.error(f"Gene {future_to_gene[future]} error: {exc}")
-                    results_map[future_to_gene[future]] = ([], [], "ERROR")
+        batch_context = (
+            self.evidence_agent.interactive_request_batch(progress_callback)
+            if hasattr(self.evidence_agent, "interactive_request_batch")
+            else nullcontext()
+        )
+        with batch_context:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_gene = {executor.submit(fetch_gene_data, g): g for g in target_genes}
+                for future in as_completed(future_to_gene):
+                    try:
+                        g_sym, c, r, s = future.result()
+                        results_map[g_sym] = (c, r, s)
+                    except Exception as exc:
+                        logger.error(f"Gene {future_to_gene[future]} error: {exc}")
+                        results_map[future_to_gene[future]] = ([], [], "ERROR")
         mark_timing("gene_context_fetch_s", fetch_started_at, "Literature retrieval across selected genes", genes=len(target_genes), workers=max_workers)
 
         evidence_backed_genes = [
             gene
             for gene in target_genes
             if any(
-                extract_s2_paper_id(ref or {})
+                extract_publication_id(ref or {})
                 for ref in results_map.get(gene, ([], [], "ERROR"))[1]
             )
         ]
@@ -644,9 +826,9 @@ class ExplanationAgent:
             genes_text = ", ".join(target_genes)
             if language == "ko":
                 reason = (
-                    "Semantic Scholar가 현재 요청을 제한하고 있습니다."
+                    "Europe PMC에서 적합한 문헌을 찾지 못했고, 보완 검색에 사용되는 Semantic Scholar도 현재 요청을 제한하고 있습니다."
                     if health.get("last_status_code") == 429
-                    else "현재 해당 논문을 검색할 수 없습니다."
+                    else "현재 연결된 문헌 소스에서 해당 논문을 검색할 수 없습니다."
                 )
                 message = (
                     f"{genes_text}에 대해 인용 가능한 문헌이 색인되어 있지 않으며, {reason} "
@@ -654,9 +836,9 @@ class ExplanationAgent:
                 )
             else:
                 reason = (
-                    "Semantic Scholar is currently rate-limiting requests."
+                    "Europe PMC did not yield eligible evidence, and the Semantic Scholar fallback is currently rate-limiting requests."
                     if health.get("last_status_code") == 429
-                    else "No papers could be retrieved at this time."
+                    else "No papers could be retrieved from the configured literature sources at this time."
                 )
                 message = (
                     f"No citable literature is indexed for {genes_text}. {reason} "
@@ -726,7 +908,10 @@ class ExplanationAgent:
         mark_timing("context_assembly_s", context_assembly_started_at, "Evidence context assembly", genes=len(target_genes), refs=len(ref_by_global_id), live=False)
 
         rag_ctx = "\n\n".join(ctx_sections)
-        ot_context = "\n\n".join(self.ot_agent.summary(g) for g in target_genes)
+        ot_context = (
+            "\n\n".join(self.ot_agent.summary(g) for g in target_genes)
+            if self.ot_agent is not None else ""
+        )
         top_for_display = top.rename(
             columns={
                 "contribution": "individual_contribution",
@@ -747,6 +932,7 @@ class ExplanationAgent:
             f"{ui_label(language, 'top_genes')}:\n{top_text}\n\n"
             f"{ui_label(language, 'bottom_genes')}:\n{bottom_text}"
         )
+        model_ranking_text = self._model_ranking_text(target_genes, language) or ranking_text
         density_profile = self._get_density_profile(pid)
 
         selected_gene_text = ", ".join(target_genes) if target_genes else "None available"
@@ -756,7 +942,7 @@ class ExplanationAgent:
             intro_text = self._generate_intro(
                 gene_count=len(target_genes),
                 selected_genes=selected_gene_text,
-                top_genes_summary=ranking_text,
+                top_genes_summary=model_ranking_text,
                 language=language,
             )
             mark_timing("intro_drafting_s", intro_started_at, "Intro drafting")
@@ -784,7 +970,10 @@ class ExplanationAgent:
                     )
                     gene_section = self._generate_gene_section(
                         gene=gene,
-                        individual_contribution=f"{contribution:.2f}",
+                        individual_contribution=(
+                            "selected top-contributor rank only; exact value withheld"
+                            if self.minimize_sensitive_context else f"{contribution:.2f}"
+                        ),
                         evidence_context=gene_context_map.get(gene, ""),
                         citation_rules=gene_citation_rules.get(gene, ""),
                         language=language,
@@ -799,7 +988,7 @@ class ExplanationAgent:
                             f"{gene}는 이 개인의 상위 기여 유전자 중 하나이므로 포함되었습니다 "
                             f"(기여도 {contribution:.2f})."
                         ),
-                        "breast_cancer_relevance": "현재 이 유전자에 대해 인용 가능한 문헌이 색인되어 있지 않습니다.",
+                        "disease_relevance": "현재 이 유전자에 대해 인용 가능한 문헌이 색인되어 있지 않습니다.",
                         "clinical_meaning": "근거 문헌이 확보될 때까지 문헌 기반 해석을 제공할 수 없습니다.",
                     }
                 else:
@@ -812,13 +1001,13 @@ class ExplanationAgent:
                             f"{gene} is included because it is one of this individual's top contributors "
                             f"(contribution {contribution:.2f})."
                         ),
-                        "breast_cancer_relevance": "No citable literature is currently indexed for this gene.",
+                        "disease_relevance": "No citable literature is currently indexed for this gene.",
                         "clinical_meaning": "A literature-based interpretation is unavailable until supporting sources are retrieved.",
                     }
                 section_parts = [
                     f"### {gene}",
                     self._subsection_block(ui_label(language, "why_it_matters"), gene_section.get("why_it_matters", "")),
-                    self._subsection_block(ui_label(language, "breast_cancer_relevance"), gene_section.get("breast_cancer_relevance", "")),
+                    self._subsection_block(self._disease_relevance_label(language), gene_section.get("disease_relevance", "")),
                     self._subsection_block(ui_label(language, "clinical_meaning"), gene_section.get("clinical_meaning", "")),
                 ]
                 section_text = "\n\n".join([part for part in section_parts if part.strip()])
@@ -828,7 +1017,7 @@ class ExplanationAgent:
                     "gene": gene,
                     "individual_contribution": contribution,
                     "why_it_matters": gene_section.get("why_it_matters", "").strip(),
-                    "breast_cancer_relevance": gene_section.get("breast_cancer_relevance", "").strip(),
+                    "disease_relevance": gene_section.get("disease_relevance", "").strip(),
                     "clinical_meaning": gene_section.get("clinical_meaning", "").strip(),
                 })
 
@@ -858,7 +1047,7 @@ class ExplanationAgent:
             integrated_started_at = time.perf_counter()
             integrated_view_text = self._generate_integrated_view(
                 selected_genes=selected_gene_text,
-                top_genes_summary=ranking_text,
+                top_genes_summary=model_ranking_text,
                 gene_takeaways="\n".join(gene_takeaways),
                 citation_rules=integrated_rules,
                 language=language,
@@ -870,69 +1059,20 @@ class ExplanationAgent:
 
         answer = "\n\n".join([part for part in structured_sections if part.strip()])
 
-        # --- NEW: normalize grouped citations before parsing ---
+        # Normalize grouped citations before parsing.
         answer = normalize_citations(answer)
 
         emit_progress(progress_callback, "Formatting references")
         reference_format_started_at = time.perf_counter()
         # 5. Output Cleanup & Structured References
 
-        # Collect citations the model used (now catches grouped citations after normalization)
-        used_ids_all = [int(x) for x in re.findall(r"\[(\d+)\]", answer)]
-
-        old_to_display: dict[int, int] = {}
-        display_refs: dict[int, dict[str, Any]] = {}
-        seen_ref_keys: dict[tuple[Any, ...], int] = {}
-        next_display_n = 1
-        used_ids_valid_unique: list[int] = []
-
-        for cid in used_ids_all:
-            ref = ref_by_global_id.get(cid) or {}
-            paper_id = extract_s2_paper_id(ref)
-            if not paper_id:
-                continue
-
-            if cid not in used_ids_valid_unique:
-                used_ids_valid_unique.append(cid)
-
-            ref_key = reference_identity(ref)
-            display_n = seen_ref_keys.get(ref_key)
-            if display_n is None:
-                display_n = next_display_n
-                next_display_n += 1
-                seen_ref_keys[ref_key] = display_n
-                display_refs[display_n] = dict(ref)
-            else:
-                existing_ref = display_refs.get(display_n, {})
-                existing_gene = (existing_ref.get("gene") or "").strip()
-                new_gene = (ref.get("gene") or "").strip()
-                if new_gene and new_gene not in [g.strip() for g in existing_gene.split(",") if g.strip()]:
-                    existing_ref["gene"] = ", ".join([part for part in [existing_gene, new_gene] if part])
-                display_refs[display_n] = existing_ref
-
-            old_to_display[cid] = display_n
-
-        # Build a compact context with the SAME numbering as References (1..N)
-        compact_ctx_lines: list[str] = []
-        for old_id in used_ids_valid_unique:
-            chunk = chunk_by_global_id.get(old_id)
-            if chunk:
-                compact_ctx_lines.append(f"[{old_to_display[old_id]}] {chunk}")
-        compact_ctx = "\n".join(compact_ctx_lines)
-
-        # Replace citations in answer:
-        # - valid ids are renumbered
-        # - invalid ids are removed (prevents ghost citations like [999])
-        def replace_citation(match: re.Match) -> str:
-            old_val = int(match.group(1))
-            if old_val in old_to_display:
-                return f"[{old_to_display[old_val]}]"
-            return ""  # drop invalid citations
-
-        answer_renumbered = re.sub(r"\[(\d+)\]", replace_citation, answer)
-
-        # Remove any "References" section the model may have generated
-        answer_body = re.sub(r"(?is)##?\s*references.*$", "", answer_renumbered).rstrip()
+        answer_body, compact_ctx, references_out, old_to_display = (
+            self._normalize_used_references(
+                answer,
+                ref_by_global_id,
+                chunk_by_global_id,
+            )
+        )
         intro_text = self._remap_citations(intro_text, old_to_display).strip()
         integrated_view_text = self._remap_citations(locals().get("integrated_view_text", ""), old_to_display).strip()
         remapped_gene_sections: list[dict[str, Any]] = []
@@ -942,44 +1082,14 @@ class ExplanationAgent:
                 "individual_contribution": section["individual_contribution"],
                 "titles": {
                     "why_it_matters": ui_label(language, "why_it_matters"),
-                    "breast_cancer_relevance": ui_label(language, "breast_cancer_relevance"),
+                    "disease_relevance": self._disease_relevance_label(language),
                     "clinical_meaning": ui_label(language, "clinical_meaning"),
                 },
                 "why_it_matters": self._remap_citations(section["why_it_matters"], old_to_display).strip(),
-                "breast_cancer_relevance": self._remap_citations(section["breast_cancer_relevance"], old_to_display).strip(),
+                "disease_relevance": self._remap_citations(section["disease_relevance"], old_to_display).strip(),
                 "clinical_meaning": self._remap_citations(section["clinical_meaning"], old_to_display).strip(),
             })
 
-        # Build structured references list
-        references_out: list[dict] = []
-        for display_n in sorted(display_refs.keys()):
-            r = display_refs.get(display_n) or {}
-            src = (r.get("source") or "").strip().lower() or None
-            gene = (r.get("gene") or "").strip() or None
-            paper_id = extract_s2_paper_id(r) or None
-            title = (r.get("title") or "Untitled").strip() or None
-            url = (r.get("url") or "").strip() or None
-
-            if not paper_id:
-                continue
-
-            references_out.append({
-                "n": display_n,
-                "title": title,
-                "gene": gene,
-                "phenotype": (r.get("phenotype") or "").strip() or None,
-                "source": src,
-                "paperId": paper_id,
-                "url": url,
-                "journal": (r.get("journal") or "").strip() or None,
-                "citationCount": r.get("citationCount"),
-                "disease_match": r.get("disease_match"),
-                "source_pool": r.get("source_pool"),
-                "reranker_score": r.get("reranker_score"),
-                "target_phenotypes": r.get("target_phenotypes") or [],
-            })
-
-        references_out.sort(key=lambda x: x["n"])
         mark_timing("reference_formatting_s", reference_format_started_at, "Reference formatting", refs=len(references_out), live=False)
 
         simple_summary_started_at = time.perf_counter()
@@ -993,6 +1103,7 @@ class ExplanationAgent:
             pid=pid,
             density_profile=density_profile,
             top_rows=top_rows,
+            bottom_rows=bottom_rows,
             gene_sections=remapped_gene_sections,
             language=language,
         )
@@ -1058,6 +1169,7 @@ class ExplanationAgent:
             "Discussed Genes": target_genes,
             "RAG Context": rag_ctx,
             "RAG Context Compact": compact_ctx,
+            "Model Safe Context": answer_body,
             "OT Context Compact": "",
             "OT Summary": ot_context,
             "Source Path": "; ".join(source_notes),
@@ -1203,6 +1315,7 @@ class ExplanationAgent:
                 effective_question,
                 available_genes=available_genes,
                 conversation_history=conversation_history,
+                default_phenotype=self.primary_phenotype,
             )
             if self.query_agent and not initial_methodology_query
             else {
@@ -1301,55 +1414,66 @@ class ExplanationAgent:
                     f"### {context_label}\n{hit['text']}"
                 )
 
-        for gene in followup_genes:
-            chunks, refs, _ = self.evidence_agent.retrieve_gene_context_for_question(
-                gene,
-                rewritten_query,
-                top_k=6,
-                requested_phenotypes=analysis.get("phenotypes") or [],
-                disease_intent=analysis.get("disease_intent"),
-                progress_callback=progress_callback,
-            )
-            debug_rows: list[dict[str, Any]] = []
-            for chunk, ref in zip(chunks, refs):
-                if not extract_s2_paper_id(ref):
-                    continue
-                inferred_phenotypes = infer_phenotypes_from_text(
-                    "\n".join(
-                        part for part in [
-                            ref.get("title") or "",
-                            chunk,
-                        ] if part
-                    )
+        batch_context = (
+            self.evidence_agent.interactive_request_batch(progress_callback)
+            if followup_genes and hasattr(self.evidence_agent, "interactive_request_batch")
+            else nullcontext()
+        )
+        with batch_context:
+            for gene in followup_genes:
+                chunks, refs, _ = self.evidence_agent.retrieve_gene_context_for_question(
+                    gene,
+                    rewritten_query,
+                    top_k=6,
+                    requested_phenotypes=analysis.get("phenotypes") or [],
+                    disease_intent=analysis.get("disease_intent"),
+                    progress_callback=progress_callback,
                 )
-                debug_rows.append({
-                    "paperId": extract_s2_paper_id(ref) or None,
-                    "title": (ref.get("title") or "Untitled").strip(),
-                    "phenotypes": inferred_phenotypes,
-                })
-                compact_ctx_lines.append(f"[{local_ref_id}] [{gene}] {chunk}")
-                followup_refs.append({
-                    "n": local_ref_id,
-                    "title": (ref.get("title") or "Untitled").strip(),
-                    "gene": (ref.get("gene") or gene).strip(),
-                    "phenotype": ", ".join(inferred_phenotypes) if inferred_phenotypes else ((ref.get("phenotype") or followup_phenotype or "").strip() or None),
-                    "source": (ref.get("source") or "").strip(),
-                    "paperId": extract_s2_paper_id(ref) or None,
-                    "url": (ref.get("url") or "").strip() or None,
-                    "journal": (ref.get("journal") or "").strip() or None,
-                    "citationCount": ref.get("citationCount"),
-                    "disease_match": ref.get("disease_match"),
-                    "source_pool": ref.get("source_pool"),
-                    "reranker_score": ref.get("reranker_score"),
-                    "target_phenotypes": ref.get("target_phenotypes") or [],
-                })
-                local_ref_id += 1
-            logger.info(
-                "[FOLLOWUP_REFS] gene=%s query=%r retrieved=%s",
-                gene,
-                rewritten_query,
-                debug_rows,
-            )
+                debug_rows: list[dict[str, Any]] = []
+                for chunk, ref in zip(chunks, refs):
+                    if not extract_publication_id(ref):
+                        continue
+                    inferred_phenotypes = infer_phenotypes_from_text(
+                        "\n".join(
+                            part for part in [
+                                ref.get("title") or "",
+                                chunk,
+                            ] if part
+                        )
+                    )
+                    debug_rows.append({
+                        "paperId": extract_publication_id(ref) or None,
+                        "title": (ref.get("title") or "Untitled").strip(),
+                        "phenotypes": inferred_phenotypes,
+                    })
+                    compact_ctx_lines.append(f"[{local_ref_id}] [{gene}] {chunk}")
+                    followup_refs.append({
+                        "n": local_ref_id,
+                        "title": (ref.get("title") or "Untitled").strip(),
+                        "gene": (ref.get("gene") or gene).strip(),
+                        "phenotype": ", ".join(inferred_phenotypes) if inferred_phenotypes else ((ref.get("phenotype") or followup_phenotype or "").strip() or None),
+                        "source": (ref.get("source") or "").strip(),
+                        "paperId": extract_publication_id(ref) or None,
+                        "url": (ref.get("url") or "").strip() or None,
+                        "pmid": (ref.get("pmid") or "").strip() or None,
+                        "pmcid": (ref.get("pmcid") or "").strip() or None,
+                        "doi": (ref.get("doi") or "").strip() or None,
+                        "journal": (ref.get("journal") or "").strip() or None,
+                        "year": ref.get("year"),
+                        "authors": ref.get("authors"),
+                        "citationCount": ref.get("citationCount"),
+                        "disease_match": ref.get("disease_match"),
+                        "source_pool": ref.get("source_pool"),
+                        "reranker_score": ref.get("reranker_score"),
+                        "target_phenotypes": ref.get("target_phenotypes") or [],
+                    })
+                    local_ref_id += 1
+                logger.info(
+                    "[FOLLOWUP_REFS] gene=%s query=%r retrieved=%s",
+                    gene,
+                    rewritten_query,
+                    debug_rows,
+                )
 
         refs = followup_refs or (base.get("References", []) or [])
         n_max = len(refs)
@@ -1379,7 +1503,11 @@ class ExplanationAgent:
 
         emit_progress(progress_callback, f"Drafting follow-up response with {self.llm.model}")
         answer = self._generate_followup_text(
-            background=f"{base.get('Detailed Explanation') or base['Generated Explanation']}{methodology_background}",
+            background=(
+                f"{base.get('Model Safe Context', '')}{methodology_background}"
+                if self.minimize_sensitive_context
+                else f"{base.get('Detailed Explanation') or base['Generated Explanation']}{methodology_background}"
+            ),
             compact_ctx=compact_ctx,
             ref_index=ref_index,
             question=question,

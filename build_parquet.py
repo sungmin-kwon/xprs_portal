@@ -8,16 +8,15 @@ from pathlib import Path
 
 import pandas as pd
 
-from config import APP_BASE_DIR
-from plot_data import (
-    ANNOTATED_INFO_PATH,
-    FULL_PRS_PATH,
-    PLOT_DATA_CACHE_DIR,
-    PRS_INFO_PATH,
-)
+from config import APP_BASE_DIR, PLOT_DATA_CACHE_DIR
 
 
 DEFAULT_RDS_PATH = APP_BASE_DIR / "r" / "data.RDS"
+PARQUET_FILENAMES = {
+    "annotated_info": "annotated_info.parquet",
+    "prs_info": "prs_info.parquet",
+    "full_prs": "full_prs.parquet",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,9 +98,8 @@ def convert_csv_exports_to_parquet(temp_dir: Path, out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     mappings = {
-        "annotated_info": out_dir / ANNOTATED_INFO_PATH.name,
-        "prs_info": out_dir / PRS_INFO_PATH.name,
-        "full_prs": out_dir / FULL_PRS_PATH.name,
+        stem: out_dir / filename
+        for stem, filename in PARQUET_FILENAMES.items()
     }
 
     for stem, out_path in mappings.items():

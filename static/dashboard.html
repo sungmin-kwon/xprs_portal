@@ -11,36 +11,44 @@
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
-  <link rel="stylesheet" href="/static/dashboard.css?v=78" />
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css?v=0.16.11" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=89" />
+  <link rel="stylesheet" href="/static/rare_variant_detail.css?v=1" />
 </head>
 
 <body>
-
-  <nav class="sidebar" aria-label="Disease navigation">
-    <a class="nav-brand" href="/about" title="About XPRS" data-i18n-title="aboutXprs">
-      <span class="material-symbols-outlined" aria-hidden="true">biotech</span>
-    </a>
-    <a class="nav-item" href="/" title="Disease overview" data-i18n-title="diseaseOverview">
-      <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
-    </a>
-    <a class="nav-item active" href="/dashboard" title="Breast cancer portal" data-i18n-title="breastCancerPortal">
-      <span class="material-symbols-outlined" aria-hidden="true">vaccines</span>
-    </a>
-    <a class="nav-item" href="/evaluation" title="User evaluation survey" data-i18n-title="userEvaluation" data-evaluation-link hidden>
-      <span class="material-symbols-outlined" aria-hidden="true">assignment</span>
-    </a>
-  </nav>
 
   <div class="content-wrapper">
     
     <header>
       <div class="header-inner simple-header">
         <div class="header-title-block">
+          <div class="header-context-row">
+            <a id="overview-back-link" class="global-nav-link global-nav-link--back" href="/">
+              <span class="material-symbols-outlined" aria-hidden="true">arrow_back</span>
+              <span data-i18n="diseaseOverview">Disease overview</span>
+            </a>
+            <span id="dashboard-cohort-label" class="cohort-context-pill">
+              <span class="material-symbols-outlined" aria-hidden="true">groups</span>
+              <span id="dashboard-cohort-label-text">1000 Genomes (Public)</span>
+            </span>
+          </div>
           <h1 data-i18n="portalTitle">XPRS Information Portal – BREAST CANCER</h1>
         </div>
 
         <div class="header-session-bar">
+          <a id="cohort-analysis-link" class="global-nav-link" href="/cohort-analysis" hidden>
+            <span class="material-symbols-outlined" aria-hidden="true">analytics</span>
+            <span class="global-nav-link__label" data-i18n="cohortAnalysis">Cohort Analysis</span>
+          </a>
+          <a class="global-nav-link" href="/about" title="About XPRS" data-i18n-title="aboutXprs">
+            <span class="material-symbols-outlined" aria-hidden="true">info</span>
+            <span class="global-nav-link__label" data-i18n="aboutXprs">About XPRS</span>
+          </a>
+          <span class="global-nav-link global-nav-link--disabled-icon" title="User evaluation survey" aria-label="User evaluation survey" data-i18n-title="userEvaluation" data-i18n-aria="userEvaluation" aria-disabled="true">
+            <span class="material-symbols-outlined" aria-hidden="true">assignment</span>
+          </span>
+          <span class="header-session-divider" aria-hidden="true"></span>
           <button id="individual-selector-btn" class="session-pill individual-selector-btn" type="button" aria-label="Change Individual" title="Change Individual">
             <span class="material-symbols-outlined individual-selector-icon" aria-hidden="true">person</span>
             <strong id="current-individual-label">—</strong>
@@ -64,7 +72,6 @@
           <button id="theme-toggle-top" class="theme-icon-button" type="button" aria-label="Toggle theme" title="Toggle theme">
             <span class="theme-icon" aria-hidden="true">☾</span>
           </button>
-          <div class="header-avatar" aria-hidden="true"></div>
         </div>
       </div>
     </header>
@@ -78,8 +85,20 @@
 
           <div class="viz-body" style="flex:1;">
             <div class="viz-card">
-              <div class="viz-title">
+              <div class="viz-title viz-title--with-action">
                 <span data-i18n="densityTitle">PRS Density</span>
+                <button
+                  id="evidence-summary-btn"
+                  class="viz-action-btn evidence-summary-btn"
+                  type="button"
+                  aria-label="Open integrated evidence view"
+                  title="Open integrated evidence view"
+                  hidden
+                  disabled
+                >
+                  <span class="material-symbols-outlined" aria-hidden="true">join_inner</span>
+                  <span class="evidence-summary-btn__label" data-i18n="evidenceButtonLabel">Evidence</span>
+                </button>
               </div>
               <div class="viz-content">
                 <div id="density-plot" class="plotly-box" style="display:none;"></div>
@@ -105,11 +124,11 @@
               </div>
             </div>
 
-            <div class="viz-card viz-card--placeholder">
+            <div class="viz-card" id="rare-variant-card">
               <div class="viz-title">
                 <span data-i18n="rareVariantTitle">Rare Variant Analysis</span>
               </div>
-              <div class="viz-content viz-content--placeholder">
+              <div class="viz-content" id="rare-variant-content">
                 <div class="viz-empty-state">
                   <span class="material-symbols-outlined" aria-hidden="true">genetics</span>
                   <p data-i18n="rareVariantUnavailable">Available when rare-variant data are added to a cohort</p>
@@ -135,6 +154,7 @@
                 <select id="generation-model-select" class="generation-model-select"
                         aria-label="Answer model" data-i18n-aria="generationModelLabel"></select>
               </div>
+              <div id="kpredict-zdr-disclosure" class="privacy-disclosure" data-i18n="zdrDisclosure" hidden></div>
             </div>
           </div>
           <div class="status" id="chat-status"></div>
@@ -154,7 +174,7 @@
 
       <div class="right-column">
 
-        <!-- NEW: References List (top-right) -->
+        <!-- References list (top-right) -->
         <section class="panel" id="refs-panel" style="display:flex; flex-direction:column; flex: 1 1 0; min-height: 280px;">
           <div class="panel-header">
             <div><h2 data-i18n="referencesList">References List</h2></div>
@@ -200,6 +220,30 @@
       </div>
       <div class="plot-overlay__body">
         <div id="manhattan-plot-expanded" class="plotly-box plotly-box--expanded"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="evidence-overlay" class="plot-overlay evidence-overlay" aria-hidden="true">
+    <div id="evidence-overlay-backdrop" class="plot-overlay__backdrop"></div>
+    <div class="plot-overlay__dialog evidence-overlay__dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-overlay-title">
+      <div class="plot-overlay__header evidence-overlay__header">
+        <div>
+          <div class="evidence-overlay__eyebrow" data-i18n="integratedEvidenceEyebrow">COMMON + RARE VARIANT EVIDENCE</div>
+          <h2 id="evidence-overlay-title" data-i18n="integratedEvidenceTitle">Disease Evidence Summary</h2>
+        </div>
+        <button
+          id="close-evidence-overlay-btn"
+          class="plot-overlay__close"
+          type="button"
+          aria-label="Close integrated evidence view"
+          title="Close integrated evidence view"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">close</span>
+        </button>
+      </div>
+      <div id="evidence-overlay-body" class="evidence-overlay__body">
+        <div class="viz-empty-state"><span class="loading-spinner"></span></div>
       </div>
     </div>
   </div>
@@ -282,9 +326,10 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-  <script src="/static/dashboard.js?v=90"></script>
+  <script src="/static/vendor/katex/katex.min.js?v=0.16.11"></script>
+  <script src="/static/vendor/katex/contrib/auto-render.min.js?v=0.16.11"></script>
+  <script src="/static/rare_variant_detail.js?v=1"></script>
+  <script src="/static/dashboard.js?v=108"></script>
 
 </body>
 </html>
