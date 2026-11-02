@@ -83,13 +83,11 @@ class OpenRouterPrivacyTests(unittest.TestCase):
             def chat(self, messages, **_kwargs):
                 prompt = messages[-1]["content"]
                 self.prompts.append(prompt)
-                if "one key: intro" in prompt:
-                    return '{"intro":"ok"}'
-                if "integrated_view" in prompt:
-                    return '{"integrated_view":"ok"}'
+                if "overall_interpretation" in prompt:
+                    return '{"overall_interpretation":"Overall.","gene_overview":"Genes."}'
                 if "one key: answer" in prompt:
                     return '{"answer":"ok"}'
-                return '{"why_it_matters":"ok","disease_relevance":"ok","clinical_meaning":"ok"}'
+                return '{"disease_relevance":"ok"}'
 
         llm = PromptRecorder()
         agent = ExplanationAgent(
@@ -102,12 +100,6 @@ class OpenRouterPrivacyTests(unittest.TestCase):
             minimize_sensitive_context=True,
         )
         ranking = agent._model_ranking_text(["GENE1", "GENE2"], "en")
-        agent._generate_intro(
-            gene_count=2,
-            selected_genes="GENE1, GENE2",
-            top_genes_summary=ranking,
-            language="en",
-        )
         agent._generate_gene_section(
             gene="GENE1",
             individual_contribution="selected top-contributor rank only; exact value withheld",
@@ -115,13 +107,14 @@ class OpenRouterPrivacyTests(unittest.TestCase):
             citation_rules="none",
             language="en",
         )
-        agent._generate_integrated_view(
+        integrated_view = agent._generate_integrated_view(
             selected_genes="GENE1, GENE2",
             top_genes_summary=ranking,
             gene_takeaways="public evidence",
             citation_rules="none",
             language="en",
         )
+        self.assertEqual(integrated_view, "Overall.\n\nGenes.")
         agent._generate_followup_text(
             background="public evidence",
             compact_ctx="public evidence",
@@ -132,6 +125,11 @@ class OpenRouterPrivacyTests(unittest.TestCase):
 
         self.assertTrue(all("Gastric Cancer" in prompt for prompt in llm.prompts))
         combined = "\n".join(llm.prompts)
+        self.assertIn("exactly one key: disease_relevance", combined)
+        self.assertIn("non-specialist reader", combined)
+        self.assertIn("no more than three", combined)
+        self.assertNotIn("why_it_matters", combined)
+        self.assertNotIn("clinical_meaning", combined)
         self.assertNotIn("KP-ABCDEF123456", combined)
         self.assertNotIn("1.23456", combined)
         self.assertIn("exact value withheld", combined)

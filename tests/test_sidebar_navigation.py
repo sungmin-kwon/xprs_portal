@@ -1,9 +1,6 @@
 import unittest
-from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
-STATIC = ROOT / "static"
+from tests.support import STATIC
 
 
 class GlobalNavigationTests(unittest.TestCase):

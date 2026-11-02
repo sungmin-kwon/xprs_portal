@@ -1238,12 +1238,18 @@ function percentileTint(percentile, darkTheme = false) {
   const low = darkTheme ? [91, 169, 224] : [42, 123, 181];
   const middle = darkTheme ? [151, 164, 176] : [111, 127, 141];
   const high = darkTheme ? [244, 125, 115] : [196, 67, 58];
+  // The neutral midpoint has less chroma than either endpoint, so give it
+  // slightly more opacity. This keeps average percentiles intentionally
+  // neutral without making the center of the scale look faded or disabled.
+  const midpointStrength = 1 - (Math.abs(value - 0.5) * 2);
+  const fillAlpha = (darkTheme ? 0.26 : 0.18) + (midpointStrength * 0.06);
+  const backgroundAlpha = (darkTheme ? 0.09 : 0.06) + (midpointStrength * 0.03);
   const rgb = value <= 0.5
     ? mixRgb(low, middle, value / 0.5)
     : mixRgb(middle, high, (value - 0.5) / 0.5);
   return {
-    fill: `rgba(${rgb.join(", ")}, ${darkTheme ? 0.26 : 0.18})`,
-    background: `rgba(${rgb.join(", ")}, ${darkTheme ? 0.09 : 0.06})`,
+    fill: `rgba(${rgb.join(", ")}, ${fillAlpha.toFixed(3)})`,
+    background: `rgba(${rgb.join(", ")}, ${backgroundAlpha.toFixed(3)})`,
   };
 }
 
@@ -1266,7 +1272,7 @@ function plotMiniDensity(card) {
     mode: "lines",
     x,
     y,
-    line: { color: darkTheme ? "#7bb2f6" : "#27609d", width: 2.2 },
+    line: { color: darkTheme ? "#c8d0d8" : "#343a40", width: 2.2 },
     fill: "tozeroy",
     fillcolor: tint.fill,
     hoverinfo: "skip",

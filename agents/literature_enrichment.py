@@ -32,6 +32,9 @@ S2_ENRICHMENT_ZERO_YIELD_PAGES = max(
 S2_ENRICHMENT_START_DELAY_SECONDS = max(
     0.0, float(os.getenv("S2_ENRICHMENT_START_DELAY_SECONDS", "30"))
 )
+S2_ENRICHMENT_MAX_PAGES_PER_JOB = max(
+    1, int(os.getenv("S2_ENRICHMENT_MAX_PAGES_PER_JOB", "1"))
+)
 S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS = max(
     0.0,
     float(os.getenv("S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS", "60")),
@@ -122,6 +125,7 @@ class LiteratureEnrichmentQueue:
                 "primary_phenotype": S2_ENRICHMENT_PRIMARY_TARGET,
                 "named_phenotype": S2_ENRICHMENT_NAMED_TARGET,
                 "raw_result_cap": S2_ENRICHMENT_MAX_RAW_RESULTS,
+                "max_pages_per_job": S2_ENRICHMENT_MAX_PAGES_PER_JOB,
                 "api_key_min_interval_seconds": S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS,
             },
         }
@@ -157,11 +161,7 @@ class LiteratureEnrichmentQueue:
             page_size=S2_ENRICHMENT_PAGE_SIZE,
             max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
         )
-        if (
-            not status.get("fetch_ok")
-            or status.get("pagination_complete")
-            or status.get("enrichment_complete")
-        ):
+        if status.get("pagination_complete") or status.get("enrichment_complete"):
             return False
         target = self.target_for_pool(pool_type, phenotype, primary_phenotype)
         papers = self.s2.cached_papers(gene, phenotype)
@@ -196,12 +196,13 @@ class LiteratureEnrichmentQueue:
             self._job_details[job.key] = job
             self._jobs.put(job)
         logger.info(
-            "[S2_ENRICH] queued gene=%s pool=%s phenotype=%s target=%d raw=%d",
+            "[S2_ENRICH] queued gene=%s pool=%s phenotype=%s target=%d raw=%d initial=%s",
             gene,
             pool_type,
             phenotype,
             target,
             int(status.get("raw_examined") or 0),
+            not bool(status.get("fetch_ok")),
         )
         return True
 
@@ -257,8 +258,51 @@ class LiteratureEnrichmentQueue:
             max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
         )
         zero_yield_pages = int(status.get("zero_yield_pages") or 0)
+        pages_requested = 0
 
-        while len(eligible_ids) < job.target_eligible:
+        # A chatbot miss reaches the queue before a Semantic Scholar cache
+        # exists. Make the first provider request here so answer generation
+        # never waits for Semantic Scholar or its rate-limit cooldown.
+        if not status.get("fetch_ok"):
+            papers = self.s2.cached_for_gene(
+                job.gene,
+                limit=S2_ENRICHMENT_PAGE_SIZE,
+                phenotype=job.phenotype,
+                max_retries=1,
+                api_key_min_interval_seconds=S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS,
+            )
+            pages_requested = 1
+            status = self.s2.pagination_status(
+                job.gene,
+                job.phenotype,
+                page_size=S2_ENRICHMENT_PAGE_SIZE,
+                max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
+            )
+            if not status.get("fetch_ok"):
+                logger.warning(
+                    "[S2_ENRICH] initial fallback failed gene=%s pool=%s phenotype=%s",
+                    job.gene,
+                    job.pool_type,
+                    job.phenotype,
+                )
+                return
+            docs = self.s2.papers_to_docs(
+                job.gene,
+                papers,
+                pool_type=job.pool_type,
+                phenotype=job.phenotype,
+            )
+            if docs:
+                self.rag.upsert_docs(docs)
+                eligible_ids.update(doc["id"] for doc in docs)
+                zero_yield_pages = 0
+            else:
+                zero_yield_pages += 1
+
+        while (
+            len(eligible_ids) < job.target_eligible
+            and pages_requested < S2_ENRICHMENT_MAX_PAGES_PER_JOB
+        ):
             with self._activity:
                 while self._interactive_retrievals > 0:
                     self._activity.wait(timeout=5.0)
@@ -270,6 +314,7 @@ class LiteratureEnrichmentQueue:
                 max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
                 api_key_min_interval_seconds=S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS,
             )
+            pages_requested += 1
             if not result.get("ok"):
                 logger.warning(
                     "[S2_ENRICH] page fetch paused gene=%s pool=%s phenotype=%s reason=%s",
@@ -340,6 +385,18 @@ class LiteratureEnrichmentQueue:
                     job.phenotype,
                 )
                 break
+
+        if (
+            pages_requested >= S2_ENRICHMENT_MAX_PAGES_PER_JOB
+            and len(eligible_ids) < job.target_eligible
+        ):
+            logger.info(
+                "[S2_ENRICH] per-action page budget reached gene=%s pool=%s phenotype=%s pages=%d",
+                job.gene,
+                job.pool_type,
+                job.phenotype,
+                pages_requested,
+            )
 
         final_status = self.s2.pagination_status(
             job.gene,

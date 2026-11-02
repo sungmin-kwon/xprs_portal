@@ -86,6 +86,7 @@ def retrieval_coverage(request: Request, response: Response):
             "europe_pmc": EUROPE_PMC_CACHE_DIR,
         },
         semantic_scholar=runtime["semantic_scholar"],
+        provider_attempts=runtime["provider_attempts"],
         queue_status=runtime["queue"],
         runtime_status=runtime["runtime_cooldowns"],
     )
@@ -131,6 +132,7 @@ def documents_for_gene(
     response: Response,
     gene: str = Query(min_length=1, max_length=64),
     pool: Literal["all", "general", "phenotype", "opentargets", "other"] = "all",
+    source: Literal["all", "europe_pmc", "semanticscholar"] = "all",
     phenotype: str = Query("", max_length=100),
     search: str = Query("", max_length=200),
     sort: Literal["citations_desc", "title", "pool"] = "citations_desc",
@@ -142,6 +144,7 @@ def documents_for_gene(
     return get_rag_agent().browse_documents(
         gene=gene.strip(),
         pool=pool,
+        source=source,
         phenotype=phenotype.strip(),
         search=search,
         sort=sort,

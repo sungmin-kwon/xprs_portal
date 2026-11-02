@@ -1,12 +1,9 @@
 import unittest
 import uuid
-from pathlib import Path
 
 from routes.tasks import _terminal_event
 from task_manager import create_task_once, fail_task, finish_task, get_task
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import ROOT
 
 
 class TaskRecoveryTests(unittest.TestCase):

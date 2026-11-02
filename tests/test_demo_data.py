@@ -10,9 +10,7 @@ import pandas as pd
 
 from disease_registry import get_disease_config
 from plot_data import PlotDataStore
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import ROOT
 DEMO_DIR = ROOT / "data" / "demo"
 DEMO_IID = "DEMO_HG00436"
 

@@ -6,8 +6,8 @@
   <meta name="robots" content="noindex, nofollow, noarchive" />
   <title>XPRS Retrieval Admin</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/admin-documents.css?v=15" />
-  <script src="/static/admin-documents.js?v=15" defer></script>
+  <link rel="stylesheet" href="/static/admin-documents.css?v=21" />
+  <script src="/static/admin-documents.js?v=21" defer></script>
 </head>
 <body>
   <aside class="gene-panel" aria-label="Literature index navigation">
@@ -25,7 +25,20 @@
   <main class="document-shell">
     <header class="page-header">
       <div><span class="eyebrow">XPRS administration</span><h1 id="page-title">Literature retrieval</h1></div>
-      <a class="portal-link" href="/dashboard">Return to portal</a>
+      <div class="page-header-actions">
+        <details class="fallback-menu">
+          <summary>Fallback status</summary>
+          <div class="fallback-menu-panel">
+            <div class="fallback-status-row fallback-provider-row">
+              <div><span>Semantic Scholar</span><strong id="health-s2">—</strong><small id="health-s2-detail"></small></div>
+              <button id="s2-key-check" type="button">Check API key</button>
+            </div>
+            <div class="fallback-status-row"><span>Manual continuation</span><strong id="health-queue">—</strong><small id="health-queue-detail"></small><details id="queue-backlog" class="queue-backlog" hidden><summary id="queue-backlog-summary">View requests</summary><ol id="queue-backlog-list"></ol></details></div>
+            <div class="fallback-status-row"><span>Semantic Scholar cooldown</span><strong id="health-runtime">—</strong><small id="health-runtime-detail"></small></div>
+          </div>
+        </details>
+        <a class="portal-link" href="/dashboard">Return to portal</a>
+      </div>
     </header>
 
     <section id="coverage-view" class="admin-view">
@@ -34,12 +47,6 @@
         <article><span>Indexed genes</span><strong id="stat-genes">—</strong></article>
         <article><span>Tracked query pools</span><strong id="stat-planned">—</strong><small id="stat-planned-detail"></small></article>
         <article><span>Cached query pools</span><strong id="stat-cached">—</strong></article>
-      </section>
-
-      <section class="health-grid" aria-label="Retrieval services">
-        <article class="s2-health-card"><span>Semantic Scholar</span><strong id="health-s2">—</strong><small id="health-s2-detail"></small><button id="s2-key-check" type="button">Check API key</button></article>
-        <article><span>Background enrichment</span><strong id="health-queue">—</strong><small id="health-queue-detail"></small><details id="queue-backlog" class="queue-backlog" hidden><summary id="queue-backlog-summary">View requests</summary><ol id="queue-backlog-list"></ol></details></article>
-        <article><span>Interactive cooldown</span><strong id="health-runtime">—</strong><small id="health-runtime-detail"></small></article>
       </section>
 
       <section class="coverage-toolbar" aria-label="Coverage filters">
@@ -64,6 +71,7 @@
     <section id="documents-view" class="admin-view" hidden>
       <section class="toolbar" aria-label="Document filters">
         <label><span>Pool</span><select id="pool-filter"><option value="all">All pools</option><option value="general">General (gene-only query)</option><option value="phenotype">Phenotype (gene + disease)</option><option value="opentargets">Open Targets</option><option value="other">Other</option></select></label>
+        <label><span>Source</span><select id="source-filter"><option value="all">All sources</option><option value="europe_pmc">Europe PMC</option><option value="semanticscholar">Semantic Scholar</option></select></label>
         <label><span>Query phenotype</span><select id="phenotype-filter"><option value="">All phenotypes</option></select></label>
         <label class="document-search-label"><span>Search within this gene</span><input id="document-search" type="search" placeholder="Title, abstract, or paper ID" autocomplete="off" /></label>
         <label><span>Sort</span><select id="sort-filter"><option value="citations_desc">Citations: high to low</option><option value="title">Title: A–Z</option><option value="pool">Pool, then title</option></select></label>
@@ -73,5 +81,20 @@
       <nav id="pagination" class="pagination" aria-label="Document pages" hidden><button id="previous-page" type="button">Previous</button><span id="page-indicator"></span><button id="next-page" type="button">Next</button></nav>
     </section>
   </main>
+
+  <dialog id="admin-access-dialog" class="admin-access-dialog" aria-labelledby="admin-access-title">
+    <form id="admin-access-form" class="admin-access-form">
+      <span class="eyebrow">Restricted administration</span>
+      <h2 id="admin-access-title">Enter the admin access code</h2>
+      <p>The literature index is available only to authorized administrators.</p>
+      <label for="admin-access-code">Access code</label>
+      <input id="admin-access-code" type="password" autocomplete="current-password" required />
+      <p id="admin-access-status" class="admin-access-status" role="alert" aria-live="polite"></p>
+      <div class="admin-access-actions">
+        <a href="/">Return to portal</a>
+        <button id="admin-access-submit" type="submit">Open literature index</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

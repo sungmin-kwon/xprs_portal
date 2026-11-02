@@ -135,7 +135,14 @@ def summary_preview(req: SummaryRequest, request: Request):
             pid=req.individual_id,
             top_n=req.gene_count,
         )
-        genes = list(top["Gene"].values)[: req.gene_count]
+        bottom = expl_agent.gene_agent.get_bottom_genes(
+            pid=req.individual_id,
+            bottom_n=req.gene_count,
+        )
+        genes = list(dict.fromkeys(
+            list(top["Gene"].values)[: req.gene_count]
+            + list(bottom["Gene"].values)[: req.gene_count]
+        ))
         return {"genes": genes, "gene_count": len(genes)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

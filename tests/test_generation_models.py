@@ -1,9 +1,7 @@
 import json
 import unittest
-from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import ROOT
 
 
 class GenerationModelTests(unittest.TestCase):

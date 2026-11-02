@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 from unittest.mock import Mock
 
 import pandas as pd
@@ -9,9 +8,7 @@ import pandas as pd
 from agents.conversation import ConversationAgent
 from agents.explanation import ExplanationAgent
 from agents.local_reference import LocalReferenceAgent
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import ROOT
 
 
 class FakeGeneAgent:

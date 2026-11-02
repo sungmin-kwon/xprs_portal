@@ -4,7 +4,7 @@
   const PAGE_SIZE = 100;
   const state = {
     coverage: null, inventory: null, view: "coverage", selectedGene: "",
-    pool: "all", phenotype: "", search: "", sort: "citations_desc", offset: 0,
+    pool: "all", source: "all", phenotype: "", search: "", sort: "citations_desc", offset: 0,
     coverageState: "all", coveragePool: "all", requestController: null, manualQueryKey: "", checkingS2: false, lastS2Check: null, enrichmentPollTimer: null,
   };
   const byId = (id) => document.getElementById(id);
@@ -21,13 +21,20 @@
     coverageState: byId("coverage-state"), coveragePool: byId("coverage-pool"),
     coverageCount: byId("coverage-count"), coverageBody: byId("coverage-table-body"), coverageEmpty: byId("coverage-empty"),
     retrievalNotice: byId("retrieval-notice"),
-    poolFilter: byId("pool-filter"), phenotypeFilter: byId("phenotype-filter"), documentSearch: byId("document-search"),
+    poolFilter: byId("pool-filter"), sourceFilter: byId("source-filter"), phenotypeFilter: byId("phenotype-filter"), documentSearch: byId("document-search"),
     sortFilter: byId("sort-filter"), resultsCount: byId("results-count"), documentList: byId("document-list"),
     pagination: byId("pagination"), previousPage: byId("previous-page"), nextPage: byId("next-page"), pageIndicator: byId("page-indicator"),
+    accessDialog: byId("admin-access-dialog"), accessForm: byId("admin-access-form"),
+    accessCode: byId("admin-access-code"), accessStatus: byId("admin-access-status"), accessSubmit: byId("admin-access-submit"),
   };
 
   const formatNumber = (value) => new Intl.NumberFormat().format(Number(value || 0));
   const titleCase = (value) => String(value || "").replace(/\b\w/g, (letter) => letter.toLocaleUpperCase());
+  const cooldownRemaining = (item) => {
+    const expiresAt = Date.parse(item?.cooldown_expires_at || "");
+    if (Number.isFinite(expiresAt)) return Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    return item?.cooldown_active ? Math.max(0, Number(item.cooldown_remaining_seconds || 0)) : 0;
+  };
   const coverageStateLabel = (value) => ({
     complete: "Evidence available",
     indexed: "Evidence available",
@@ -42,9 +49,20 @@
     cache_only: "Awaiting indexing",
     empty: "No eligible papers",
     missing: "Not searched",
-    partial: "Search interrupted",
+    partial: "Search incomplete",
   }[value] || value);
   const poolLabel = (pool) => ({ general: "General query", phenotype: "Phenotype query", opentargets: "Open Targets", other: "Other" }[pool] || pool);
+  const sourceLabel = (source) => source === "europe_pmc" ? "Europe PMC" : source === "semanticscholar" ? "Semantic Scholar" : titleCase(source || "unknown");
+  const providerStateLabel = (state) => ({
+    complete: "Complete",
+    incomplete: "Search incomplete",
+    retrieved: "Retrieved",
+    rate_limited: "Rate limited",
+    auth_failed: "Key rejected",
+    unavailable: "Unavailable",
+    deferred: "Skipped — cooldown active",
+    not_searched: "Not searched",
+  }[state] || titleCase(state));
 
   async function fetchJson(path, signal) {
     const response = await fetch(path, { credentials: "same-origin", signal, cache: "no-store" });
@@ -64,20 +82,22 @@
   function poolDescription(pool) {
     const descriptions = {
       complete: "Eligible evidence is indexed and the configured search stopping rule was reached",
-      indexed: "Eligible evidence is indexed, but this cache has no terminal search marker",
+      indexed: "Eligible evidence is indexed, but additional provider searching remains available",
       cache_only: "Raw search results are cached but no eligible documents are indexed yet",
       empty: "The search stopped without finding a paper that passed the indexing rules",
       missing: "No search has been recorded for this pool",
-      partial: "The last retrieval attempt did not finish successfully",
+      partial: "The provider search has not reached its stopping point",
     };
     const parts = [descriptions[pool.status] || poolStateLabel(pool.status)];
     if (pool.documents) parts.push(`${formatNumber(pool.documents)} indexed documents`);
+    if (pool.cache_present) parts.push(`${formatNumber(pool.eligible_count)} of ${formatNumber(pool.evidence_target)} unique eligible papers needed for the interactive target`);
     if (pool.cache_present) parts.push(`${formatNumber(pool.paper_count)} cached papers`);
     if (pool.raw_examined) parts.push(`${formatNumber(pool.raw_examined)} raw results examined`);
     if (pool.search_strategy_count > 1) {
       parts.push(`${formatNumber(pool.search_strategies_complete)} of ${formatNumber(pool.search_strategy_count)} search strategies complete`);
     }
     if (pool.enrichment_stop_reason) parts.push(`stop: ${pool.enrichment_stop_reason}`);
+    if (pool.incomplete_providers?.length) parts.push(`unfinished: ${pool.incomplete_providers.map((source) => source === "europe_pmc" ? "Europe PMC" : "Semantic Scholar").join(", ")}`);
     if (pool.sources?.length) parts.push(`sources: ${pool.sources.map((item) => item.source === "europe_pmc" ? "Europe PMC" : "Semantic Scholar").join(", ")}`);
     return parts.join(" · ");
   }
@@ -92,6 +112,42 @@
     ));
   }
 
+  function providerStatusList(pool) {
+    const list = document.createElement("div");
+    list.className = "provider-status-list";
+    for (const provider of pool.provider_statuses || []) {
+      const row = document.createElement("div");
+      row.className = `provider-status ${provider.state}`;
+      const name = document.createElement("span");
+      const dot = document.createElement("i");
+      const label = document.createElement("strong");
+      dot.setAttribute("aria-hidden", "true");
+      label.textContent = sourceLabel(provider.source);
+      name.append(dot, label);
+
+      const status = document.createElement("small");
+      const attempt = provider.last_attempt || {};
+      const details = [];
+      if (attempt.http_status >= 400) details.push(`HTTP ${attempt.http_status}`);
+      if (provider.cache_present) {
+        details.push(provider.eligible_count
+          ? `${formatNumber(provider.eligible_count)} eligible`
+          : provider.terminal ? "No eligible papers" : "No eligible papers yet");
+      }
+      status.textContent = [providerStateLabel(provider.state), ...details].join(" · ");
+      row.append(name, status);
+
+      const tooltip = [];
+      if (attempt.attempted_at) tooltip.push(`Last attempt: ${new Date(attempt.attempted_at).toLocaleString()}`);
+      if (attempt.detail) tooltip.push(attempt.detail);
+      if (attempt.retry_after_seconds != null) tooltip.push(`Retry-After: ${attempt.retry_after_seconds}s`);
+      if (!attempt.attempted_at && provider.retrieved_at) tooltip.push(`Cache retrieved: ${new Date(provider.retrieved_at).toLocaleString()}`);
+      if (tooltip.length) row.title = tooltip.join(" · ");
+      list.appendChild(row);
+    }
+    return list;
+  }
+
   function poolCell(pool, gene) {
     const wrap = document.createElement("div");
     wrap.className = "pool-cell";
@@ -101,29 +157,32 @@
     const detail = document.createElement("small");
     if (pool.documents) {
       detail.textContent = pool.status === "complete"
-        ? `${formatNumber(pool.documents)} indexed docs`
-        : `${formatNumber(pool.documents)} indexed docs · search not finalized`;
+        ? `${formatNumber(pool.documents)} indexed docs · ${pool.completion_reason === "evidence_target" ? "target reached" : "providers exhausted"}`
+        : `${formatNumber(pool.documents)} indexed docs · search can continue`;
     } else if (pool.status === "empty") {
       detail.textContent = `${formatNumber(pool.raw_examined || pool.paper_count)} results screened`;
     } else if (pool.cache_present) detail.textContent = `${formatNumber(pool.paper_count)} cached results`;
     else detail.textContent = "Not requested";
     wrap.appendChild(detail);
+    if (pool.provider_statuses?.length) wrap.appendChild(providerStatusList(pool));
     if (["missing", "partial", "cache_only", "indexed"].includes(pool.status)) {
       const key = `${gene}::${pool.phenotype || "general"}`;
       const action = document.createElement("button");
       action.type = "button";
       action.className = "query-button";
+      const canContinue = Boolean(pool.incomplete_providers?.length);
+      const hasIndexableCache = Number(pool.eligible_count || 0) > 0 && !pool.documents;
       action.textContent = pendingJob
         ? pendingJob.state === "queued" ? "Queued" : "In progress"
-        : pool.status === "indexed" ? "Continue search"
-          : pool.status === "cache_only" ? "Resume indexing" : "Search sources";
+        : hasIndexableCache ? "Index cache"
+          : canContinue ? "Continue search" : "Search sources";
       action.title = pendingJob
         ? `${pendingJob.query} is already ${pendingJob.state === "queued" ? "queued" : "being handled"}`
-        : pool.status === "indexed"
-        ? "Keep the existing documents available while checking additional literature results"
-        : pool.status === "cache_only"
-          ? "Process cached papers and continue background retrieval if more evidence is needed"
-          : "Search the configured literature providers and index eligible results";
+        : hasIndexableCache
+          ? "Index eligible papers already present in the provider cache"
+          : canContinue
+            ? "Request one additional provider search page"
+            : "Search the configured literature providers and index eligible results";
       action.disabled = Boolean(pendingJob) || Boolean(state.manualQueryKey) || state.checkingS2;
       action.addEventListener("click", (event) => {
         event.stopPropagation();
@@ -143,11 +202,11 @@
     elements.statCached.textContent = formatNumber(summary.cached_query_pools);
 
     const s2 = state.coverage.semantic_scholar || {};
-    const s2Status = s2.api_key_status === "rate_limited" ? "Rate limited" : s2.api_key_status === "ok" ? "Available" : s2.api_key_status === "forbidden" ? "Key rejected" : s2.api_key_status === "error" ? "Unavailable" : s2.api_key_present ? "Not yet checked" : "No API key";
+    const s2Status = s2.api_key_status === "rate_limited" ? "Check rate limited" : s2.api_key_status === "ok" ? "Key accepted" : s2.api_key_status === "forbidden" ? "Key rejected" : s2.api_key_status === "error" ? "Check unavailable" : s2.api_key_present ? "Not yet checked" : "No API key";
     elements.healthS2.textContent = s2Status;
     elements.healthS2.dataset.tone = ["rate_limited", "forbidden", "error"].includes(s2.api_key_status) ? "warning" : s2.api_key_status === "ok" ? "good" : "neutral";
     const checkedAt = state.lastS2Check?.checked_at ? ` · Checked ${new Date(state.lastS2Check.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
-    elements.healthS2Detail.textContent = `${s2.effective_mode === "api_key" ? "API-key mode" : "Public mode"}${s2.last_status_code ? ` · HTTP ${s2.last_status_code}` : ""}${checkedAt}`;
+    elements.healthS2Detail.textContent = `${s2.effective_mode === "api_key" ? "API-key mode" : "Public mode"}${s2.last_status_code ? ` · Last check HTTP ${s2.last_status_code}` : ""}${checkedAt}`;
     elements.s2KeyCheck.disabled = state.checkingS2 || Boolean(state.manualQueryKey);
     elements.s2KeyCheck.textContent = state.checkingS2 ? "Checking…" : "Check API key";
 
@@ -157,7 +216,7 @@
     elements.healthQueue.dataset.tone = queued ? "warning" : "good";
     elements.healthQueueDetail.textContent = queue.worker_alive === false
       ? "Worker is not running"
-      : `Per-pool targets: ${queue.targets?.general || "—"} general · ${queue.targets?.primary_phenotype || "—"} active disease · ${queue.targets?.api_key_min_interval_seconds || "—"}s request spacing`;
+      : `One page per action · ${queue.targets?.api_key_min_interval_seconds || "—"}s Semantic Scholar request spacing`;
     const jobs = queue.jobs || [];
     elements.queueBacklog.hidden = jobs.length === 0;
     elements.queueBacklogSummary.textContent = jobs.length === 1 ? "View 1 request" : `View ${formatNumber(jobs.length)} requests`;
@@ -173,18 +232,27 @@
       elements.queueBacklogList.appendChild(item);
     }
 
-    const cooldowns = (state.coverage.runtime_cooldowns || []).filter((item) => item.cooldown_active);
-    const longest = cooldowns.reduce((maximum, item) => Math.max(maximum, Number(item.cooldown_remaining_seconds || 0)), 0);
+    const runtimeStates = state.coverage.runtime_cooldowns || [];
+    const cooldowns = runtimeStates.filter((item) => cooldownRemaining(item) > 0);
+    const longest = cooldowns.reduce((maximum, item) => Math.max(maximum, cooldownRemaining(item)), 0);
+    const latest = [...runtimeStates]
+      .filter((item) => item.last_query)
+      .sort((left, right) => String(right.last_attempted_at || "").localeCompare(String(left.last_attempted_at || "")))[0];
     elements.healthRuntime.textContent = cooldowns.length ? `${formatNumber(longest)}s remaining` : "Clear";
     elements.healthRuntime.dataset.tone = cooldowns.length ? "warning" : "good";
-    elements.healthRuntimeDetail.textContent = cooldowns.length ? cooldowns.map((item) => titleCase(item.phenotype)).join(", ") : "No in-process rate-limit pause";
+    elements.healthRuntimeDetail.textContent = cooldowns.length
+      ? `Applies to all Semantic Scholar fallback requests${latest?.last_query ? ` · Last query: ${latest.last_query}` : ""}`
+      : latest?.last_query ? `No active pause · Last query: ${latest.last_query}` : "No in-process rate-limit pause";
 
   }
 
   function populateCoveragePools() {
     while (elements.coveragePool.options.length > 2) elements.coveragePool.remove(2);
     const phenotypes = new Set();
-    for (const row of state.coverage.genes) for (const pool of row.pools) if (pool.phenotype) phenotypes.add(pool.phenotype);
+    for (const row of state.coverage.genes) {
+      for (const pool of row.pools) if (pool.phenotype) phenotypes.add(pool.phenotype);
+      for (const covered of row.covered_by_general || []) phenotypes.add(covered.phenotype);
+    }
     for (const phenotype of [...phenotypes].sort()) {
       const option = document.createElement("option");
       option.value = phenotype; option.textContent = titleCase(phenotype);
@@ -198,7 +266,9 @@
       if (needle && !row.gene.includes(needle)) return false;
       if (state.coverageState !== "all" && row.coverage_state !== state.coverageState && !row.pools.some((pool) => pool.status === state.coverageState)) return false;
       if (state.coveragePool === "general" && !row.pools.some((pool) => !pool.phenotype)) return false;
-      if (!['all', 'general'].includes(state.coveragePool) && !row.pools.some((pool) => pool.phenotype === state.coveragePool)) return false;
+      if (!['all', 'general'].includes(state.coveragePool)
+          && !row.pools.some((pool) => pool.phenotype === state.coveragePool)
+          && !(row.covered_by_general || []).some((covered) => covered.phenotype === state.coveragePool)) return false;
       return true;
     });
   }
@@ -223,12 +293,24 @@
 
       const phenotype = document.createElement("td");
       const phenotypePools = row.pools.filter((pool) => pool.phenotype);
-      if (phenotypePools.length) {
+      const coveredByGeneral = row.covered_by_general || [];
+      if (phenotypePools.length || coveredByGeneral.length) {
         const stack = document.createElement("div"); stack.className = "phenotype-stack";
         for (const pool of phenotypePools) {
           const item = document.createElement("div");
           const label = document.createElement("span"); label.textContent = titleCase(pool.phenotype);
           item.append(label, poolCell(pool, row.gene)); stack.appendChild(item);
+        }
+        for (const covered of coveredByGeneral) {
+          const item = document.createElement("div");
+          const label = document.createElement("span"); label.textContent = titleCase(covered.phenotype);
+          const coverage = document.createElement("div"); coverage.className = "pool-cell general-coverage";
+          coverage.title = `The general query already contains ${formatNumber(covered.documents)} eligible papers associated with ${covered.phenotype}; a separate disease query was not needed.`;
+          coverage.appendChild(statusBadge("complete", "Covered by general query"));
+          const detail = document.createElement("small");
+          detail.textContent = `${formatNumber(covered.documents)} disease-related docs in general pool`;
+          coverage.appendChild(detail);
+          item.append(label, coverage); stack.appendChild(item);
         }
         phenotype.appendChild(stack);
       } else phenotype.textContent = "—";
@@ -331,7 +413,7 @@
   async function loadDocuments() {
     if (!state.selectedGene) return;
     if (state.requestController) state.requestController.abort(); state.requestController = new AbortController(); renderLoading();
-    const params = new URLSearchParams({ gene: state.selectedGene, pool: state.pool, phenotype: state.phenotype, search: state.search, sort: state.sort, offset: String(state.offset), limit: String(PAGE_SIZE) });
+    const params = new URLSearchParams({ gene: state.selectedGene, pool: state.pool, source: state.source, phenotype: state.phenotype, search: state.search, sort: state.sort, offset: String(state.offset), limit: String(PAGE_SIZE) });
     try { renderDocuments(await fetchJson(`/api/admin/documents?${params}`, state.requestController.signal)); }
     catch (error) { if (error.name !== "AbortError") renderError(error.message || "Unable to load documents."); }
   }
@@ -360,6 +442,11 @@
       state.enrichmentPollTimer = setTimeout(() => {
         refreshCoverageData().catch(() => {});
       }, 5000);
+    } else if ((state.coverage?.runtime_cooldowns || []).some((item) => cooldownRemaining(item) > 0)) {
+      state.enrichmentPollTimer = setTimeout(() => {
+        renderSummary();
+        scheduleEnrichmentPoll();
+      }, 1000);
     }
   }
 
@@ -388,11 +475,11 @@
       if (result.status === "already_complete") {
         showRetrievalNotice(`${queryLabel}: the configured search stopping rule was already reached.`, "is-success");
       } else if (result.status === "indexed" || result.status === "already_indexed") {
-        showRetrievalNotice(`${queryLabel}: documents are now indexed${result.scheduled ? "; background enrichment is queued" : ""}.`, "is-success");
+        showRetrievalNotice(`${queryLabel}: documents are now indexed${result.scheduled ? "; one continuation page is queued" : ""}.`, "is-success");
       } else if (result.status === "enrichment_queued") {
         showRetrievalNotice(result.documents_present
           ? `${queryLabel}: additional retrieval is queued; the existing indexed documents remain available.`
-          : `${queryLabel}: no eligible documents were found in the cached results; background retrieval is queued.`, "is-neutral");
+          : `${queryLabel}: no eligible documents are indexed yet; one additional search page is queued.`, "is-neutral");
       } else if (result.status === "enrichment_pending") {
         showRetrievalNotice(result.documents_present
           ? `${queryLabel}: additional retrieval is already queued or in progress; the existing indexed documents remain available.`
@@ -428,7 +515,7 @@
       const result = await response.json();
       state.lastS2Check = result;
       if (result.status === "ok") {
-        showRetrievalNotice("Semantic Scholar accepted the configured API key.", "is-success");
+        showRetrievalNotice("Semantic Scholar accepted the configured API key. Gene searches can still be throttled independently; their latest results are shown per query pool.", "is-success");
       } else if (result.status === "invalid") {
         showRetrievalNotice("Semantic Scholar rejected the configured API key.", "is-error");
       } else if (result.status === "rate_limited") {
@@ -460,19 +547,76 @@
     } catch (error) { elements.geneListStatus.textContent = error.message || "Unable to load index."; renderError(error.message || "Unable to load retrieval coverage."); }
   }
 
+  async function submitAccessCode(token) {
+    return fetch("/api/admin/access", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: token ? { "X-XPRS-Admin-Token": token } : {},
+      cache: "no-store",
+    });
+  }
+
+  function clearAccessFragment() {
+    if (!window.location.hash) return;
+    const url = new URL(window.location.href);
+    url.hash = "";
+    history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }
+
+  function requestAccessCode() {
+    return new Promise((resolve) => {
+      elements.accessStatus.textContent = "";
+      if (typeof elements.accessDialog.showModal === "function") elements.accessDialog.showModal();
+      else elements.accessDialog.setAttribute("open", "");
+      window.setTimeout(() => elements.accessCode.focus(), 0);
+
+      elements.accessForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const token = elements.accessCode.value.trim();
+        if (!token) return;
+        elements.accessSubmit.disabled = true;
+        elements.accessStatus.textContent = "Checking access code…";
+        try {
+          const response = await submitAccessCode(token);
+          if (!response.ok) {
+            elements.accessStatus.textContent = "The admin access code was not accepted.";
+            elements.accessCode.select();
+            return;
+          }
+          elements.accessCode.value = "";
+          elements.accessStatus.textContent = "";
+          elements.accessDialog.close();
+          resolve();
+        } catch (_error) {
+          elements.accessStatus.textContent = "Unable to verify the access code. Please try again.";
+        } finally {
+          elements.accessSubmit.disabled = false;
+        }
+      });
+    });
+  }
+
   async function establishAccess() {
-    const fragment = new URLSearchParams(window.location.hash.slice(1)); const token = fragment.get("token") || "";
-    const response = await fetch("/api/admin/access", { method: "POST", credentials: "same-origin", headers: token ? { "X-XPRS-Admin-Token": token } : {}, cache: "no-store" });
-    if (!response.ok) throw new Error("Admin index unavailable");
-    if (token) { const url = new URL(window.location.href); url.hash = ""; history.replaceState(null, "", `${url.pathname}${url.search}`); }
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const token = fragment.get("token") || "";
+    try {
+      const response = await submitAccessCode(token);
+      if (token) clearAccessFragment();
+      if (response.ok) return;
+    } catch (_error) {
+      if (token) clearAccessFragment();
+    }
+    await requestAccessCode();
   }
 
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { showView(button.dataset.view); if (button.dataset.view === "documents" && state.selectedGene) loadDocuments(); }));
+  elements.accessDialog.addEventListener("cancel", (event) => event.preventDefault());
   elements.s2KeyCheck.addEventListener("click", runS2KeyCheck);
   elements.geneSearch.addEventListener("input", () => { renderGeneList(); renderCoverageTable(); });
   elements.coverageState.addEventListener("change", () => { state.coverageState = elements.coverageState.value; renderCoverageTable(); });
   elements.coveragePool.addEventListener("change", () => { state.coveragePool = elements.coveragePool.value; renderCoverageTable(); });
   elements.poolFilter.addEventListener("change", () => { state.pool = elements.poolFilter.value; if (!["all", "phenotype"].includes(state.pool)) state.phenotype = ""; populatePhenotypeFilter(); state.offset = 0; loadDocuments(); });
+  elements.sourceFilter.addEventListener("change", () => { state.source = elements.sourceFilter.value; state.offset = 0; loadDocuments(); });
   elements.phenotypeFilter.addEventListener("change", () => { state.phenotype = elements.phenotypeFilter.value; if (state.phenotype) { state.pool = "phenotype"; elements.poolFilter.value = "phenotype"; } populatePhenotypeFilter(); state.offset = 0; loadDocuments(); });
   elements.sortFilter.addEventListener("change", () => { state.sort = elements.sortFilter.value; state.offset = 0; loadDocuments(); });
   let searchTimer; elements.documentSearch.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { state.search = elements.documentSearch.value.trim(); state.offset = 0; loadDocuments(); }, 250); });

@@ -308,6 +308,10 @@ def get_retrieval_admin_status() -> dict[str, Any]:
             runtime.append(agent.get_runtime_status())
     return {
         "semantic_scholar": bundle["s2_agent"].get_health_status(),
+        "provider_attempts": [
+            *bundle["europe_pmc_agent"].get_query_attempts(),
+            *bundle["s2_agent"].get_query_attempts(),
+        ],
         "queue": bundle["enrichment_queue"].get_status(),
         "runtime_cooldowns": runtime,
     }

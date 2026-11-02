@@ -36,7 +36,8 @@ class SummaryRequest(BaseModel):
     individual_id: str
     disease: str = "breast_cancer"
     cohort: str = "1000_genomes"
-    gene_count: int = Field(default=2, ge=1, le=5)
+    # Number of genes selected from each contribution direction.
+    gene_count: int = Field(default=5, ge=1, le=5)
     language: str | None = "en"
     model: str | None = None  # OpenRouter generation model id; None -> default
 

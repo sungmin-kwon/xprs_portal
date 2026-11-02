@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 from starlette.requests import Request
 
 from routes.reports import export_pdf_report
 from schemas import ReportPdfRequest
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import ROOT
 
 
 def request() -> Request:

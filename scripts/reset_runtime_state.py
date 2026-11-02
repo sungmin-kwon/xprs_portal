@@ -1,9 +1,8 @@
 """Wipe runtime-generated state so the system behaves as if freshly installed.
 
-Debug utility. Removes session chat logs, Semantic Scholar query caches,
-the ChromaDB vector store, and generated plot images. Leaves source data
-(data/*.csv, data/plot_cache/*.parquet, ref/, static assets, configs)
-untouched.
+Debug utility. Removes session chat logs, both provider literature caches, and
+the ChromaDB vector store. Leaves source data
+(data/*.csv, data/plot_cache/*.parquet, ref/, static assets, configs) untouched.
 
 Note: data/plot_cache/ holds parquet files produced by build_parquet.py
 from an upstream .rds file — they are *source data*, not runtime cache,
@@ -31,8 +30,8 @@ sys.path.insert(0, str(REPO_DIR))
 
 from config import (  # noqa: E402
     CHROMA_DIR,
+    EUROPE_PMC_CACHE_DIR,
     LOG_DIR,
-    PLOTS_DIR,
     S2_CACHE_DIR,
 )
 
@@ -83,9 +82,9 @@ def main() -> int:
     # (label, path). Order is just for readable output.
     targets: list[tuple[str, Path]] = [
         ("session chat logs", LOG_DIR),
+        ("Europe PMC cache", EUROPE_PMC_CACHE_DIR),
         ("Semantic Scholar cache", S2_CACHE_DIR),
         ("ChromaDB vector store", CHROMA_DIR),
-        ("generated plots", PLOTS_DIR),
     ]
 
     print(f"Project root: {REPO_DIR}\n")

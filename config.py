@@ -17,12 +17,18 @@ RUNTIME_DIR = _resolve_path(os.getenv("RUNTIME_DIR"), APP_BASE_DIR)
 STATIC_DIR = _resolve_path(os.getenv("STATIC_DIR"), APP_BASE_DIR / "static")
 REF_DIR = _resolve_path(os.getenv("REF_DIR"), APP_BASE_DIR / "ref")
 
-PLOTS_DIR = _resolve_path(os.getenv("PLOTS_DIR"), STATIC_DIR / "plots")
 LOG_DIR = _resolve_path(os.getenv("LOG_DIR"), RUNTIME_DIR / "logs")
-S2_CACHE_DIR = _resolve_path(os.getenv("S2_CACHE_DIR"), RUNTIME_DIR / "cache_s2")
+LITERATURE_CACHE_DIR = _resolve_path(
+    os.getenv("LITERATURE_CACHE_DIR"),
+    RUNTIME_DIR / "cache_literature",
+)
+S2_CACHE_DIR = _resolve_path(
+    os.getenv("S2_CACHE_DIR"),
+    LITERATURE_CACHE_DIR / "semantic_scholar",
+)
 EUROPE_PMC_CACHE_DIR = _resolve_path(
     os.getenv("EUROPE_PMC_CACHE_DIR"),
-    RUNTIME_DIR / "cache_literature" / "europe_pmc",
+    LITERATURE_CACHE_DIR / "europe_pmc",
 )
 S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS = max(
     1,
@@ -62,6 +68,25 @@ OT_MERGED_CSV = _resolve_path(
 
 SESSION_LOGGING_ENABLED = os.getenv("SESSION_LOGGING_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
 EPHEMERAL_SESSION_LIMIT = max(1, int(os.getenv("EPHEMERAL_SESSION_LIMIT", "100")))
+LITERATURE_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS = max(
+    1,
+    int(
+        os.getenv(
+            "LITERATURE_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS",
+            os.getenv("S2_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS", "5"),
+        )
+    ),
+)
+LITERATURE_MINIMUM_PRIMARY_ELIGIBLE_DOCUMENTS = max(
+    1,
+    int(os.getenv("LITERATURE_MINIMUM_PRIMARY_ELIGIBLE_DOCUMENTS", "2")),
+)
+EUROPE_PMC_GENERAL_LIMIT = max(1, int(os.getenv("EUROPE_PMC_GENERAL_LIMIT", "25")))
+EUROPE_PMC_PRIMARY_LIMIT = max(1, int(os.getenv("EUROPE_PMC_PRIMARY_LIMIT", "25")))
+EUROPE_PMC_NAMED_PHENOTYPE_LIMIT = max(
+    1,
+    int(os.getenv("EUROPE_PMC_NAMED_PHENOTYPE_LIMIT", "25")),
+)
 
 RERANKER_ENABLED = os.getenv("RERANKER_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 RERANKER_MODEL = os.getenv("RERANKER_MODEL", "ncbi/MedCPT-Cross-Encoder")
@@ -116,7 +141,6 @@ PHENOTYPE_LABELS_KO = {
 
 def ensure_runtime_dirs() -> None:
     for path in [
-        PLOTS_DIR,
         LOG_DIR,
         S2_CACHE_DIR,
         EUROPE_PMC_CACHE_DIR,

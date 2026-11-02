@@ -177,7 +177,99 @@ class SemanticScholarPaginationTests(unittest.TestCase):
             self.assertEqual(status["enrichment_stop_reason"], "eligible_target")
             self.assertEqual(status["eligible_count"], 20)
 
+    def test_background_worker_can_create_the_initial_fallback_cache(self):
+        class InitialFallbackS2:
+            def __init__(self):
+                self.fetch_ok = False
+                self.calls = []
+                self.records = []
+            def cached_papers(self, _gene, _phenotype=None):
+                return [paper(1)] if self.fetch_ok else []
+            def papers_to_docs(self, gene, papers, pool_type, phenotype=None):
+                return [{
+                    "id": item["paperId"],
+                    "text": item["abstract"],
+                    "meta": {
+                        "gene": gene,
+                        "pool_type": pool_type,
+                        "phenotype": phenotype,
+                    },
+                } for item in papers]
+            def pagination_status(self, *_args, **_kwargs):
+                return {
+                    "fetch_ok": self.fetch_ok,
+                    "pagination_complete": False,
+                    "zero_yield_pages": 0,
+                }
+            def cached_for_gene(self, gene, **kwargs):
+                self.calls.append((gene, kwargs))
+                self.fetch_ok = True
+                return [paper(1)]
+            def record_enrichment_status(self, *args, **kwargs):
+                self.records.append((args, kwargs))
+
+        s2 = InitialFallbackS2()
+        rag = FakeRAG()
+        enricher = LiteratureEnrichmentQueue.__new__(LiteratureEnrichmentQueue)
+        enricher.s2 = s2
+        enricher.rag = rag
+        enricher._activity = threading.Condition()
+        enricher._interactive_retrievals = 0
+        job = EnrichmentJob(
+            gene="GENE1",
+            pool_type="general",
+            phenotype=None,
+            target_eligible=30,
+            ready_at=0,
+        )
+
+        enricher._enrich(job)
+
+        self.assertEqual(len(s2.calls), 1)
+        self.assertEqual(s2.calls[0][1]["max_retries"], 1)
+        self.assertEqual(
+            s2.calls[0][1]["api_key_min_interval_seconds"],
+            S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS,
+        )
+        self.assertEqual([doc["id"] for doc in rag.upserted], ["paper-1"])
+
     def test_two_zero_yield_pages_are_a_persisted_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            agent = self.make_agent(Path(directory))
+            rag = FakeRAG()
+            enricher = LiteratureEnrichmentQueue.__new__(LiteratureEnrichmentQueue)
+            enricher.s2 = agent
+            enricher.rag = rag
+            enricher._activity = __import__("threading").Condition()
+            enricher._interactive_retrievals = 0
+            job = EnrichmentJob(
+                gene="GENE1",
+                pool_type="general",
+                phenotype=None,
+                target_eligible=30,
+                ready_at=0,
+            )
+            pages = [
+                [paper(index, eligible=False) for index in range(10, 20)],
+                [paper(index, eligible=False) for index in range(20, 30)],
+            ]
+            with (
+                patch.object(agent, "search", side_effect=pages) as search,
+                patch(
+                    "agents.literature_enrichment.S2_ENRICHMENT_MAX_PAGES_PER_JOB",
+                    2,
+                ),
+            ):
+                enricher._enrich(job)
+
+            self.assertEqual(search.call_count, 2)
+            self.assertEqual(rag.upserted, [])
+            status = agent.pagination_status("GENE1")
+            self.assertTrue(status["enrichment_complete"])
+            self.assertEqual(status["enrichment_stop_reason"], "zero_yield_pages")
+            self.assertEqual(status["zero_yield_pages"], 2)
+
+    def test_admin_continuation_fetches_only_one_page_per_job(self):
         with tempfile.TemporaryDirectory() as directory:
             agent = self.make_agent(Path(directory))
             rag = FakeRAG()
@@ -200,12 +292,10 @@ class SemanticScholarPaginationTests(unittest.TestCase):
             with patch.object(agent, "search", side_effect=pages) as search:
                 enricher._enrich(job)
 
-            self.assertEqual(search.call_count, 2)
-            self.assertEqual(rag.upserted, [])
+            self.assertEqual(search.call_count, 1)
             status = agent.pagination_status("GENE1")
-            self.assertTrue(status["enrichment_complete"])
-            self.assertEqual(status["enrichment_stop_reason"], "zero_yield_pages")
-            self.assertEqual(status["zero_yield_pages"], 2)
+            self.assertFalse(status["enrichment_complete"])
+            self.assertEqual(status["zero_yield_pages"], 1)
 
     def test_queue_status_lists_the_active_request_before_the_backlog(self):
         enricher = LiteratureEnrichmentQueue.__new__(LiteratureEnrichmentQueue)

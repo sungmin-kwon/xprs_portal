@@ -22,9 +22,8 @@ from reference_utils import (
     extract_s2_paper_id,
     gene_search_query,
     gene_search_strategies,
-    has_zero_citation_count,
     infer_phenotypes_from_text,
-    paper_gene_identity_is_valid,
+    literature_paper_is_eligible,
     parse_metadata_list,
 )
 from text_utils import (
@@ -54,16 +53,6 @@ STATUS_UNSET = object()
 
 class CacheQueryStrategyChanged(ValueError):
     """A cached page belongs to an older gene-disambiguation query."""
-
-
-NON_ARTICLE_NOTICE_RE = re.compile(
-    r"^\s*(correction|erratum|retraction|expression\s+of\s+concern)\s*:",
-    flags=re.IGNORECASE,
-)
-
-
-def is_non_article_notice_title(title: str) -> bool:
-    return bool(NON_ARTICLE_NOTICE_RE.search(title or ""))
 
 
 def parse_retry_after_seconds(
@@ -113,6 +102,70 @@ class SemanticScholarAgent:
         self._last_mode = "public" if not api_key else "api_key"
         self._cache_locks_guard = threading.Lock()
         self._cache_locks: dict[str, threading.Lock] = {}
+        self._query_attempt_lock = threading.Lock()
+        self._query_attempts: dict[tuple[str, str], dict[str, Any]] = {}
+
+    @staticmethod
+    def _query_attempt_key(
+        gene: str,
+        phenotype: str | None,
+    ) -> tuple[str, str]:
+        return gene.strip().upper(), str(phenotype or "").strip().lower()
+
+    def record_query_attempt(
+        self,
+        gene: str,
+        phenotype: str | None,
+        *,
+        outcome: str,
+        http_status: int | None = None,
+        detail: str | None = None,
+        retry_after_seconds: float | None = None,
+    ) -> None:
+        """Retain the latest pool-specific request result for admin diagnostics."""
+        key = self._query_attempt_key(gene, phenotype)
+        record = {
+            "source": "semanticscholar",
+            "gene": key[0],
+            "phenotype": key[1] or None,
+            "outcome": outcome,
+            "http_status": http_status,
+            "detail": detail,
+            "retry_after_seconds": retry_after_seconds,
+            "attempted_at": datetime.now(timezone.utc).isoformat(),
+        }
+        with self._query_attempt_lock:
+            self._query_attempts[key] = record
+
+    def get_query_attempts(self) -> list[dict[str, Any]]:
+        with self._query_attempt_lock:
+            return [dict(record) for record in self._query_attempts.values()]
+
+    def _record_cached_query_request(
+        self,
+        gene: str,
+        phenotype: str | None,
+        *,
+        succeeded: bool,
+    ) -> None:
+        health = self._snapshot_status()
+        status_code = health.get("last_status_code")
+        if succeeded:
+            outcome = "success"
+        elif status_code == 429:
+            outcome = "rate_limited"
+        elif status_code in {401, 403}:
+            outcome = "auth_failed"
+        else:
+            outcome = "unavailable"
+        self.record_query_attempt(
+            gene,
+            phenotype,
+            outcome=outcome,
+            http_status=status_code,
+            detail=None if succeeded else health.get("last_error"),
+            retry_after_seconds=health.get("last_retry_after_seconds"),
+        )
 
     def _snapshot_status(self) -> dict[str, Any]:
         with self._status_lock:
@@ -434,7 +487,7 @@ class SemanticScholarAgent:
 
     def probe_api_key(self, timeout: int = 10) -> dict[str, Any]:
         """Run one keyed request and report validity without public fallback."""
-        query = f"{PRIMARY_PHENOTYPE} genomics"
+        query = "human genetics"
         checked_at = datetime.now(timezone.utc).isoformat()
         if not self.api_key:
             self._update_status(api_key_status="missing")
@@ -936,6 +989,7 @@ class SemanticScholarAgent:
         progress_callback: Optional[Callable[[str], None]] = None,
         request_timeout: int = 15,
         max_retries: int = S2_DEFAULT_MAX_RETRIES,
+        api_key_min_interval_seconds: float | None = None,
     ) -> List[Dict[str, Any]]:
         started_at = time.perf_counter()
         query = gene_search_query(gene, phenotype)
@@ -947,6 +1001,7 @@ class SemanticScholarAgent:
                 max_retries=max_retries,
                 timeout=request_timeout,
                 progress_callback=progress_callback,
+                api_key_min_interval_seconds=api_key_min_interval_seconds,
             ) or []
 
         cache_path = self.cache_path_for_gene(gene, phenotype)
@@ -957,6 +1012,7 @@ class SemanticScholarAgent:
                 max_retries=max_retries,
                 timeout=request_timeout,
                 progress_callback=progress_callback,
+                api_key_min_interval_seconds=api_key_min_interval_seconds,
             ) or []
 
         if cache_path.exists():
@@ -1036,8 +1092,14 @@ class SemanticScholarAgent:
             max_retries=max_retries,
             timeout=request_timeout,
             progress_callback=progress_callback,
+            api_key_min_interval_seconds=api_key_min_interval_seconds,
         )
         if searched_papers is None:
+            self._record_cached_query_request(
+                gene,
+                phenotype,
+                succeeded=False,
+            )
             emit_timing(
                 progress_callback,
                 f'Semantic Scholar retrieval total for "{query}"',
@@ -1047,6 +1109,11 @@ class SemanticScholarAgent:
                 papers=0,
             )
             return []
+        self._record_cached_query_request(
+            gene,
+            phenotype,
+            succeeded=True,
+        )
         papers = searched_papers
         for paper in papers:
             if isinstance(paper, dict):
@@ -1184,6 +1251,11 @@ class SemanticScholarAgent:
                 api_key_min_interval_seconds=api_key_min_interval_seconds,
             )
             if page is None:
+                self._record_cached_query_request(
+                    gene,
+                    phenotype,
+                    succeeded=False,
+                )
                 return {
                     "ok": False,
                     "reason": "api_failed",
@@ -1191,6 +1263,11 @@ class SemanticScholarAgent:
                     "active_search_strategy": active.get("name"),
                     "active_search_query": query,
                 }
+            self._record_cached_query_request(
+                gene,
+                phenotype,
+                succeeded=True,
+            )
 
             if self.metadata_extractor and page:
                 self._emit_extraction_progress(
@@ -1291,9 +1368,7 @@ class SemanticScholarAgent:
 
         for p in papers:
             paper_id = extract_s2_paper_id(p)
-            if not paper_id:
-                continue 
-            if has_zero_citation_count(p):
+            if not literature_paper_is_eligible(p, gene):
                 continue
 
             title = p.get("title", "")
@@ -1304,16 +1379,7 @@ class SemanticScholarAgent:
             pmcid = str(external_ids.get("PubMedCentral") or "").strip() or None
             doi = str(external_ids.get("DOI") or "").strip() or None
 
-            if is_non_article_notice_title(str(title)):
-                logger.info("[S2] Skipping non-article notice: %s", title)
-                continue
-
-            if not abstract or not str(abstract).strip():
-                continue
-
             text = f"{title}\n\n{abstract}"
-            if not paper_gene_identity_is_valid(p, gene):
-                continue
             extracted = {
                 "genes": parse_metadata_list(p.get("extracted_genes")),
                 "phenotypes": parse_metadata_list(p.get("extracted_phenotypes")) or infer_phenotypes_from_text(text),

@@ -35,39 +35,88 @@ def _paragraph_text(
     text: str,
     cjk_font_name: str | None = None,
     latin_font_name: str | None = None,
+    superscript_citations: bool = False,
 ) -> str:
     raw = str(text or "").strip()
     raw = re.sub(r"\*\*(.*?)\*\*", r"\1", raw)
 
-    if not cjk_font_name and not latin_font_name:
-        escaped = html.escape(raw).replace("\n", "<br/>")
-        return escaped
-
     hangul_pattern = re.compile(r"([ᄀ-ᇿ㄰-㆏가-힯]+)")
     latin_pattern = re.compile(r"([A-Za-z0-9][A-Za-z0-9 /+_.:;,%&()\[\]{}<>=!?@#*$^~'\"`|-]*)")
+
+    def render_text(segment: str) -> str:
+        if not segment:
+            return ""
+        if not cjk_font_name and not latin_font_name:
+            return html.escape(segment)
+
+        rendered: list[str] = []
+        pattern = latin_pattern if latin_font_name else hangul_pattern
+        font_name = latin_font_name or cjk_font_name
+        for chunk in pattern.split(segment):
+            if not chunk:
+                continue
+            escaped_chunk = html.escape(chunk)
+            if pattern.fullmatch(chunk):
+                rendered.append(f'<font name="{font_name}">{escaped_chunk}</font>')
+            else:
+                rendered.append(escaped_chunk)
+        return "".join(rendered)
+
     rendered_lines: list[str] = []
     for line in raw.split("\n"):
         parts: list[str] = []
-        if latin_font_name:
-            for chunk in latin_pattern.split(line):
-                if not chunk:
-                    continue
-                escaped_chunk = html.escape(chunk)
-                if latin_pattern.fullmatch(chunk):
-                    parts.append(f'<font name="{latin_font_name}">{escaped_chunk}</font>')
-                else:
-                    parts.append(escaped_chunk)
-        else:
-            for chunk in hangul_pattern.split(line):
-                if not chunk:
-                    continue
-                escaped_chunk = html.escape(chunk)
-                if hangul_pattern.fullmatch(chunk):
-                    parts.append(f'<font name="{cjk_font_name}">{escaped_chunk}</font>')
-                else:
-                    parts.append(escaped_chunk)
+        citation_pattern = r"\[\d+(?:\s*[,–-]\s*\d+)*\]"
+        if superscript_citations:
+            line = re.sub(rf"\s+(?={citation_pattern})", "", line)
+        segments = (
+            re.split(rf"((?:{citation_pattern})(?:\s*{citation_pattern})*)", line)
+            if superscript_citations
+            else [line]
+        )
+        for segment in segments:
+            if superscript_citations and re.fullmatch(
+                rf"(?:{citation_pattern})(?:\s*{citation_pattern})*",
+                segment,
+            ):
+                citation_numbers: list[str] = []
+                for citation_group in re.findall(r"\[([^\]]+)\]", segment):
+                    for token in re.split(r"\s*,\s*", citation_group):
+                        normalized_token = re.sub(r"\s*[–-]\s*", "–", token.strip())
+                        if normalized_token and normalized_token not in citation_numbers:
+                            citation_numbers.append(normalized_token)
+                citation_text = html.escape(",".join(citation_numbers))
+                citation_font = (
+                    f' name="{latin_font_name}"' if latin_font_name else ""
+                )
+                parts.append(
+                    f'<super><font{citation_font} size="7">{citation_text}</font></super>'
+                )
+            else:
+                parts.append(render_text(segment))
         rendered_lines.append("".join(parts))
     return "<br/>".join(rendered_lines)
+
+
+def _reference_markup(
+    reference: dict[str, Any],
+    italic_font_name: str,
+) -> str:
+    """Build a compact PDF citation without internal retrieval metadata."""
+    label = html.escape(f"[{reference.get('n', '')}]")
+    title = html.escape(str(reference.get("title") or "Untitled"))
+    line1 = f"{label} {title}"
+
+    lines = [line1]
+    publication_parts: list[str] = []
+    if reference.get("journal"):
+        journal = html.escape(str(reference.get("journal")))
+        publication_parts.append(f'<font name="{italic_font_name}">{journal}</font>')
+    if reference.get("year"):
+        publication_parts.append(html.escape(str(reference.get("year"))))
+    if publication_parts:
+        lines.append(", ".join(publication_parts))
+
+    return "<br/>".join(lines)
 
 
 @dataclass(frozen=True)
@@ -232,7 +281,7 @@ def build_pdf_report(
     report = session.get("report_payload") or {}
     if not report:
         report = {
-            "title": "XPRS Full Report",
+            "title": "XPRS Detailed Report",
             "individual_id": session.get("individual_id"),
             "language": session.get("language", "en"),
             "gene_count": session.get("gene_count_used") or session.get("gene_count"),
@@ -254,7 +303,6 @@ def build_pdf_report(
             },
             "top_genes": {"title": "Top 5 Genes", "rows": []},
             "bottom_genes": {"title": "Bottom 5 Genes", "rows": []},
-            "key_findings": {"title": "Key Findings", "body": ""},
             "gene_sections": [],
             "verified_databases": {"title": "Verified Databases", "intro": "", "rows": []},
             "integrated_view": {"title": "Integrated View", "body": ""},
@@ -304,6 +352,17 @@ def build_pdf_report(
         spaceAfter=6,
         spaceBefore=8,
     )
+    gene_heading_style = ParagraphStyle(
+        "ReportGeneHeading",
+        parent=styles["Heading3"],
+        fontName=bold_font_name,
+        fontSize=11,
+        leading=13,
+        textColor=colors.HexColor("#334155"),
+        spaceAfter=4,
+        spaceBefore=7,
+        alignment=TA_LEFT,
+    )
     body_style = ParagraphStyle(
         "ReportBody",
         parent=styles["BodyText"],
@@ -343,6 +402,7 @@ def build_pdf_report(
         title_style.name,
         heading_style.name,
         subheading_style.name,
+        gene_heading_style.name,
         table_header_style.name,
     }
 
@@ -357,6 +417,7 @@ def build_pdf_report(
                 text,
                 cjk_font_name=None if inline_latin_font else cjk_font_name,
                 latin_font_name=inline_latin_font,
+                superscript_citations=True,
             ),
             style,
         )
@@ -421,7 +482,7 @@ def build_pdf_report(
             canvas.drawRightString(
                 letter[0] - pdf_doc.rightMargin,
                 band_y + (band_height - 9) / 2.0,
-                ui_label(report_language, "report_subtitle") or "Full Report",
+                ui_label(report_language, "report_subtitle") or "Detailed Report",
             )
 
         footer_y = 0.45 * inch
@@ -437,7 +498,7 @@ def build_pdf_report(
             canvas.line(pdf_doc.leftMargin, header_y - 0.12 * inch, letter[0] - pdf_doc.rightMargin, header_y - 0.12 * inch)
             canvas.setFont(bold_font_name, 9)
             canvas.setFillColor(colors.HexColor("#1f4f7a"))
-            canvas.drawString(pdf_doc.leftMargin, header_y, ui_label(report_language, "report_title") or "XPRS Full Report")
+            canvas.drawString(pdf_doc.leftMargin, header_y, ui_label(report_language, "report_title") or "XPRS Detailed Report")
             canvas.setFont(regular_font_name, 9)
             canvas.drawRightString(
                 letter[0] - pdf_doc.rightMargin,
@@ -447,10 +508,8 @@ def build_pdf_report(
 
         canvas.restoreState()
 
-    story.append(p(report.get("title") or ui_label(report_language, "report_title") or "XPRS Full Report", title_style))
+    story.append(p(report.get("title") or ui_label(report_language, "report_title") or "XPRS Detailed Report", title_style))
     individual_id_label = ui_label(report_language, "individual_id_label") or "Individual ID"
-    gene_count_used_label = ui_label(report_language, "gene_count_used_label") or "Genes Included"
-    threshold_used_label = ui_label(report_language, "threshold_used_label") or "Legacy Threshold Used"
     generated_at_label = ui_label(report_language, "generated_at_label") or "Generated At"
 
     raw_generated_at = (
@@ -466,19 +525,8 @@ def build_pdf_report(
     except (TypeError, ValueError):
         generated_at_display = str(raw_generated_at)
 
-    gene_count_used = report.get("gene_count") or session.get("gene_count_used") or session.get("gene_count")
-    if gene_count_used:
-        selection_line = f"{gene_count_used_label}: {gene_count_used}"
-    else:
-        legacy_threshold = (
-            report.get("threshold_used")
-            if report.get("threshold_used") is not None
-            else session.get("threshold_used") or session.get("sig_threshold") or "—"
-        )
-        selection_line = f"{threshold_used_label}: {legacy_threshold}"
     meta_lines = [
         f"{individual_id_label}: {individual_label}",
-        selection_line,
         f"{generated_at_label}: {generated_at_display}",
     ]
     generation_model = session.get("generation_model")
@@ -510,6 +558,34 @@ def build_pdf_report(
     if risk.get("details"):
         story.append(p(risk.get("details"), body_style))
 
+    integrated = report.get("integrated_view") or {}
+    if integrated.get("body"):
+        parts = [
+            p(paragraph, body_style)
+            for paragraph in re.split(r"\n\s*\n", str(integrated.get("body") or "").strip())
+            if paragraph.strip()
+        ]
+        add_section_block(
+            integrated.get("title")
+            or ui_label(report_language, "integrated_view")
+            or "Plain-Language Interpretation",
+            parts,
+        )
+
+    reading_notes = [
+        ui_label(report_language, "reading_note_prs"),
+        ui_label(report_language, "reading_note_contributions"),
+        ui_label(report_language, "reading_note_evidence"),
+    ]
+    add_section_block(
+        ui_label(report_language, "how_to_read_result") or "How to Read This Result",
+        [p(f"• {note}", body_style) for note in reading_notes if note],
+    )
+
+    technical_heading_flowables = heading_with_rule(
+        ui_label(report_language, "technical_details") or "Technical Details"
+    )
+
     density_image = _decode_image_data(density_image_data)
     manhattan_image = _decode_image_data(manhattan_image_data)
     figure_blocks: list[tuple[str, BytesIO | None]] = [
@@ -517,10 +593,14 @@ def build_pdf_report(
         (ui_label(report_language, "individual_manhattan_plot") or "Individual Manhattan Plot", manhattan_image),
     ]
 
-    def add_ranked_gene_table(section: dict[str, Any], fallback_title: str) -> None:
+    def add_ranked_gene_table(
+        section: dict[str, Any],
+        fallback_title: str,
+        leading_flowables: list[Any] | None = None,
+    ) -> bool:
         rows = section.get("rows") or []
         if not rows:
-            return
+            return False
         table_rows = [[
             p(ui_label(report_language, "gene") or "Gene", table_header_style),
             p(ui_label(report_language, "individual_contribution") or "Individual Contribution Score", table_header_style),
@@ -540,52 +620,48 @@ def build_pdf_report(
             ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ("PADDING", (0, 0), (-1, -1), 6),
         ]))
-        add_section_block(section.get("title") or fallback_title, [table], include_rule=False)
+        section_heading = p(section.get("title") or fallback_title, heading_style)
+        story.append(KeepTogether([*(leading_flowables or []), section_heading, table]))
+        return True
 
     top_genes = report.get("top_genes") or {}
     bottom_genes = report.get("bottom_genes") or {}
-    add_ranked_gene_table(top_genes, "Top 5 Genes")
-    add_ranked_gene_table(bottom_genes, "Bottom 5 Genes")
+    top_table_added = add_ranked_gene_table(
+        top_genes,
+        "Top 5 Genes",
+        leading_flowables=technical_heading_flowables,
+    )
+    bottom_table_added = add_ranked_gene_table(
+        bottom_genes,
+        "Bottom 5 Genes",
+        leading_flowables=[] if top_table_added else technical_heading_flowables,
+    )
+    if not top_table_added and not bottom_table_added:
+        story.extend(technical_heading_flowables)
 
-    key_findings = report.get("key_findings") or {}
-    if key_findings.get("body"):
-        parts = [p(paragraph, body_style) for paragraph in re.split(r"\n\s*\n", str(key_findings.get("body") or "").strip()) if paragraph.strip()]
-        add_section_block(key_findings.get("title") or "Key Findings", parts)
-
+    current_gene_group = None
     for section in report.get("gene_sections") or []:
-        section_titles = section.get("titles") or {}
+        group = section.get("group")
+        if group and group != current_gene_group:
+            story.extend(heading_with_rule(section.get("group_title") or str(group)))
+            current_gene_group = group
         disease_relevance = section.get("disease_relevance")
         if disease_relevance is None:
             # Read reports created before the disease-neutral schema revision.
             disease_relevance = section.get("breast_cancer_relevance")
-        disease_relevance_title = (
-            section_titles.get("disease_relevance")
-            or section_titles.get("breast_cancer_relevance")
-            or "Disease Relevance"
-        )
-        appended_heading = False
-        for sub_title, value in [
-            (section_titles.get("why_it_matters") or "Why It Matters", section.get("why_it_matters")),
-            (disease_relevance_title, disease_relevance),
-            (section_titles.get("clinical_meaning") or "Potential Clinical Meaning", section.get("clinical_meaning")),
-        ]:
-            if value:
-                body_paras = [p(paragraph, body_style) for paragraph in re.split(r"\n\s*\n", str(value or "").strip()) if paragraph.strip()]
-                heading_para = p(sub_title, subheading_style)
-                if not appended_heading:
-                    gene_heading_flowables = heading_with_rule(section.get("gene") or "Gene")
-                    if body_paras:
-                        story.append(KeepTogether([*gene_heading_flowables, heading_para, body_paras[0]]))
-                        story.extend(body_paras[1:])
-                    else:
-                        story.append(KeepTogether([*gene_heading_flowables, heading_para]))
-                    appended_heading = True
-                else:
-                    if body_paras:
-                        story.append(KeepTogether([heading_para, body_paras[0]]))
-                        story.extend(body_paras[1:])
-                    else:
-                        story.append(heading_para)
+        if not disease_relevance:
+            continue
+        body_paras = [
+            p(paragraph, body_style)
+            for paragraph in re.split(r"\n\s*\n", str(disease_relevance).strip())
+            if paragraph.strip()
+        ]
+        gene_heading_flowables = [p(section.get("gene") or "Gene", gene_heading_style)]
+        if body_paras:
+            story.append(KeepTogether([*gene_heading_flowables, body_paras[0]]))
+            story.extend(body_paras[1:])
+        else:
+            story.append(KeepTogether(gene_heading_flowables))
 
     verified = report.get("verified_databases") or {}
     verified_rows = verified.get("rows") or []
@@ -619,11 +695,6 @@ def build_pdf_report(
         ]))
         story.append(table)
 
-    integrated = report.get("integrated_view") or {}
-    if integrated.get("body"):
-        parts = [p(paragraph, body_style) for paragraph in re.split(r"\n\s*\n", str(integrated.get("body") or "").strip()) if paragraph.strip()]
-        add_section_block(integrated.get("title") or "Integrated View", parts)
-
     references = report.get("references") or session.get("references") or []
     if references:
         reference_style = ParagraphStyle(
@@ -638,19 +709,10 @@ def build_pdf_report(
         )
         ref_paras = []
         for ref in references:
-            label = html.escape(f"[{ref.get('n', '')}]")
-            title = html.escape(str(ref.get("title") or "Untitled"))
-            line1 = f"{label} {title}"
-            secondary_html_parts: list[str] = []
-            if ref.get("journal"):
-                journal = html.escape(str(ref.get("journal")))
-                secondary_html_parts.append(f'<font name="{italic_font_name}">{journal}</font>')
-            if ref.get("year"):
-                secondary_html_parts.append(html.escape(str(ref.get("year"))))
-            if secondary_html_parts:
-                markup = f"{line1}<br/>{', '.join(secondary_html_parts)}"
-            else:
-                markup = line1
+            markup = _reference_markup(
+                ref,
+                italic_font_name,
+            )
             ref_paras.append(Paragraph(markup, reference_style))
         add_section_block(ui_label(report_language, "references") or "References", ref_paras[:1])
         story.extend(ref_paras[1:])

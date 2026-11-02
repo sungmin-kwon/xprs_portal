@@ -1,21 +1,72 @@
 import re
 import unittest
-from pathlib import Path
+
+from tests.support import ContractTestCase, ROOT, STATIC
 
 
-ROOT = Path(__file__).resolve().parents[1]
-STATIC = ROOT / "static"
+class UiContractTests(ContractTestCase):
+    def test_admin_and_cohort_analysis_contracts(self):
+        self.run_contract_checks((
+            "_check_admin_retrieval_page_exposes_the_background_request_backlog",
+            "_check_cohort_analysis_is_a_distinct_protected_population_view",
+        ))
 
+    def test_preferences_copy_and_search_contracts(self):
+        self.run_contract_checks((
+            "_check_dashboard_page_is_not_reused_across_frontend_deployments",
+            "_check_landing_page_has_theme_toggle_and_dark_palette",
+            "_check_landing_and_dashboard_use_the_same_preference_keys",
+            "_check_dashboard_no_longer_forces_light_and_english_defaults",
+            "_check_unavailable_cohort_message_is_consistent_and_plain",
+            "_check_overview_and_dashboard_use_natural_individual_counts_and_korean_copy",
+            "_check_individual_search_is_bounded_debounced_and_batched",
+        ))
 
-class UiPreferenceTests(unittest.TestCase):
-    def test_admin_retrieval_page_exposes_the_background_request_backlog(self):
+    def test_dashboard_evidence_contracts(self):
+        self.run_contract_checks((
+            "_check_third_visualization_is_reserved_for_rare_variants",
+            "_check_visualization_rows_are_equal_and_rare_list_scrolls_internally",
+            "_check_rare_variant_ui_uses_three_distinct_source_groups",
+            "_check_dashboard_has_integrated_common_and_rare_evidence_view",
+        ))
+
+    def test_overview_analysis_contracts(self):
+        self.run_contract_checks((
+            "_check_overview_has_private_cross_disease_gene_heatmap_modal",
+            "_check_overview_places_cohort_selector_in_topbar",
+            "_check_overview_consolidates_panel_findings_into_disease_cards",
+            "_check_overview_can_filter_private_individuals_by_disease_risk",
+            "_check_public_overview_uses_single_disease_presentation",
+            "_check_overview_density_plots_use_percentile_based_diverging_tints",
+        ))
+
+    def test_rare_variant_contracts(self):
+        self.run_contract_checks((
+            "_check_overview_has_grouped_rare_variant_side_pane",
+            "_check_private_cohort_access_uses_an_inline_validation_dialog",
+            "_check_rare_variant_hgvs_values_link_to_clinvar_without_referrers",
+            "_check_private_rare_findings_open_an_accessible_detail_drawer",
+        ))
+
+    def _check_admin_retrieval_page_exposes_the_background_request_backlog(self):
         html = (STATIC / "admin-documents.html").read_text(encoding="utf-8")
         script = (STATIC / "admin-documents.js").read_text(encoding="utf-8")
         routes = (ROOT / "routes" / "admin_documents.py").read_text(encoding="utf-8")
 
         self.assertIn('id="queue-backlog"', html)
         self.assertIn('id="queue-backlog-list"', html)
+        self.assertIn('class="fallback-menu"', html)
+        self.assertNotIn('class="health-grid"', html)
+        self.assertIn('id="admin-access-dialog"', html)
+        self.assertIn('id="admin-access-form"', html)
+        self.assertIn('type="password"', html)
         self.assertIn("pendingJobForPool", script)
+        self.assertIn("requestAccessCode", script)
+        self.assertIn("The admin access code was not accepted.", script)
+        self.assertIn('hasIndexableCache ? "Index cache"', script)
+        self.assertIn('canContinue ? "Continue search"', script)
+        self.assertNotIn('"Resume indexing"', script)
+        self.assertNotIn("window.prompt", script)
         self.assertIn('pendingJob.state === "queued" ? "Queued" : "In progress"', script)
         self.assertIn("Tracked query pools", html)
         self.assertNotIn("Frequent-gene plan", html)
@@ -23,7 +74,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertNotIn("Top/bottom appearances", html)
         self.assertIn('"europe_pmc": EUROPE_PMC_CACHE_DIR', routes)
 
-    def test_cohort_analysis_is_a_distinct_protected_population_view(self):
+    def _check_cohort_analysis_is_a_distinct_protected_population_view(self):
         html = (STATIC / "cohort_analysis.html").read_text(encoding="utf-8")
         script = (STATIC / "cohort_analysis.js").read_text(encoding="utf-8")
         css = (STATIC / "cohort_analysis.css").read_text(encoding="utf-8")
@@ -57,19 +108,19 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn("root = require_kpredict_access(request)", routes)
         self.assertIn('@router.get("/cohort-analysis")', pages)
 
-    def test_dashboard_page_is_not_reused_across_frontend_deployments(self):
+    def _check_dashboard_page_is_not_reused_across_frontend_deployments(self):
         pages = (ROOT / "routes" / "pages.py").read_text(encoding="utf-8")
 
         self.assertIn('"Cache-Control": "no-store, max-age=0"', pages)
         self.assertIn("FileResponse(STATIC_DIR / \"dashboard.html\", headers=PAGE_HEADERS)", pages)
 
-    def test_landing_page_has_theme_toggle_and_dark_palette(self):
+    def _check_landing_page_has_theme_toggle_and_dark_palette(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
         self.assertIn('id="theme-toggle-top"', html)
         self.assertIn("body.dark-theme", css)
 
-    def test_landing_and_dashboard_use_the_same_preference_keys(self):
+    def _check_landing_and_dashboard_use_the_same_preference_keys(self):
         for filename in ("home.js", "dashboard.js"):
             with self.subTest(filename=filename):
                 script = (STATIC / filename).read_text(encoding="utf-8")
@@ -78,7 +129,7 @@ class UiPreferenceTests(unittest.TestCase):
                 self.assertIn("window.localStorage.getItem", script)
                 self.assertIn("window.localStorage.setItem", script)
 
-    def test_dashboard_no_longer_forces_light_and_english_defaults(self):
+    def _check_dashboard_no_longer_forces_light_and_english_defaults(self):
         script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
         dom_ready = script[script.index('window.addEventListener("DOMContentLoaded"') :]
         self.assertNotIn('applyTheme("light")', dom_ready)
@@ -92,7 +143,7 @@ class UiPreferenceTests(unittest.TestCase):
         )
         self.assertIn("syncLanguageInUrl();", script)
 
-    def test_third_visualization_is_reserved_for_rare_variants(self):
+    def _check_third_visualization_is_reserved_for_rare_variants(self):
         html = (STATIC / "dashboard.html").read_text(encoding="utf-8")
         script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
         self.assertIn('data-i18n="rareVariantTitle"', html)
@@ -101,7 +152,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertNotIn("Visualization Placeholder", html)
         self.assertNotIn("Reserved for future analysis panel", html)
 
-    def test_visualization_rows_are_equal_and_rare_list_scrolls_internally(self):
+    def _check_visualization_rows_are_equal_and_rare_list_scrolls_internally(self):
         css = (STATIC / "dashboard.css").read_text(encoding="utf-8")
 
         self.assertIn("grid-template-rows: repeat(3, minmax(0, 1fr));", css)
@@ -110,7 +161,7 @@ class UiPreferenceTests(unittest.TestCase):
             re.compile(r"#rare-variant-content\s*\{[^}]*overflow-y:\s*auto", re.DOTALL),
         )
 
-    def test_rare_variant_ui_uses_three_distinct_source_groups(self):
+    def _check_rare_variant_ui_uses_three_distinct_source_groups(self):
         script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
 
         self.assertIn("data.active_disease_group", script)
@@ -119,7 +170,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn("rareOtherDiseasePanels", script)
         self.assertIn("rareUnassignedFindings", script)
 
-    def test_unavailable_cohort_message_is_consistent_and_plain(self):
+    def _check_unavailable_cohort_message_is_consistent_and_plain(self):
         script = (STATIC / "home.js").read_text(encoding="utf-8")
 
         self.assertIn('cohortDataUnavailable: "No data available for this cohort."', script)
@@ -128,7 +179,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertNotIn("No XPRS model data are configured yet", script)
         self.assertNotIn("XPRS model data are not configured for this disease yet", script)
 
-    def test_overview_and_dashboard_use_natural_individual_counts_and_korean_copy(self):
+    def _check_overview_and_dashboard_use_natural_individual_counts_and_korean_copy(self):
         home = (STATIC / "home.js").read_text(encoding="utf-8")
         dashboard = (STATIC / "dashboard.js").read_text(encoding="utf-8")
 
@@ -145,7 +196,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn('individualId: "개인 ID"', dashboard)
         self.assertNotIn("개인 ID ${count}개 불러오기 완료", dashboard)
 
-    def test_individual_search_is_bounded_debounced_and_batched(self):
+    def _check_individual_search_is_bounded_debounced_and_batched(self):
         for filename in ("home.js", "dashboard.js"):
             with self.subTest(filename=filename):
                 script = (STATIC / filename).read_text(encoding="utf-8")
@@ -168,7 +219,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertNotIn('individualSelect.addEventListener("input"', dashboard)
         self.assertNotIn('individualSelect.addEventListener("click"', dashboard)
 
-    def test_overview_has_private_cross_disease_gene_heatmap_modal(self):
+    def _check_overview_has_private_cross_disease_gene_heatmap_modal(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         script = (STATIC / "home.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
@@ -201,7 +252,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertNotIn("Building the cross-disease gene matrix", script)
         self.assertIn(".analysis-modal-overlay", css)
 
-    def test_overview_places_cohort_selector_in_topbar(self):
+    def _check_overview_places_cohort_selector_in_topbar(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         script = (STATIC / "home.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
@@ -225,7 +276,7 @@ class UiPreferenceTests(unittest.TestCase):
             re.compile(r"\.topbar-cohort-select #cohort-select\s*\{[^}]*padding:\s*0 2\.4rem 0 0\.35rem", re.DOTALL),
         )
 
-    def test_overview_consolidates_panel_findings_into_disease_cards(self):
+    def _check_overview_consolidates_panel_findings_into_disease_cards(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         script = (STATIC / "home.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
@@ -249,7 +300,7 @@ class UiPreferenceTests(unittest.TestCase):
         )
         self.assertNotIn(".profile-summary", css)
 
-    def test_overview_can_filter_private_individuals_by_disease_risk(self):
+    def _check_overview_can_filter_private_individuals_by_disease_risk(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         script = (STATIC / "home.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
@@ -263,7 +314,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn("riskPercentileById.get(pid)", script)
         self.assertIn(".risk-filter-fields", css)
 
-    def test_overview_has_grouped_rare_variant_side_pane(self):
+    def _check_overview_has_grouped_rare_variant_side_pane(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         script = (STATIC / "home.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
@@ -292,7 +343,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn("position: fixed;", css)
         self.assertIn(".rare-summary-tooltip.is-above::before", css)
 
-    def test_private_cohort_access_uses_an_inline_validation_dialog(self):
+    def _check_private_cohort_access_uses_an_inline_validation_dialog(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         script = (STATIC / "home.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
@@ -307,7 +358,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn(".analysis-modal--access", css)
         self.assertIn(".kpredict-access-status.is-error", css)
 
-    def test_dashboard_has_integrated_common_and_rare_evidence_view(self):
+    def _check_dashboard_has_integrated_common_and_rare_evidence_view(self):
         html = (STATIC / "dashboard.html").read_text(encoding="utf-8")
         script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
         css = (STATIC / "dashboard.css").read_text(encoding="utf-8")
@@ -325,7 +376,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn(".evidence-layer--common", css)
         self.assertIn(".evidence-layer--rare", css)
 
-    def test_rare_variant_hgvs_values_link_to_clinvar_without_referrers(self):
+    def _check_rare_variant_hgvs_values_link_to_clinvar_without_referrers(self):
         for filename in ("home.js", "dashboard.js"):
             with self.subTest(filename=filename):
                 script = (STATIC / filename).read_text(encoding="utf-8")
@@ -341,7 +392,7 @@ class UiPreferenceTests(unittest.TestCase):
                 css = (STATIC / filename).read_text(encoding="utf-8")
                 self.assertIn(".clinvar-variant-link", css)
 
-    def test_private_rare_findings_open_an_accessible_detail_drawer(self):
+    def _check_private_rare_findings_open_an_accessible_detail_drawer(self):
         home_html = (STATIC / "home.html").read_text(encoding="utf-8")
         dashboard_html = (STATIC / "dashboard.html").read_text(encoding="utf-8")
         home_script = (STATIC / "home.js").read_text(encoding="utf-8")
@@ -368,7 +419,7 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn(".rare-detail-drawer", drawer_css)
         self.assertIn("body.dark-theme .rare-detail-drawer", drawer_css)
 
-    def test_public_overview_uses_single_disease_presentation(self):
+    def _check_public_overview_uses_single_disease_presentation(self):
         script = (STATIC / "home.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
 
@@ -380,19 +431,26 @@ class UiPreferenceTests(unittest.TestCase):
         self.assertIn(".disease-grid.is-single-disease .mini-plot", css)
         self.assertIn(".mini-plot {\n  flex: 1;\n  width: 100%;", css)
 
-    def test_overview_density_plots_use_percentile_based_diverging_tints(self):
+    def _check_overview_density_plots_use_percentile_based_diverging_tints(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
         script = (STATIC / "home.js").read_text(encoding="utf-8")
+        dashboard_script = (STATIC / "dashboard.js").read_text(encoding="utf-8")
         css = (STATIC / "home.css").read_text(encoding="utf-8")
 
         self.assertIn('class="risk-tint-key"', html)
         self.assertIn('data-i18n="lowerPrsPercentile"', html)
         self.assertIn('data-i18n="higherPrsPercentile"', html)
         self.assertIn("function percentileTint(percentile, darkTheme = false)", script)
+        self.assertIn("const midpointStrength = 1 - (Math.abs(value - 0.5) * 2);", script)
+        self.assertIn("midpointStrength * 0.06", script)
+        self.assertIn("midpointStrength * 0.03", script)
+        self.assertIn("fillAlpha.toFixed(3)", script)
+        self.assertIn("backgroundAlpha.toFixed(3)", script)
         self.assertIn("const tint = percentileTint(percentile, darkTheme);", script)
         self.assertIn("fillcolor: tint.fill", script)
         self.assertIn("plot_bgcolor: tint.background", script)
-        self.assertIn('line: { color: darkTheme ? "#7bb2f6" : "#27609d", width: 2.2 }', script)
+        self.assertIn('line: { color: darkTheme ? "#c8d0d8" : "#343a40", width: 2.2 }', script)
+        self.assertIn('line: { color: isDarkTheme() ? "#c8d0d8" : "#343a40", width: 2.5 }', dashboard_script)
         self.assertIn('line: { color: "#d23f31", width: 2 }', script)
         self.assertNotIn("tint.solid", script)
         self.assertIn(".risk-tint-key__bar", css)

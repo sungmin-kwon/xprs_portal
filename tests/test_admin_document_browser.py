@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from agents.rag import RAGAgent
+from tests.support import ROOT
 
 
 class FakeCollection:
@@ -14,10 +15,11 @@ class FakeCollection:
                 "metadata": {
                     "gene": "GENE1",
                     "pool_type": "general",
-                    "source": "semanticscholar",
+                    "source": "europe_pmc",
                     "paperId": "a",
                     "title": "General GENE1 paper",
                     "citationCount": 5,
+                    "extracted_phenotypes": '["type 2 diabetes"]',
                 },
             },
             {
@@ -91,6 +93,25 @@ class AdminDocumentBrowserTests(unittest.TestCase):
             inventory["genes"][0]["phenotypes"],
             {"breast cancer": 1},
         )
+        self.assertEqual(
+            inventory["genes"][0]["general_phenotypes"],
+            {"type 2 diabetes": 1},
+        )
+
+    def test_fallback_status_is_global_and_uses_a_live_expiry(self):
+        html = (ROOT / "static" / "admin-documents.html").read_text(encoding="utf-8")
+        script = (ROOT / "static" / "admin-documents.js").read_text(encoding="utf-8")
+        styles = (ROOT / "static" / "admin-documents.css").read_text(encoding="utf-8")
+
+        self.assertIn("Semantic Scholar cooldown", html)
+        self.assertIn("cooldown_expires_at", script)
+        self.assertIn("Applies to all Semantic Scholar fallback requests", script)
+        self.assertIn("Last query:", script)
+        self.assertIn('deferred: "Skipped — cooldown active"', script)
+        self.assertNotIn("titleCase(item.phenotype)", script)
+        self.assertIn("transform: translateY(-50%) rotate(45deg)", styles)
+        self.assertIn("transform: translateY(-50%) rotate(225deg)", styles)
+        self.assertNotIn('content: "⌄"', styles)
 
     def test_browse_is_gene_scoped_and_sorts_by_citations(self):
         result = self.rag.browse_documents(gene="GENE1")
@@ -126,6 +147,26 @@ class AdminDocumentBrowserTests(unittest.TestCase):
         )
         self.assertEqual(second["total"], 3)
         self.assertEqual(len(second["documents"]), 1)
+
+    def test_source_filter_is_applied_before_pagination(self):
+        semantic_scholar = self.rag.browse_documents(
+            gene="GENE1",
+            source="semanticscholar",
+            limit=1,
+        )
+        self.assertEqual(semantic_scholar["source"], "semanticscholar")
+        self.assertEqual(semantic_scholar["total"], 1)
+        self.assertEqual(len(semantic_scholar["documents"]), 1)
+        self.assertTrue(
+            all(row["source"] == "semanticscholar" for row in semantic_scholar["documents"])
+        )
+
+        europe_pmc = self.rag.browse_documents(
+            gene="GENE1",
+            source="europe_pmc",
+        )
+        self.assertEqual(europe_pmc["total"], 1)
+        self.assertEqual(europe_pmc["documents"][0]["source"], "europe_pmc")
 
 
 if __name__ == "__main__":

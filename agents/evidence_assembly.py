@@ -6,6 +6,7 @@ import re
 import threading
 import time
 from contextlib import contextmanager, nullcontext
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
 from agents.open_targets import OpenTargetsAgent
@@ -19,10 +20,14 @@ from agents.literature_sources import LiteratureSource
 from agents.semantic_scholar import (
     PRIMARY_PHENOTYPE,
     S2_GENERAL_LIMIT,
-    S2_PRIMARY_LIMIT,
     SemanticScholarAgent,
 )
 from config import (
+    EUROPE_PMC_GENERAL_LIMIT,
+    EUROPE_PMC_NAMED_PHENOTYPE_LIMIT,
+    EUROPE_PMC_PRIMARY_LIMIT,
+    LITERATURE_MINIMUM_PRIMARY_ELIGIBLE_DOCUMENTS,
+    LITERATURE_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS,
     RERANKER_CANDIDATE_K,
     S2_CACHE_DIR,
     S2_RUNTIME_RATE_LIMIT_COOLDOWN_BASE_SECONDS,
@@ -32,6 +37,7 @@ from phenotype_utils import infer_phenotypes_from_text, normalize_phenotype_valu
 from reference_utils import (
     GENE_IDENTITY_POLICY_VERSION,
     build_reference_hit,
+    parse_metadata_list,
     publication_dedup_key,
 )
 from text_utils import emit_progress, emit_timing, is_cancer_phenotype, unique_preserving_order
@@ -43,14 +49,8 @@ OTHER_INTENT = "other_disease"
 NEUTRAL_INTENT = "disease_neutral"
 VALID_DISEASE_INTENTS = {PRIMARY_INTENT, OTHER_INTENT, NEUTRAL_INTENT}
 NAMED_PHENOTYPE_LIMIT = max(1, int(os.getenv("S2_NAMED_PHENOTYPE_LIMIT", "10")))
-MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS = max(
-    1,
-    int(
-        os.getenv(
-            "LITERATURE_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS",
-            os.getenv("S2_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS", "5"),
-        )
-    ),
+MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS = (
+    LITERATURE_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS
 )
 
 OTHER_DISEASE_PATTERNS = (
@@ -94,6 +94,8 @@ class EvidenceAssemblyAgent:
         self._s2_fetch_lock = threading.Lock()
         self._s2_cooldown_until = 0.0
         self._s2_rate_limit_streak = 0
+        self._s2_last_query_label: str | None = None
+        self._s2_last_query_at: str | None = None
 
     def _pool_has_current_documents(self, where: dict[str, Any]) -> bool:
         if not self.rag.has_documents(where):
@@ -113,10 +115,15 @@ class EvidenceAssemblyAgent:
     def get_runtime_status(self) -> dict[str, Any]:
         remaining = max(0, int(self._s2_cooldown_until - time.monotonic() + 0.999))
         return {
-            "phenotype": self.primary_phenotype,
+            "scope": "semantic_scholar_fallback",
             "cooldown_active": remaining > 0,
             "cooldown_remaining_seconds": remaining,
+            "cooldown_expires_at": (
+                datetime.now(timezone.utc) + timedelta(seconds=remaining)
+            ).isoformat() if remaining else None,
             "rate_limit_streak": self._s2_rate_limit_streak,
+            "last_query": self._s2_last_query_label,
+            "last_attempted_at": self._s2_last_query_at,
         }
 
     @contextmanager
@@ -146,6 +153,8 @@ class EvidenceAssemblyAgent:
     ) -> list[dict[str, Any]]:
         docs: list[dict[str, Any]] = []
         for provider in self.literature_sources:
+            if not hasattr(provider, "cached_papers"):
+                continue
             papers = provider.cached_papers(gene, phenotype)
             docs.extend(provider.papers_to_docs(
                 gene,
@@ -179,70 +188,123 @@ class EvidenceAssemblyAgent:
                 paper_ids.add(identity)
         return len({paper_id for paper_id in paper_ids if paper_id})
 
+    def _pool_eligible_union_count(
+        self,
+        gene: str,
+        *,
+        pool_type: str,
+        phenotype: str | None,
+    ) -> int:
+        docs = self._cached_eligible_docs(
+            gene,
+            pool_type=pool_type,
+            phenotype=phenotype,
+        )
+        identities = {
+            publication_dedup_key(doc.get("meta", {}))
+            or str(doc.get("id") or "")
+            for doc in docs
+        }
+        return len({identity for identity in identities if identity})
+
+    def _pool_completion_state(
+        self,
+        gene: str,
+        *,
+        pool_type: str,
+        phenotype: str | None,
+    ) -> dict[str, Any]:
+        eligible_count = self._pool_eligible_union_count(
+            gene,
+            pool_type=pool_type,
+            phenotype=phenotype,
+        )
+        s2_cached = self.s2.cached_query_succeeded(gene, phenotype)
+        s2_status = (
+            self.s2.pagination_status(
+                gene,
+                phenotype,
+                page_size=S2_ENRICHMENT_PAGE_SIZE,
+                max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
+            )
+            if s2_cached and hasattr(self.s2, "pagination_status")
+            else {}
+        )
+        s2_terminal = bool(
+            s2_cached
+            and (
+                s2_status.get("enrichment_complete")
+                or s2_status.get("pagination_complete")
+            )
+        )
+        epmc_terminal = bool(
+            self.europe_pmc
+            and self.europe_pmc.cached_query_succeeded(gene, phenotype)
+        )
+        target_reached = (
+            eligible_count >= MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS
+        )
+        all_providers_terminal = s2_terminal and (
+            epmc_terminal if self.europe_pmc is not None else True
+        )
+        return {
+            "eligible_count": eligible_count,
+            "target_reached": target_reached,
+            "all_providers_terminal": all_providers_terminal,
+            "complete": target_reached or all_providers_terminal,
+            "s2_cached": s2_cached,
+            "s2_status": s2_status,
+            "s2_terminal": s2_terminal,
+            "epmc_terminal": epmc_terminal,
+        }
+
     def _schedule_enrichment(
         self,
         gene: str,
         *,
         pool_type: str,
         phenotype: str | None,
-    ) -> None:
+    ) -> bool:
         if self.enrichment_queue is None:
-            return
-        self.enrichment_queue.schedule(
+            return False
+        return bool(self.enrichment_queue.schedule(
             gene=gene,
             pool_type=pool_type,
             phenotype=phenotype,
             primary_phenotype=self.primary_phenotype,
-        )
+        ))
 
-    def _fetch_one_rescue_page(
-        self,
-        gene: str,
-        *,
-        pool_type: str,
-        phenotype: str | None,
-        progress_callback: Optional[Callable[[str], None]],
-    ) -> int:
-        if not hasattr(self.s2, "fetch_next_cached_page"):
-            return 0
-        query_label = f"{gene} {phenotype}".strip() if phenotype else gene
-        with self._s2_fetch_lock:
-            if self._s2_cooldown_until > time.monotonic():
-                remaining = max(1, int(self._s2_cooldown_until - time.monotonic() + 0.999))
-                emit_progress(
-                    progress_callback,
-                    f'Additional Semantic Scholar page not requested for "{query_label}": '
-                    f"rate-limit cooldown active ({remaining}s remaining)",
-                )
-                return 0
-            emit_progress(
-                progress_callback,
-                f'Indexed evidence for "{gene}" is below the interactive minimum; '
-                f'requesting at most one additional Semantic Scholar page for "{query_label}"',
+    def _general_pool_covers_primary(self, gene: str) -> bool:
+        """Whether broad evidence is already sufficient for a disease summary.
+
+        This prevents an unconditional second Europe PMC request when the
+        general query already returned both enough usable papers and enough
+        papers that explicitly mention the active disease.
+        """
+        docs = self._cached_eligible_docs(
+            gene,
+            pool_type="general",
+            phenotype=None,
+        )
+        all_ids: set[str] = set()
+        primary_ids: set[str] = set()
+        for doc in docs:
+            meta = doc.get("meta", {})
+            identity = publication_dedup_key(meta) or str(doc.get("id") or "")
+            if not identity:
+                continue
+            all_ids.add(identity)
+            phenotypes = normalize_phenotype_values(
+                parse_metadata_list(meta.get("extracted_phenotypes"))
             )
-            result = self.s2.fetch_next_cached_page(
-                gene,
-                phenotype=phenotype,
-                page_size=S2_ENRICHMENT_PAGE_SIZE,
-                max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
-                progress_callback=progress_callback,
-            )
-            if not result.get("ok"):
-                self._open_runtime_cooldown_if_rate_limited(progress_callback)
-                return 0
-            docs = self.s2.papers_to_docs(
-                gene,
-                result.get("new_papers") or [],
-                pool_type=pool_type,
-                phenotype=phenotype,
-            )
-            if docs:
-                self.rag.upsert_docs(docs)
-                emit_progress(
-                    progress_callback,
-                    f'Indexed {len(docs)} additional eligible documents for "{query_label}"',
-                )
-            return len(docs)
+            if not phenotypes:
+                phenotypes = infer_phenotypes_from_text(doc.get("text") or "")
+            if self.primary_phenotype in phenotypes:
+                primary_ids.add(identity)
+        return (
+            len(all_ids) >= MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS
+            and len(primary_ids) >= LITERATURE_MINIMUM_PRIMARY_ELIGIBLE_DOCUMENTS
+        )
 
     def _open_runtime_cooldown_if_rate_limited(
         self,
@@ -369,6 +431,13 @@ class EvidenceAssemblyAgent:
             cache_ready_now = self.s2.cached_query_succeeded(gene, phenotype)
             if not cache_ready_now and self._s2_cooldown_until > time.monotonic():
                 remaining = max(1, int(self._s2_cooldown_until - time.monotonic() + 0.999))
+                if hasattr(self.s2, "record_query_attempt"):
+                    self.s2.record_query_attempt(
+                        gene,
+                        phenotype,
+                        outcome="deferred",
+                        detail=f"Runtime rate-limit cooldown active ({remaining}s remaining)",
+                    )
                 message = (
                     f'No Semantic Scholar request was sent for "{query_label}": '
                     f"rate-limit cooldown active ({remaining}s remaining)"
@@ -377,6 +446,9 @@ class EvidenceAssemblyAgent:
                 emit_progress(progress_callback, message)
                 return False
 
+            if not cache_ready_now:
+                self._s2_last_query_label = query_label
+                self._s2_last_query_at = datetime.now(timezone.utc).isoformat()
             papers = self.s2.cached_for_gene(
                 gene,
                 limit=limit,
@@ -480,8 +552,16 @@ class EvidenceAssemblyAgent:
         phenotype: str | None,
         limit: int,
         progress_callback: Optional[Callable[[str], None]],
+        allow_semantic_scholar_fallback: bool = True,
+        force_semantic_scholar_fallback: bool = False,
     ) -> bool:
-        """Fill a query pool from Europe PMC, then supplement with S2 if sparse."""
+        """Fill a pool from Europe PMC, using S2 only as an emergency fallback.
+
+        Automatic retrieval treats any eligible Europe PMC document as usable
+        evidence. Semantic Scholar is contacted only when Europe PMC yields no
+        eligible document at all. An explicit admin action may force one S2
+        page so coverage can still be inspected or extended deliberately.
+        """
         europe_pmc_completed, europe_pmc_eligible = self._fetch_europe_pmc_pool(
             gene,
             pool_type=pool_type,
@@ -489,17 +569,34 @@ class EvidenceAssemblyAgent:
             limit=limit,
             progress_callback=progress_callback,
         )
-        if europe_pmc_eligible >= MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS:
+        if europe_pmc_eligible and not force_semantic_scholar_fallback:
             emit_progress(
                 progress_callback,
                 f'Europe PMC supplied {europe_pmc_eligible} eligible documents; '
-                "Semantic Scholar fallback is not needed",
+                "the emergency Semantic Scholar fallback is not needed",
             )
             return True
 
+        if not allow_semantic_scholar_fallback and not force_semantic_scholar_fallback:
+            if self.s2.cached_query_succeeded(gene, phenotype):
+                semantic_scholar_completed = self._fetch_semantic_scholar_pool(
+                    gene,
+                    pool_type=pool_type,
+                    phenotype=phenotype,
+                    limit=limit,
+                    progress_callback=progress_callback,
+                )
+                return semantic_scholar_completed or europe_pmc_completed
+            emit_progress(
+                progress_callback,
+                "Semantic Scholar was not queried because automatic disease-pool "
+                "augmentation is disabled",
+            )
+            return europe_pmc_completed
+
         if europe_pmc_eligible:
             reason = (
-                f"Europe PMC supplied only {europe_pmc_eligible} eligible document"
+                f"Europe PMC supplied {europe_pmc_eligible} eligible document"
                 f"{'s' if europe_pmc_eligible != 1 else ''}"
             )
         elif europe_pmc_completed:
@@ -508,7 +605,7 @@ class EvidenceAssemblyAgent:
             reason = "Europe PMC was unavailable"
         emit_progress(
             progress_callback,
-            f"{reason}; trying Semantic Scholar as a fallback",
+            f"{reason}; requesting one Semantic Scholar fallback page",
         )
         semantic_scholar_completed = self._fetch_semantic_scholar_pool(
             gene,
@@ -535,53 +632,59 @@ class EvidenceAssemblyAgent:
         pool_type = "phenotype" if phenotype else "general"
         where = self._pool_where(gene, pool_type, phenotype)
         indexed_before = self._pool_has_current_documents(where)
-        s2_cached_before = self.s2.cached_query_succeeded(gene, phenotype)
-        epmc_cached_before = bool(
-            self.europe_pmc
-            and self.europe_pmc.cached_query_succeeded(gene, phenotype)
+        completion_before = self._pool_completion_state(
+            gene,
+            pool_type=pool_type,
+            phenotype=phenotype,
         )
-        pagination_before = (
-            self.s2.pagination_status(
-                gene,
-                phenotype,
-                page_size=S2_ENRICHMENT_PAGE_SIZE,
-                max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
-            )
-            if s2_cached_before and hasattr(self.s2, "pagination_status")
-            else {}
-        )
-        terminal_before = epmc_cached_before or bool(
-            pagination_before.get("enrichment_complete")
-            or pagination_before.get("pagination_complete")
-        )
+        s2_cached_before = completion_before["s2_cached"]
         if indexed_before:
+            if completion_before["complete"]:
+                return {
+                    "ok": True,
+                    "status": "already_complete",
+                    "scheduled": False,
+                    "documents_present": True,
+                }
+
+            if not completion_before["s2_cached"]:
+                self._fetch_and_index_pool(
+                    gene,
+                    pool_type=pool_type,
+                    phenotype=phenotype,
+                    limit=NAMED_PHENOTYPE_LIMIT if phenotype else S2_GENERAL_LIMIT,
+                    progress_callback=progress_callback,
+                    force_semantic_scholar_fallback=True,
+                )
+
+            completion_after_fetch = self._pool_completion_state(
+                gene,
+                pool_type=pool_type,
+                phenotype=phenotype,
+            )
             scheduled = False
-            if s2_cached_before and not terminal_before and self.enrichment_queue is not None:
+            if (
+                s2_cached_before
+                and completion_after_fetch["s2_cached"]
+                and not completion_after_fetch["complete"]
+                and self.enrichment_queue is not None
+            ):
                 scheduled = bool(self.enrichment_queue.schedule(
                     gene=gene,
                     pool_type=pool_type,
                     phenotype=phenotype,
                     primary_phenotype=phenotype or self.primary_phenotype,
                 ))
-            pagination_after = (
-                self.s2.pagination_status(
-                    gene,
-                    phenotype,
-                    page_size=S2_ENRICHMENT_PAGE_SIZE,
-                    max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
-                )
-                if s2_cached_before and hasattr(self.s2, "pagination_status")
-                else pagination_before
-            )
-            terminal_after = bool(
-                pagination_after.get("enrichment_complete")
-                or pagination_after.get("pagination_complete")
+            completion_after = self._pool_completion_state(
+                gene,
+                pool_type=pool_type,
+                phenotype=phenotype,
             )
             if scheduled:
                 status = "enrichment_queued"
-            elif terminal_after:
+            elif completion_after["complete"]:
                 status = "already_complete"
-            elif s2_cached_before and self.enrichment_queue is not None:
+            elif completion_after["s2_cached"] and self.enrichment_queue is not None:
                 status = "enrichment_pending"
             else:
                 status = "already_indexed"
@@ -598,53 +701,43 @@ class EvidenceAssemblyAgent:
             phenotype=phenotype,
             limit=NAMED_PHENOTYPE_LIMIT if phenotype else S2_GENERAL_LIMIT,
             progress_callback=progress_callback,
+            force_semantic_scholar_fallback=True,
         )
         indexed = self._pool_has_current_documents(where)
-        s2_cached = self.s2.cached_query_succeeded(gene, phenotype)
-        epmc_cached = bool(
-            self.europe_pmc
-            and self.europe_pmc.cached_query_succeeded(gene, phenotype)
+        completion = self._pool_completion_state(
+            gene,
+            pool_type=pool_type,
+            phenotype=phenotype,
         )
-        cached = s2_cached or epmc_cached
+        s2_cached = completion["s2_cached"]
+        cached = s2_cached or completion["epmc_terminal"]
         scheduled = False
-        if s2_cached:
+        if s2_cached_before and s2_cached and not completion["complete"]:
             scheduled = bool(self.enrichment_queue and self.enrichment_queue.schedule(
                 gene=gene,
                 pool_type=pool_type,
                 phenotype=phenotype,
                 primary_phenotype=phenotype or self.primary_phenotype,
             ))
-        pagination = (
-            self.s2.pagination_status(
-                gene,
-                phenotype,
-                page_size=S2_ENRICHMENT_PAGE_SIZE,
-                max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
-            )
-            if s2_cached and hasattr(self.s2, "pagination_status")
-            else {}
-        )
-        terminal = epmc_cached or bool(
-            pagination.get("enrichment_complete")
-            or pagination.get("pagination_complete")
-        )
         if (
             completed
             and cached
             and s2_cached
             and not indexed
             and not scheduled
-            and terminal
+            and completion["complete"]
             and hasattr(self.s2, "record_enrichment_status")
         ):
             self.s2.record_enrichment_status(
                 gene,
                 phenotype,
                 eligible_count=0,
-                zero_yield_pages=int(pagination.get("zero_yield_pages") or 0),
+                zero_yield_pages=int(
+                    completion["s2_status"].get("zero_yield_pages") or 0
+                ),
                 complete=True,
                 stop_reason=(
-                    pagination.get("enrichment_stop_reason")
+                    completion["s2_status"].get("enrichment_stop_reason")
                     or "source_exhausted_or_raw_cap"
                 ),
             )
@@ -652,7 +745,7 @@ class EvidenceAssemblyAgent:
             status = "indexed"
         elif scheduled:
             status = "enrichment_queued"
-        elif completed and cached and terminal:
+        elif completed and cached and completion["complete"]:
             status = "no_eligible_documents"
         elif completed and cached:
             status = "enrichment_pending"
@@ -666,26 +759,20 @@ class EvidenceAssemblyAgent:
         }
 
     def manually_probe_semantic_scholar(self) -> dict[str, Any]:
-        """Serialize an explicit admin key check with interactive retrieval."""
+        """Serialize an admin key check without changing retrieval cooldowns."""
         activity = (
             self.enrichment_queue.interactive_retrieval()
             if self.enrichment_queue is not None
             else nullcontext()
         )
         with activity, self._s2_fetch_lock:
-            result = self.s2.probe_api_key()
-            if result.get("status") == "ok":
-                self._s2_rate_limit_streak = 0
-                self._s2_cooldown_until = 0.0
-            elif result.get("status") == "rate_limited":
-                self._open_runtime_cooldown_if_rate_limited(None)
-            return result
+            return self.s2.probe_api_key()
 
     def _ensure_indexed_for_gene(
         self,
         gene: str,
-        general_limit: int = S2_GENERAL_LIMIT,
-        primary_limit: int = S2_PRIMARY_LIMIT,
+        general_limit: int = EUROPE_PMC_GENERAL_LIMIT,
+        primary_limit: int = EUROPE_PMC_PRIMARY_LIMIT,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> None:
         started_at = time.perf_counter()
@@ -719,73 +806,54 @@ class EvidenceAssemblyAgent:
                 logger.info("[EVIDENCE_INDEX] %s", message)
                 emit_progress(progress_callback, message)
 
-        general_available = general_indexed
+        # Search the reusable general pool first. Only make a second Europe PMC
+        # request when that broad pool does not already contain enough usable,
+        # disease-relevant evidence.
         if not general_indexed:
-            general_available = self._fetch_and_index_pool(
+            self._fetch_and_index_pool(
                 gene,
                 pool_type="general",
                 phenotype=None,
                 limit=general_limit,
                 progress_callback=progress_callback,
+                allow_semantic_scholar_fallback=False,
             )
-        if not primary_indexed and general_available:
-            self._fetch_and_index_pool(
-                gene,
-                pool_type="phenotype",
-                phenotype=self.primary_phenotype,
-                limit=primary_limit,
-                progress_callback=progress_callback,
-            )
-        elif not primary_indexed:
-            message = (
-                f'Skipping the {self.primary_phenotype} query for "{gene}" because '
-                "the general literature query did not complete"
-            )
-            logger.warning("[EVIDENCE_INDEX] %s", message)
-            emit_progress(progress_callback, message)
-
-        if (
-            general_available
-            and hasattr(self.s2, "pagination_status")
-            and self._eligible_union_count(gene)
-            < MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS
-        ):
-            # A cold summary should not fail merely because the first relevance
-            # page had few abstracts that survived eligibility filtering. Fetch
-            # at most one additional page synchronously, preferring the active
-            # disease pool; all further pages are background work.
-            rescue_options = [
-                ("phenotype", self.primary_phenotype),
-                ("general", None),
-            ]
-            for rescue_pool, rescue_phenotype in rescue_options:
-                status = self.s2.pagination_status(
-                    gene,
-                    rescue_phenotype,
-                    page_size=S2_ENRICHMENT_PAGE_SIZE,
-                    max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
+        if not primary_indexed:
+            if self._general_pool_covers_primary(gene):
+                emit_progress(
+                    progress_callback,
+                    f'General Europe PMC evidence for "{gene}" already includes '
+                    f'sufficient {self.primary_phenotype} coverage; the separate '
+                    "disease query was skipped",
                 )
-                if status.get("fetch_ok") and not status.get("pagination_complete"):
-                    self._fetch_one_rescue_page(
-                        gene,
-                        pool_type=rescue_pool,
-                        phenotype=rescue_phenotype,
-                        progress_callback=progress_callback,
-                    )
-                    break
+            else:
+                self._fetch_and_index_pool(
+                    gene,
+                    pool_type="phenotype",
+                    phenotype=self.primary_phenotype,
+                    limit=primary_limit,
+                    progress_callback=progress_callback,
+                    allow_semantic_scholar_fallback=False,
+                )
 
-        if self.s2.cached_query_succeeded(gene, None):
-            self._schedule_enrichment(
+        has_local_literature = (
+            self._pool_has_current_documents(general_where)
+            or self._pool_has_current_documents(primary_where)
+        )
+        if not has_local_literature:
+            scheduled = self._schedule_enrichment(
                 gene,
                 pool_type="general",
                 phenotype=None,
             )
-        if self.s2.cached_query_succeeded(gene, self.primary_phenotype):
-            self._schedule_enrichment(
-                gene,
-                pool_type="phenotype",
-                phenotype=self.primary_phenotype,
+            message = (
+                f'No usable Europe PMC literature was found for "{gene}"; '
+                "a Semantic Scholar fallback was queued in the background"
+                if scheduled
+                else f'No usable Europe PMC literature was found for "{gene}"; '
+                "the chatbot will continue without waiting for Semantic Scholar"
             )
+            emit_progress(progress_callback, message)
 
         ot_where = {"$and": [{"gene": gene}, {"source": "opentargets"}]}
         if self.ot is not None and not self.rag.has_documents(ot_where):
@@ -818,15 +886,31 @@ class EvidenceAssemblyAgent:
                 gene,
                 pool_type="phenotype",
                 phenotype=phenotype,
-                limit=NAMED_PHENOTYPE_LIMIT,
+                limit=EUROPE_PMC_NAMED_PHENOTYPE_LIMIT,
                 progress_callback=progress_callback,
+                allow_semantic_scholar_fallback=False,
             )
-        if self.s2.cached_query_succeeded(gene, phenotype):
-            self._schedule_enrichment(
-                gene,
-                pool_type="phenotype",
-                phenotype=phenotype,
+            has_local_literature = (
+                self._pool_has_current_documents(where)
+                or self._pool_has_current_documents(self._pool_where(gene, "general"))
+                or self._pool_has_current_documents(
+                    self._pool_where(gene, "phenotype", self.primary_phenotype)
+                )
             )
+            if not has_local_literature:
+                scheduled = self._schedule_enrichment(
+                    gene,
+                    pool_type="phenotype",
+                    phenotype=phenotype,
+                )
+                message = (
+                    f'No usable Europe PMC literature was found for "{gene} {phenotype}"; '
+                    "a Semantic Scholar fallback was queued in the background"
+                    if scheduled
+                    else f'No usable Europe PMC literature was found for "{gene} {phenotype}"; '
+                    "the chatbot will continue without waiting for Semantic Scholar"
+                )
+                emit_progress(progress_callback, message)
 
     @staticmethod
     def _candidate_identity(text: str, meta: dict[str, Any]) -> tuple[str, str]:

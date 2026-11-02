@@ -7,6 +7,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from phenotype_utils import infer_phenotypes_from_text, normalize_phenotype_values
+from reference_utils import parse_metadata_list
+
 EMB_MODEL_NAME = "BAAI/bge-m3"
 CHROMA_COLLECTION = "xprs_pmc_lit"
 logger = logging.getLogger(__name__)
@@ -160,6 +163,7 @@ class RAGAgent:
         metadata_rows = result.get("metadatas") or []
         genes: dict[str, Counter[str]] = {}
         gene_phenotypes: dict[str, Counter[str]] = {}
+        gene_general_phenotypes: dict[str, Counter[str]] = {}
         gene_sources: dict[str, Counter[str]] = {}
         pool_totals: Counter[str] = Counter()
         phenotype_totals: Counter[str] = Counter()
@@ -180,6 +184,16 @@ class RAGAgent:
             if pool == "phenotype" and query_phenotype:
                 gene_phenotypes.setdefault(gene, Counter())[query_phenotype] += 1
                 phenotype_totals[query_phenotype] += 1
+            elif pool == "general":
+                extracted = normalize_phenotype_values(
+                    parse_metadata_list(metadata.get("extracted_phenotypes"))
+                )
+                if not extracted:
+                    extracted = infer_phenotypes_from_text(
+                        str(metadata.get("title") or "")
+                    )
+                for phenotype in set(extracted):
+                    gene_general_phenotypes.setdefault(gene, Counter())[phenotype] += 1
 
         gene_rows = []
         for gene in sorted(genes, key=str.casefold):
@@ -190,6 +204,9 @@ class RAGAgent:
                     "total": sum(counts.values()),
                     "pools": dict(sorted(counts.items())),
                     "phenotypes": dict(sorted(gene_phenotypes.get(gene, {}).items())),
+                    "general_phenotypes": dict(
+                        sorted(gene_general_phenotypes.get(gene, {}).items())
+                    ),
                     "sources": dict(sorted(gene_sources.get(gene, {}).items())),
                 }
             )
@@ -208,6 +225,7 @@ class RAGAgent:
         *,
         gene: str,
         pool: str = "all",
+        source: str = "all",
         phenotype: str = "",
         search: str = "",
         sort: str = "citations_desc",
@@ -230,6 +248,9 @@ class RAGAgent:
             display_pool = self._admin_pool_label(metadata)
             if pool != "all" and display_pool != pool:
                 continue
+            document_source = str(metadata.get("source") or "").strip().lower()
+            if source != "all" and document_source != source:
+                continue
             query_phenotype = str(metadata.get("phenotype") or "").strip()
             if phenotype and query_phenotype.casefold() != phenotype.strip().casefold():
                 continue
@@ -247,7 +268,7 @@ class RAGAgent:
                     "id": str(document_id),
                     "gene": str(metadata.get("gene") or gene),
                     "pool": display_pool,
-                    "source": str(metadata.get("source") or ""),
+                    "source": document_source,
                     "phenotype": metadata.get("phenotype"),
                     "paper_id": paper_id or None,
                     "publication_id": paper_id or None,
@@ -286,6 +307,7 @@ class RAGAgent:
         return {
             "gene": gene,
             "pool": pool,
+            "source": source,
             "phenotype": phenotype,
             "search": search,
             "sort": sort,

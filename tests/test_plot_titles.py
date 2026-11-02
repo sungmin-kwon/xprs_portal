@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 
-
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import ROOT
 
 
 class PlotTitleTests(unittest.TestCase):
@@ -28,7 +26,9 @@ class PlotTitleTests(unittest.TestCase):
         self.assertNotIn("rawTitle", density_renderer)
         self.assertNotIn("text: titleText", density_renderer)
 
-    def test_removed_titles_return_vertical_space_to_plots(self):
+        self._check_removed_titles_return_vertical_space_to_plots()
+
+    def _check_removed_titles_return_vertical_space_to_plots(self):
         self.assertIn("{ l: 42, r: 14, t: 18, b: 40 }", self.script)
         self.assertIn("margin: { l: 44, r: 16, t: 18, b: 40 }", self.script)
 

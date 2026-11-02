@@ -45,7 +45,7 @@ when papers for the selected genes are available.
 - FastAPI and Pydantic backend
 - Vanilla HTML, CSS, JavaScript, and Plotly frontend
 - OpenRouter for generation and GPT-5 mini reference extraction
-- Europe PMC REST API with Semantic Scholar fallback/augmentation for literature discovery
+- Europe PMC REST API with Semantic Scholar as an emergency literature fallback
 - ChromaDB dense retrieval with BGE-M3 embeddings
 - MedCPT cross-encoder reranking
 - Pandas/Parquet plot-data cache
@@ -64,21 +64,24 @@ collection. A request follows this sequence:
 
 1. Reuse any indexed general and primary-disease pools. For a cold gene, query
    the public Europe PMC REST API and index up to 25 source results.
-2. If fewer than five eligible Europe PMC papers survive filtering, query
-   Semantic Scholar once as a fallback/augmentation source.
-3. If the combined provider yield remains below five and the Semantic Scholar
-   result pool can continue, retrieve at most one additional S2 page
-   synchronously. This is the only pagination that can extend the user's first
-   response.
-4. Queue incomplete Semantic Scholar fallback pools for one shared background worker. It waits 30 seconds,
-   yields to interactive retrieval, and continues from the cached offset rather
-   than repeating earlier searches.
+2. Skip the second, disease-specific Europe PMC request when the general pool
+   already contains at least five eligible papers, including at least two that
+   explicitly match the active disease. Otherwise, query the disease-specific
+   pool to restore relevant evidence.
+3. If Europe PMC and the local index still provide no usable literature, let
+   answer generation continue and enqueue one 10-result Semantic Scholar page
+   as an emergency background fallback. The chatbot never waits for this
+   request or paginates it automatically.
+4. An administrator can explicitly continue an incomplete Semantic Scholar
+   cache. Each action advances at most one page through the shared worker,
+   preserving the cached offset and yielding to interactive retrieval.
 5. Analyze the question as `primary_disease`, `other_disease`, or
    `disease_neutral`.
 6. Retrieve a fixed union of dense candidates from relevant phenotype and
    general pools.
 7. For an explicitly named non-primary disease, populate a disease-specific
-   Europe PMC pool on demand and use Semantic Scholar only when that pool is sparse.
+   Europe PMC pool on demand and enqueue one Semantic Scholar fallback page
+   only when no usable local literature is available.
 8. Rerank the candidate union with `ncbi/MedCPT-Cross-Encoder`.
 9. Apply a small metadata adjustment:
    - direct requested-disease evidence receives a soft boost;
@@ -89,10 +92,12 @@ collection. A request follows this sequence:
 10. Return the highest-ranked papers with `disease_match`, `source_pool`, raw
    reranker score, and target-phenotype metadata.
 
-Semantic Scholar background enrichment, when activated as a fallback, stops independently for each gene/pool after reaching 30
-eligible general papers, 20 primary-disease papers, or 15 papers for another
-explicitly named disease. Canonical phenotype queries can fall through to up to
-two configured phenotype aliases; ambiguous short symbols can also fall through
+Semantic Scholar fallback and continuation work runs outside the interactive
+answer path and is limited to one page per queued action. Repeated explicit
+admin continuations can still work toward the configured coverage targets, but
+the portal no longer launches an unattended multi-page sweep. Canonical
+phenotype queries can fall through to up to two
+configured phenotype aliases; ambiguous short symbols can also fall through
 to broader symbol queries. Each strategy is capped at 50 raw results, and a
 low-yield strategy gives way to the next strategy after two consecutive pages
 that add no eligible documents. Results are deduplicated across strategies.
@@ -118,7 +123,7 @@ fallback records without an NCBI identifier.
 ```text
 agents/                 Retrieval, conversation, evidence, and explanation agents
 routes/                 FastAPI route modules
-static/                 Landing page, dashboard, CSS/JS, and disease-scoped plots
+static/                 Landing page, dashboard, CSS/JS, and vendored browser assets
 data/                   Public-data manifest/provenance; runtime data is external
 docs/                   Data-contract and deployment documentation
 r/                      Documentation for the ignored legacy RDS input location
@@ -132,16 +137,16 @@ config.py               Environment and path configuration
 ```
 
 Runtime directories (`logs/`, provider caches, and `chroma/`), local environments,
-secrets, source-paper copies, large cohort artifacts, generated plots, and
-generated benchmark corpora are excluded through `.gitignore`.
+secrets, source-paper copies, large cohort artifacts, and generated benchmark
+corpora are excluded through `.gitignore`. Plot payloads are generated in memory
+and are not stored under `static/`.
 
 ## Setup
 
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
-pip install --extra-index-url https://download.pytorch.org/whl/cpu \
-  -r requirements.lock.txt
+pip install -r requirements.txt
 cp .env.example .env
 ```
 
@@ -182,16 +187,16 @@ The unlinked `/admin/documents` page combines retrieval-coverage monitoring
 with the earlier gene-by-gene ChromaDB document browser. Its coverage table is
 cohort-neutral: it reports every gene observed in a provider cache or ChromaDB,
 along with cached query responses, indexed documents, pagination
-completion, background enrichment, and active cooldowns. It does not divide
+completion, manual continuation, and active cooldowns. It does not divide
 genes into the legacy public-cohort plan and an "outside plan" group.
 
 For missing or interrupted pools, an administrator can issue one manual
 literature query from the coverage table. This action uses the same
 serialized request lock, rate-limit cooldown, cache, document eligibility
-rules, Chroma upsert path, and background enrichment queue as chatbot-driven
-retrieval. Cached papers are processed before any upstream request; when the
-cached set does not meet the evidence target, the existing background queue may
-continue pagination under its normal rate-limit policy.
+rules, Chroma upsert path, and serialized continuation queue as chatbot-driven
+retrieval. Cached papers are processed before any upstream request. A first
+manual action can create one Semantic Scholar fallback cache; each subsequent
+continuation advances that cache by at most one page.
 
 The Semantic Scholar status card also provides an explicit API-key check. It
 sends one keyed, one-result request only when clicked, reports authentication
@@ -263,7 +268,7 @@ The complete key-free template is in `.env.example`. The principal settings are:
 - `OPENROUTER_API_KEY`, `LLM_MODEL`
 - `REFERENCE_EXTRACTION_PROVIDER=openrouter`
 - `REFERENCE_EXTRACTION_MODEL=openai/gpt-5-mini`
-- `EUROPE_PMC_CACHE_DIR`, `S2_API_KEY`
+- `LITERATURE_CACHE_DIR`, `EUROPE_PMC_CACHE_DIR`, `S2_CACHE_DIR`, `S2_API_KEY`
 - `S2_API_KEY_MIN_INTERVAL_SECONDS`, `S2_PUBLIC_MIN_INTERVAL_SECONDS`,
   `S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS`
 - `KPREDICT_ENABLED`, `KPREDICT_DATA_ROOT`, `XPRS_KPREDICT_TOKEN`
@@ -275,7 +280,7 @@ The complete key-free template is in `.env.example`. The principal settings are:
 - `XPRS_ADMIN_TOKEN` for the unlinked retrieval administration page
 - `XPRS_EVALUATION_TOKEN`, `EVALUATION_RESPONSES_DIR`, and
   `XPRS_COOKIE_SECURE` for the internal pilot survey
-- optional path overrides such as `DATA_DIR`, `CHROMA_DIR`, `S2_CACHE_DIR`,
+- optional path overrides such as `DATA_DIR`, `CHROMA_DIR`,
   `STATIC_DIR`, and `REF_DIR`
 
 ## Tests
@@ -284,11 +289,23 @@ The complete key-free template is in `.env.example`. The principal settings are:
 python -m unittest discover -s tests -v
 ```
 
+See [`tests/README.md`](tests/README.md) for the suite organization and test
+fixture conventions.
+
 Before committing or publishing, also run the repository hygiene check:
 
 ```bash
 python scripts/check_public_repo.py
 ```
+
+Provider cache metadata can be audited without making literature requests:
+
+```bash
+python scripts/reconcile_literature_cache.py
+```
+
+After reviewing the dry run, add `--write` to atomically reconcile stored
+eligibility counts with the current cache-to-Chroma policy.
 
 It checks tracked and unignored files for common credential formats, internal
 storage paths, evaluation responses, and private-cohort filenames without

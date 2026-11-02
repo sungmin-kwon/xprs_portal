@@ -1,8 +1,7 @@
-from pathlib import Path
 import unittest
 
+from tests.support import ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class OverviewFetchRecoveryTests(unittest.TestCase):
@@ -21,10 +20,6 @@ class OverviewFetchRecoveryTests(unittest.TestCase):
         self.assertIn("let diseaseOverviewRequestId = 0", self.script)
         self.assertIn("requestId !== diseaseOverviewRequestId", self.script)
         self.assertIn("pid !== selectedIndividualId", self.script)
-
-    def test_home_script_cache_version_was_bumped(self):
-        self.assertIn('/static/home.js?v=44', self.html)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -14,9 +14,8 @@ from reference_utils import (
     GENE_IDENTITY_POLICY_VERSION,
     ReferenceMetadataExtractor,
     gene_identity_profile,
-    has_zero_citation_count,
     infer_phenotypes_from_text,
-    paper_gene_identity_is_valid,
+    literature_paper_is_eligible,
     parse_metadata_list,
 )
 from text_utils import emit_progress, unique_preserving_order
@@ -43,6 +42,38 @@ class EuropePMCAgent:
         self.metadata_extractor = metadata_extractor
         self.timeout = timeout
         self._request_lock = threading.Lock()
+        self._attempt_lock = threading.Lock()
+        self._query_attempts: dict[tuple[str, str], dict[str, Any]] = {}
+
+    @staticmethod
+    def _attempt_key(gene: str, phenotype: str | None) -> tuple[str, str]:
+        return gene.strip().upper(), str(phenotype or "").strip().lower()
+
+    def _record_attempt(
+        self,
+        gene: str,
+        phenotype: str | None,
+        *,
+        outcome: str,
+        http_status: int | None = None,
+        detail: str | None = None,
+    ) -> None:
+        key = self._attempt_key(gene, phenotype)
+        record = {
+            "source": self.source_name,
+            "gene": key[0],
+            "phenotype": key[1] or None,
+            "outcome": outcome,
+            "http_status": http_status,
+            "detail": detail,
+            "attempted_at": datetime.now(timezone.utc).isoformat(),
+        }
+        with self._attempt_lock:
+            self._query_attempts[key] = record
+
+    def get_query_attempts(self) -> list[dict[str, Any]]:
+        with self._attempt_lock:
+            return [dict(record) for record in self._query_attempts.values()]
 
     @staticmethod
     def _slug(value: str) -> str:
@@ -244,13 +275,28 @@ class EuropePMCAgent:
                 "fetch_ok": True,
                 "pagination_complete": True,
                 "raw_examined": len(rows),
-                "eligible_count": sum(paper_gene_identity_is_valid(p, gene) for p in papers),
+                "eligible_count": sum(literature_paper_is_eligible(p, gene) for p in papers),
                 "data": papers,
             }
             self._write_json(path, payload)
+            self._record_attempt(
+                gene,
+                phenotype,
+                outcome="success",
+                http_status=getattr(response, "status_code", 200),
+            )
             emit_progress(progress_callback, f'Europe PMC returned {len(papers)} papers for "{query}"')
             return papers
         except (requests.RequestException, ValueError, TypeError) as exc:
+            response = getattr(exc, "response", None)
+            status_code = getattr(response, "status_code", None)
+            self._record_attempt(
+                gene,
+                phenotype,
+                outcome="rate_limited" if status_code == 429 else "unavailable",
+                http_status=status_code,
+                detail=str(exc),
+            )
             logger.warning("[EUROPE_PMC] Search failed for query=%r: %s", query, exc)
             emit_progress(progress_callback, f'Europe PMC search was unavailable for "{query}"')
             return []
@@ -274,9 +320,7 @@ class EuropePMCAgent:
             publication_id = self._publication_id(paper)
             title = str(paper.get("title") or "").strip()
             abstract = str(paper.get("abstract") or "").strip()
-            if not publication_id or not abstract or has_zero_citation_count(paper):
-                continue
-            if not paper_gene_identity_is_valid(paper, gene):
+            if not literature_paper_is_eligible(paper, gene):
                 continue
             text = f"{title}\n\n{abstract}"
             phenotypes = parse_metadata_list(paper.get("extracted_phenotypes")) or infer_phenotypes_from_text(text)

@@ -20,6 +20,11 @@ let geneSelectionPreviewRequestId = 0;
 let currentManhattanData = null;
 let currentDensityData = null;
 let currentDiseaseEvidence = null;
+let visualizationLoadPromise = null;
+let visualizationRequestKey = "";
+let visualizationLoadedKey = "";
+let visualizationRequestId = 0;
+let visualizationLoading = false;
 let dashboardPlotResizeObserver = null;
 let dashboardPlotResizeFrame = null;
 let phenotypeLabelsKo = {};
@@ -68,12 +73,12 @@ const UI_TEXT = {
     landingTitle: "Configure XPRS Summary",
     individualId: "Individual ID",
     individualSearchPlaceholder: "Search Individual ID",
-    geneCountLabel: "Genes to Include",
-    geneCountHint: "Choose how many of this individual's highest-contributing genes to interpret in detail",
-    geneCountValue: (count) => `${count} ${count === 1 ? "gene" : "genes"}`,
-    genePreviewLoading: "Loading top contributing genes...",
+    geneCountLabel: "Genes per Section",
+    geneCountHint: "Include this many risk-increasing and risk-lowering genes",
+    geneCountValue: (count) => `${count} ${count === 1 ? "gene" : "genes"} per section`,
+    genePreviewLoading: "Loading contribution genes...",
     genePreviewNone: "No contributing genes are available.",
-    genePreviewGenes: (genes) => `Genes included: [${genes.join(", ")}]`,
+    genePreviewGenes: (genes) => `Genes included across both sections: [${genes.join(", ")}]`,
     citedCount: (n) => `Cited ${n}`,
     viewOnPubMedPmc: "View on PubMed/PMC",
     viewOnSemanticScholar: "View on Semantic Scholar",
@@ -87,6 +92,11 @@ const UI_TEXT = {
     cancelAction: "Cancel",
     generateSummary: "Generate Summary",
     summaryLoading: "Generating Summary...",
+    generateVisualizations: "Generate Visualizations",
+    refreshVisualizations: "Refresh Visualizations",
+    visualizationLoading: "Generating Visualizations...",
+    visualizationPrompt: "Generate visualizations to view this plot.",
+    visualizationUnavailable: "Visualizations are unavailable. Try again.",
     loadingIndividuals: "Loading individuals...",
     loadedIndividuals: (count, shown = count) => shown < count
       ? `${count} individuals found · showing first ${shown}`
@@ -165,12 +175,12 @@ const UI_TEXT = {
     landingTitle: "XPRS 요약 설정",
     individualId: "개인 ID",
     individualSearchPlaceholder: "개인 ID 검색",
-    geneCountLabel: "요약에 포함할 유전자 수",
-    geneCountHint: "이 개인에서 기여도가 가장 높은 유전자 중 상세히 해석할 개수를 선택합니다",
-    geneCountValue: (count) => `${count}개 유전자`,
-    genePreviewLoading: "기여도가 높은 유전자 불러오는 중...",
+    geneCountLabel: "섹션별 유전자 수",
+    geneCountHint: "위험 증가 및 위험 감소 유전자를 각각 같은 수만큼 포함합니다",
+    geneCountValue: (count) => `섹션별 ${count}개 유전자`,
+    genePreviewLoading: "기여 유전자 불러오는 중...",
     genePreviewNone: "해석할 기여 유전자가 없습니다.",
-    genePreviewGenes: (genes) => `포함할 유전자: [${genes.join(", ")}]`,
+    genePreviewGenes: (genes) => `두 섹션에 포함할 유전자: [${genes.join(", ")}]`,
     citedCount: (n) => `${n}회 인용`,
     viewOnPubMedPmc: "PubMed/PMC에서 보기",
     viewOnSemanticScholar: "Semantic Scholar에서 보기",
@@ -184,6 +194,11 @@ const UI_TEXT = {
     cancelAction: "취소",
     generateSummary: "XPRS 요약 생성",
     summaryLoading: "요약 생성 중...",
+    generateVisualizations: "시각화 생성",
+    refreshVisualizations: "시각화 새로고침",
+    visualizationLoading: "시각화 생성 중...",
+    visualizationPrompt: "시각화를 생성하면 플롯을 볼 수 있습니다.",
+    visualizationUnavailable: "시각화를 불러올 수 없습니다. 다시 시도해 주세요.",
     loadingIndividuals: "개인 목록 불러오는 중...",
     loadedIndividuals: (count, shown = count) => shown < count
       ? `총 ${count}명 · 처음 ${shown}명 표시`
@@ -392,6 +407,7 @@ function updateUIText() {
   syncPlotOverlayUI();
   syncPrivatePrivacyDisclosure();
   syncDashboardNavigation();
+  syncVisualizationControls();
   applyDiseaseMetadataToUI();
   updateGeneCountControl();
   restoreSelectedIndividual();
@@ -510,6 +526,7 @@ function commitIndividualSelection(pid) {
   });
   window.history.replaceState({}, "", `/dashboard?${params.toString()}`);
   syncDashboardNavigation();
+  syncVisualizationControls();
 }
 
 function syncIndividualSearchDisplay(pid = getSelectedIndividualId()) {
@@ -520,8 +537,8 @@ function syncIndividualSearchDisplay(pid = getSelectedIndividualId()) {
 
 function getSummaryGeneCount() {
   const input = $("summary-gene-count");
-  const value = Number.parseInt(input?.value || "2", 10);
-  return Math.max(1, Math.min(5, Number.isFinite(value) ? value : 2));
+  const value = Number.parseInt(input?.value || "5", 10);
+  return Math.max(1, Math.min(5, Number.isFinite(value) ? value : 5));
 }
 
 function updateGeneCountControl() {
@@ -536,7 +553,7 @@ function updateGeneCountControl() {
 function setSummaryGeneCount(count, { refresh = true } = {}) {
   const input = $("summary-gene-count");
   if (!input) return;
-  input.value = String(Math.max(1, Math.min(5, Number.parseInt(count, 10) || 2)));
+  input.value = String(Math.max(1, Math.min(5, Number.parseInt(count, 10) || 5)));
   updateGeneCountControl();
   if (refresh) updateGeneSelectionPreview();
 }
@@ -664,6 +681,47 @@ function syncManhattanPopoutButton() {
   const btn = $("manhattan-popout-btn");
   if (!btn) return;
   btn.disabled = !currentManhattanData;
+}
+
+function visualizationKey(pid) {
+  return `${getActiveCohortSlug()}|${getActiveDiseaseSlug()}|${pid || ""}`;
+}
+
+function hasCurrentVisualizations(pid = currentIndividualId) {
+  return Boolean(
+    pid
+    && visualizationLoadedKey === visualizationKey(pid)
+    && currentDensityData
+    && currentManhattanData
+  );
+}
+
+function syncVisualizationControls() {
+  const button = $("generate-visualizations-btn");
+  const label = $("generate-visualizations-label");
+  const icon = button?.querySelector(".material-symbols-outlined");
+  const ready = hasCurrentVisualizations();
+
+  if (button) {
+    button.disabled = !currentIndividualId || visualizationLoading;
+    button.setAttribute("aria-busy", visualizationLoading ? "true" : "false");
+  }
+  if (label) {
+    label.textContent = visualizationLoading
+      ? t("visualizationLoading")
+      : ready
+        ? t("refreshVisualizations")
+        : t("generateVisualizations");
+  }
+  if (icon) {
+    icon.textContent = visualizationLoading ? "progress_activity" : ready ? "refresh" : "monitoring";
+    icon.classList.toggle("is-spinning", visualizationLoading);
+  }
+
+  const densityPlaceholder = $("density-plot-placeholder");
+  const manhattanPlaceholder = $("manhattan-plot-placeholder");
+  if (densityPlaceholder) densityPlaceholder.hidden = Boolean(currentDensityData);
+  if (manhattanPlaceholder) manhattanPlaceholder.hidden = Boolean(currentManhattanData);
 }
 
 function renderExpandedManhattanPlot() {
@@ -1122,7 +1180,7 @@ function renderDensityPlotly(density, containerId) {
     x: dx,
     y: dy,
     showlegend: false,
-    line: { color: "#1f77d0", width: 2.5 },
+    line: { color: isDarkTheme() ? "#c8d0d8" : "#343a40", width: 2.5 },
     hoverinfo: "skip",
   };
 
@@ -1331,6 +1389,11 @@ function resetVisualizations() {
   currentManhattanData = null;
   currentDensityData = null;
   currentDiseaseEvidence = null;
+  visualizationRequestId += 1;
+  visualizationLoadPromise = null;
+  visualizationRequestKey = "";
+  visualizationLoadedKey = "";
+  visualizationLoading = false;
   closePlotOverlay();
   closeEvidenceOverlay();
   syncEvidenceSummaryButton();
@@ -1349,6 +1412,7 @@ function resetVisualizations() {
 
   syncManhattanPopoutButton();
   setStatus($("viz-status"), "");
+  syncVisualizationControls();
 }
 
 function resetConversationState() {
@@ -2043,6 +2107,13 @@ async function downloadPdfReport() {
   updateExportButtons();
   setStatus($("chat-status"), t("exportPdfLoading"));
   try {
+    if (!hasCurrentVisualizations(activeSummaryIndividualId)) {
+      try {
+        await loadPlotsForIndividual(activeSummaryIndividualId);
+      } catch (error) {
+        console.warn("PDF report will continue without unavailable plot images:", error);
+      }
+    }
     const [densityImage, manhattanImage] = await Promise.all([
       capturePlotImage("density-plot"),
       capturePlotImage("manhattan-plot"),
@@ -2600,49 +2671,7 @@ function scheduleIndividualFilter() {
 // ----------------------------
 // Plot loading
 // ----------------------------
-async function loadPlotsForIndividual(pid) {
-  if (!pid) return null;
-  setStatus($("viz-status"), "Loading interactive plots...");
-  const payload = await postJSON("/api/plotdata", {
-    individual_id: pid,
-    disease: getActiveDiseaseSlug(),
-    cohort: getActiveCohortSlug(),
-  });
-
-  try {
-    const manPlot = $("manhattan-plot");
-    if (manPlot) {
-      currentManhattanData = payload.manhattan;
-      manPlot.style.display = "block";
-      renderManhattanPlotly(payload.manhattan, "manhattan-plot");
-      syncManhattanPopoutButton();
-      if ($("plot-overlay")?.classList.contains("is-open")) {
-        renderExpandedManhattanPlot();
-      }
-    }
-  } catch (e) {
-    console.warn("Manhattan render failed:", e);
-    const manPlot = $("manhattan-plot");
-    if (manPlot) manPlot.style.display = "none";
-    currentManhattanData = null;
-    syncManhattanPopoutButton();
-  }
-
-  try {
-    const denPlot = $("density-plot");
-    if (denPlot) {
-      currentDensityData = payload.density;
-      denPlot.style.display = "block";
-      renderDensityPlotly(payload.density, "density-plot");
-    }
-  } catch (e) {
-    console.warn("Density render failed:", e);
-    const denPlot = $("density-plot");
-    if (denPlot) denPlot.style.display = "none";
-    currentDensityData = null;
-  }
-
-  setStatus($("viz-status"), "");
+async function loadIndividualEvidence(pid) {
   const [rareResult, evidenceResult] = await Promise.allSettled([
     loadRareFindings(pid),
     loadDiseaseEvidence(pid),
@@ -2659,7 +2688,106 @@ async function loadPlotsForIndividual(pid) {
     const container = $("evidence-overlay-body");
     if (container) container.innerHTML = `<div class="viz-empty-state"><p>${escapeHtml(t("evidenceLoadFailed"))}</p></div>`;
   }
-  return payload;
+}
+
+async function loadPlotsForIndividual(pid, { force = false } = {}) {
+  if (!pid) return null;
+  const key = visualizationKey(pid);
+  if (!force && hasCurrentVisualizations(pid)) {
+    return { density: currentDensityData, manhattan: currentManhattanData };
+  }
+  if (visualizationLoadPromise && visualizationRequestKey === key) {
+    return visualizationLoadPromise;
+  }
+
+  const requestId = ++visualizationRequestId;
+  visualizationRequestKey = key;
+  visualizationLoading = true;
+  setStatus($("viz-status"), t("visualizationLoading"));
+  syncVisualizationControls();
+
+  const loadPromise = (async () => {
+    try {
+      const payload = await postJSON("/api/plotdata", {
+        individual_id: pid,
+        disease: getActiveDiseaseSlug(),
+        cohort: getActiveCohortSlug(),
+      });
+      if (requestId !== visualizationRequestId || key !== visualizationKey(currentIndividualId)) {
+        return payload;
+      }
+
+      try {
+        const denPlot = $("density-plot");
+        if (denPlot) {
+          currentDensityData = payload.density;
+          denPlot.style.display = "block";
+          renderDensityPlotly(payload.density, "density-plot");
+        }
+      } catch (error) {
+        console.warn("Density render failed:", error);
+        const denPlot = $("density-plot");
+        if (denPlot) denPlot.style.display = "none";
+        currentDensityData = null;
+      }
+
+      try {
+        const manPlot = $("manhattan-plot");
+        if (manPlot) {
+          currentManhattanData = payload.manhattan;
+          manPlot.style.display = "block";
+          renderManhattanPlotly(payload.manhattan, "manhattan-plot");
+          syncManhattanPopoutButton();
+          if ($("plot-overlay")?.classList.contains("is-open")) {
+            renderExpandedManhattanPlot();
+          }
+        }
+      } catch (error) {
+        console.warn("Manhattan render failed:", error);
+        const manPlot = $("manhattan-plot");
+        if (manPlot) manPlot.style.display = "none";
+        currentManhattanData = null;
+        syncManhattanPopoutButton();
+      }
+
+      visualizationLoadedKey = currentDensityData && currentManhattanData ? key : "";
+      setStatus($("viz-status"), "");
+      return payload;
+    } catch (error) {
+      if (requestId === visualizationRequestId) {
+        setStatus($("viz-status"), t("visualizationUnavailable"));
+      }
+      throw error;
+    } finally {
+      if (requestId === visualizationRequestId) {
+        visualizationLoading = false;
+        visualizationLoadPromise = null;
+        visualizationRequestKey = "";
+        syncVisualizationControls();
+      }
+    }
+  })();
+
+  visualizationLoadPromise = loadPromise;
+  return loadPromise;
+}
+
+function ensureVisualizationsForIndividual(pid) {
+  if (!pid || hasCurrentVisualizations(pid)) return;
+  void loadPlotsForIndividual(pid).catch((error) => {
+    console.warn("Visualization generation failed:", error);
+  });
+}
+
+async function generateVisualizations() {
+  const pid = currentIndividualId || getSelectedIndividualId();
+  if (!pid) return;
+  commitIndividualSelection(pid);
+  try {
+    await loadPlotsForIndividual(pid, { force: hasCurrentVisualizations(pid) });
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 // ----------------------------
@@ -2679,12 +2807,7 @@ async function changeIndividual() {
   if (!changed) return;
 
   resetDashboardForIndividualChange();
-  try {
-    await loadPlotsForIndividual(pid);
-  } catch (err) {
-    console.error(err);
-    setStatus($("viz-status"), `Plots unavailable: ${err.message}`);
-  }
+  await loadIndividualEvidence(pid);
 }
 
 // ----------------------------
@@ -2703,6 +2826,7 @@ async function generateSummary() {
   syncLanguageToggle();
   clearLandingWarning();
   closeLandingModal(true);
+  ensureVisualizationsForIndividual(pid);
   showLoadingBubble();
 
   setLoading(true);
@@ -2924,12 +3048,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     closeLandingModal(true);
     resetDashboardForIndividualChange();
     setStatus($("chat-status"), "");
-    try {
-      await loadPlotsForIndividual(initialIndividualId);
-    } catch (err) {
-      console.error(err);
-      setStatus($("viz-status"), `Plots unavailable: ${err.message}`);
-    }
+    await loadIndividualEvidence(initialIndividualId);
   } else {
     if (initialIndividualId) {
       openLandingModal();
@@ -2938,6 +3057,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   wireReferenceClicks();
   $("landing-change-btn").addEventListener("click", changeIndividual);
+  $("generate-visualizations-btn")?.addEventListener("click", generateVisualizations);
   $("header-generate-btn")?.addEventListener("click", generateSummary);
   $("send-btn").addEventListener("click", sendFollowup);
   $("export-menu-btn")?.addEventListener("click", (e) => {
@@ -2996,7 +3116,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const summaryGeneCount = $("summary-gene-count");
   if (summaryGeneCount) {
     summaryGeneCount.addEventListener("input", () => {
-      setSummaryGeneCount(summaryGeneCount.value || "2");
+      setSummaryGeneCount(summaryGeneCount.value || "5");
     });
   }
 

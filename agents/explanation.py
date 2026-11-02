@@ -8,6 +8,7 @@ import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
+from threading import Lock
 from typing import Any, Callable, Optional
 
 import pandas as pd
@@ -27,10 +28,12 @@ from reference_utils import (
     merge_references_preserve_numbers,
     normalize_citations,
     reference_identity,
+    split_reference_genes,
 )
 from text_utils import (
     emit_progress,
     emit_timing,
+    format_duration,
     normalize_output_language,
     ui_label,
     unique_preserving_order,
@@ -70,7 +73,6 @@ class LiteratureEvidenceUnavailableError(RuntimeError):
 class ExplanationAgent:
     MAX_SUMMARY_GENES = 5
     GENE_SECTION_TIMEOUT = 35
-    INTRO_TIMEOUT = 25
     INTEGRATED_VIEW_TIMEOUT = 25
     FOLLOWUP_TIMEOUT = 60
 
@@ -130,43 +132,6 @@ class ExplanationAgent:
         except Exception:
             return {}
 
-    def _generate_intro(
-        self,
-        *,
-        gene_count: int,
-        selected_genes: str,
-        top_genes_summary: str,
-        language: str,
-    ) -> str:
-        output_language = "Korean" if language == "ko" else "English"
-        try:
-            raw = self.llm.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": "You are a biomedical summarization assistant. Output JSON only.",
-                    },
-                    {
-                        "role": "user",
-                        "content": (
-                            "Return JSON with one key: intro.\n"
-                            "Write a concise 2-3 sentence key-findings introduction.\n"
-                            f"Output language: {output_language}. "
-                            "If Korean, use consistent formal 존댓말.\n\n"
-                            f"{SAFETY_RULES}\n\n"
-                            f"Primary disease context: {self.disease_display_name}\n"
-                            f"Selected gene count: {gene_count}\n"
-                            f"Top contributing genes selected for detailed interpretation: {selected_genes}\n"
-                            f"Top genes summary:\n{top_genes_summary}"
-                        ),
-                    },
-                ],
-                timeout=self.INTRO_TIMEOUT,
-            )
-            return self._extract_json_object(raw).get("intro", "").strip()
-        except Exception:
-            return ""
-
     def _generate_gene_section(
         self,
         *,
@@ -187,13 +152,14 @@ class ExplanationAgent:
                     {
                         "role": "user",
                         "content": (
-                            "Return JSON with exactly these keys: why_it_matters, disease_relevance, clinical_meaning.\n"
-                            "Use only the provided evidence context. Keep each field short and readable.\n"
+                            "Return JSON with exactly one key: disease_relevance.\n"
+                            "Use only the provided evidence context. Write one concise paragraph of no more "
+                            "than two sentences. Do not restate the gene's rank, contribution direction, or "
+                            "that it belongs to a top/bottom group. Use at most two citations.\n"
                             f"Output language: {output_language}. If Korean, use consistent formal 존댓말.\n"
                             "Do not mention Open Targets or structured database evidence.\n"
-                            "For the clinical_meaning field, describe what the literature reports about "
-                            "prognostic, subtype, or resistance associations at the research level — "
-                            "do NOT frame this as a personal clinical recommendation for the individual.\n\n"
+                            "Describe disease relevance as research evidence, not as a personal clinical "
+                            "interpretation or recommendation.\n\n"
                             f"{SAFETY_RULES}\n\n"
                             f"Primary disease context: {self.disease_display_name}\n"
                             f"Gene: {gene}\n"
@@ -207,16 +173,67 @@ class ExplanationAgent:
             )
             parsed = self._extract_json_object(raw)
             return {
-                "why_it_matters": str(parsed.get("why_it_matters", "")).strip(),
                 "disease_relevance": str(parsed.get("disease_relevance", "")).strip(),
-                "clinical_meaning": str(parsed.get("clinical_meaning", "")).strip(),
             }
         except Exception:
             return {
-                "why_it_matters": "",
                 "disease_relevance": "",
-                "clinical_meaning": "",
             }
+
+    def _generate_gene_group_sections(
+        self,
+        *,
+        group_label: str,
+        genes: list[dict[str, str]],
+        language: str,
+    ) -> dict[str, dict[str, str]]:
+        """Draft one contribution-tail section with a single model call."""
+        if not genes:
+            return {}
+        output_language = "Korean" if language == "ko" else "English"
+        try:
+            raw = self.llm.chat(
+                [
+                    {
+                        "role": "system",
+                        "content": "You are a biomedical summarization assistant. Output JSON only.",
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            "Return JSON with one key, items. items must contain one object per supplied gene "
+                            "with exactly these keys: gene, disease_relevance.\n"
+                            "Write one concise paragraph of no more than two sentences per gene and use only "
+                            "that gene's supplied evidence. Do not restate its rank, contribution direction, "
+                            "or membership in a top/bottom group. Use at most two citations per gene. "
+                            "Preserve valid numbered citations exactly. If evidence is absent, do not invent a "
+                            "biological or disease interpretation.\n"
+                            f"Contribution section: {group_label}. Negative/lowering contributions mean that the "
+                            "gene lowers this linear PRS relative to the other contributions in this model; do not "
+                            "describe it as clinically protective.\n"
+                            f"Output language: {output_language}. If Korean, use consistent formal 존댓말.\n\n"
+                            f"{SAFETY_RULES}\n\n"
+                            f"Primary disease context: {self.disease_display_name}\n"
+                            f"Gene inputs:\n{json.dumps(genes, ensure_ascii=False)}"
+                        ),
+                    },
+                ],
+                timeout=max(self.GENE_SECTION_TIMEOUT, 60),
+            )
+            parsed = self._extract_json_object(raw)
+            output: dict[str, dict[str, str]] = {}
+            for item in parsed.get("items", []):
+                if not isinstance(item, dict):
+                    continue
+                gene = str(item.get("gene") or "").strip().upper()
+                if not gene:
+                    continue
+                output[gene] = {
+                    "disease_relevance": str(item.get("disease_relevance") or "").strip(),
+                }
+            return output
+        except Exception:
+            return {}
 
     def _generate_integrated_view(
         self,
@@ -238,21 +255,36 @@ class ExplanationAgent:
                     {
                         "role": "user",
                         "content": (
-                            "Return JSON with one key: integrated_view.\n"
-                            "Write a short 3-5 sentence integrative summary using only the provided takeaways.\n"
+                            "Return JSON with exactly two keys: overall_interpretation and gene_overview.\n"
+                            "Write 1-2 short sentences in overall_interpretation that give the overall pattern "
+                            "and what it means within the reference cohort. Write 1-2 short sentences in "
+                            "gene_overview that summarize the gene-level pattern without listing every gene. "
+                            "Write both fields for a non-specialist reader and use only the provided takeaways. Avoid "
+                            "specialist jargon; if a technical term is unavoidable, explain it in plain "
+                            "language. Clearly distinguish a gene's contribution to this PRS model from "
+                            "proof that it causes disease, and do not describe a risk-lowering contribution "
+                            "as clinically protective. Keep citations sparse: place at most one citation "
+                            "group at the end of a sentence and include no more than three of the most "
+                            "directly relevant reference numbers in that group.\n"
                             f"Output language: {output_language}. If Korean, use consistent formal 존댓말.\n\n"
                             f"{SAFETY_RULES}\n\n"
                             f"Primary disease context: {self.disease_display_name}\n"
                             f"Citation rules: {citation_rules}\n"
-                            f"Top contributing genes selected for detailed interpretation: {selected_genes}\n"
-                            f"Top genes summary:\n{top_genes_summary}\n\n"
+                            f"Genes selected from the risk-increasing and risk-lowering tails: {selected_genes}\n"
+                            f"Contribution ranking summary:\n{top_genes_summary}\n\n"
                             f"Gene takeaways:\n{gene_takeaways}"
                         ),
                     },
                 ],
                 timeout=self.INTEGRATED_VIEW_TIMEOUT,
             )
-            return self._extract_json_object(raw).get("integrated_view", "").strip()
+            parsed = self._extract_json_object(raw)
+            overall = str(parsed.get("overall_interpretation") or "").strip()
+            gene_overview = str(parsed.get("gene_overview") or "").strip()
+            if overall or gene_overview:
+                return "\n\n".join(part for part in [overall, gene_overview] if part)
+            # Backward compatibility for cached/test responses using the prior schema.
+            return str(parsed.get("integrated_view") or "").strip()
         except Exception:
             return ""
 
@@ -322,7 +354,7 @@ class ExplanationAgent:
     def _ranked_gene_rows(gene_df: pd.DataFrame) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         for row in gene_df.itertuples(index=False):
-            rank = getattr(row, "population_rank")
+            rank = getattr(row, "population_rank", None)
             rows.append({
                 "gene": str(getattr(row, "Gene")),
                 "individual_contribution": float(getattr(row, "individual_contribution")),
@@ -431,26 +463,6 @@ class ExplanationAgent:
         return f"### {title}\n{text}" if text else ""
 
     @staticmethod
-    def _format_lead_sentence(body: str) -> str:
-        text = (body or "").strip()
-        if not text:
-            return ""
-
-        for match in re.finditer(r"[.!?]", text):
-            idx = match.end()
-            if idx >= len(text) or text[idx].isspace():
-                lead = text[:idx].strip()
-                rest = text[idx:].strip()
-                return f"{lead}\n\n{rest}" if rest else lead
-
-        return text
-
-    @staticmethod
-    def _subsection_block(title: str, body: str) -> str:
-        text = ExplanationAgent._format_lead_sentence(body)
-        return f"#### {title}\n{text}" if text else ""
-
-    @staticmethod
     def _has_numbered_citation(text: str) -> bool:
         return bool(re.search(r"\[\d+\]", text or ""))
 
@@ -520,14 +532,11 @@ class ExplanationAgent:
                 display_refs[display_number] = dict(reference)
             else:
                 existing = display_refs[display_number]
-                existing_genes = [
-                    gene.strip()
-                    for gene in str(existing.get("gene") or "").split(",")
-                    if gene.strip()
-                ]
-                new_gene = str(reference.get("gene") or "").strip()
-                if new_gene and new_gene not in existing_genes:
-                    existing["gene"] = ", ".join([*existing_genes, new_gene])
+                existing_genes = split_reference_genes(str(existing.get("gene") or ""))
+                new_genes = split_reference_genes(str(reference.get("gene") or ""))
+                merged_genes = unique_preserving_order([*existing_genes, *new_genes])
+                if merged_genes:
+                    existing["gene"] = ", ".join(merged_genes)
             old_to_display[citation_id] = display_number
 
         compact_context = "\n".join(
@@ -655,9 +664,9 @@ class ExplanationAgent:
         bottom_rows: list[dict[str, Any]],
         gene_sections: list[dict[str, Any]],
         language: str,
+        plain_language_interpretation: str = "",
     ) -> tuple[str, dict[str, Any]]:
         risk_title = ui_label(language, "risk_overview")
-        signal_title = ui_label(language, "simple_main_signals")
         note_text = ui_label(language, "simple_pdf_note")
 
         percentile = density_profile.get("percentile") if density_profile else None
@@ -673,41 +682,52 @@ class ExplanationAgent:
             risk_summary = ui_label(language, "simple_risk_fallback")
 
         risk_context = ui_label(language, "simple_risk_context")
-        ranking_section = self._render_compact_gene_rankings(
-            top_rows,
-            bottom_rows,
-            language,
-        )
-        highlight_lines: list[str] = []
         highlight_items: list[dict[str, Any]] = []
-
         gene_lookup = {item["gene"]: item for item in gene_sections}
-        for row in top_rows[:2]:
-            gene = row["gene"]
-            gene_info = gene_lookup.get(gene, {})
-            lead = self._first_sentence_plain(gene_info.get("why_it_matters", "")) or self._first_sentence_plain(gene_info.get("clinical_meaning", ""))
-            if not lead:
-                lead = ui_label(language, "simple_gene_fallback", gene=gene)
-            highlight_lines.append(f"- **{gene}**: {lead}")
-            highlight_items.append({
-                "gene": gene,
-                "summary": lead,
-                "individual_contribution": row["individual_contribution"],
-            })
+
+        def contribution_section(title: str, rows: list[dict[str, Any]]) -> str:
+            lines = [f"### {title}"]
+            for row in rows[:5]:
+                gene = row["gene"]
+                gene_info = gene_lookup.get(gene, {})
+                lead = (
+                    self._first_sentence_plain(gene_info.get("disease_relevance", ""))
+                    or ui_label(language, "simple_gene_fallback", gene=gene)
+                )
+                contribution = float(row.get("individual_contribution") or 0.0)
+                value_label = "기여도" if language == "ko" else "contribution"
+                lines.append(
+                    f"- **{gene}** ({value_label} {contribution:.2f}): {lead}"
+                )
+                highlight_items.append({
+                    "gene": gene,
+                    "summary": lead,
+                    "individual_contribution": contribution,
+                    "group": gene_info.get("group"),
+                })
+            return "\n".join(lines)
+
+        top_section = contribution_section(
+            ui_label(language, "simple_top_genes"),
+            top_rows,
+        )
+        bottom_section = contribution_section(
+            ui_label(language, "simple_bottom_genes"),
+            bottom_rows,
+        )
 
         markdown_parts = [
             f"### {risk_title}",
             risk_summary,
             risk_context,
         ]
-        if ranking_section:
-            markdown_parts.extend(["", ranking_section])
-        if highlight_lines:
+        if plain_language_interpretation.strip():
             markdown_parts.extend([
                 "",
-                f"### {signal_title}",
-                *highlight_lines,
+                f"### {ui_label(language, 'integrated_view')}",
+                plain_language_interpretation.strip(),
             ])
+        markdown_parts.extend(["", top_section, "", bottom_section])
         markdown_parts.extend([
             "",
             note_text,
@@ -723,6 +743,7 @@ class ExplanationAgent:
                 "prs_value": density_profile.get("prs_value") if density_profile else None,
                 "relative_position": relative_position,
             },
+            "plain_language_interpretation": plain_language_interpretation.strip(),
             "gene_rankings": {
                 "title": ui_label(language, "simple_gene_rankings"),
                 "top": top_rows[:5],
@@ -732,16 +753,20 @@ class ExplanationAgent:
             "note": note_text,
         }
 
-    def get_target_genes(self, pid: str, gene_count: int = 2) -> list[str]:
+    def get_target_genes(self, pid: str, gene_count: int = 5) -> list[str]:
         selected_count = max(1, min(int(gene_count), self.MAX_SUMMARY_GENES))
         top, _ = self.gene_agent.get_top_genes(pid, top_n=selected_count)
-        return unique_preserving_order(list(top["Gene"].values))[:selected_count]
+        bottom = self.gene_agent.get_bottom_genes(pid, bottom_n=selected_count)
+        return unique_preserving_order(
+            list(top["Gene"].values)[:selected_count]
+            + list(bottom["Gene"].values)[:selected_count]
+        )
 
     def build_explanation(
         self,
         pid: str,
         evaluate: bool = False,
-        gene_count: int = 2,
+        gene_count: int = 5,
         language: str = "en",
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]:
@@ -771,36 +796,54 @@ class ExplanationAgent:
             top_n=max(self.gene_agent.default_top_n, selected_count),
         )
         bottom = self.gene_agent.get_bottom_genes(pid, bottom_n=self.gene_agent.default_top_n)
-        selected_gene_list = list(top.head(selected_count)["Gene"].values)
-        target_genes = unique_preserving_order(selected_gene_list)[:selected_count]
+        top_selected_genes = list(top.head(selected_count)["Gene"].values)
+        bottom_selected_genes = list(bottom.head(selected_count)["Gene"].values)
+        target_genes = unique_preserving_order(top_selected_genes + bottom_selected_genes)
         emit_progress(
             progress_callback,
-            f"Selected top {len(target_genes)} contributing genes for detailed interpretation: "
+            f"Selected {len(top_selected_genes)} risk-increasing and "
+            f"{len(bottom_selected_genes)} risk-lowering genes for interpretation: "
             + ", ".join(target_genes),
         )
-        mark_timing("top_gene_selection_s", top_genes_started_at, "Top gene selection", genes=len(target_genes))
+        mark_timing("top_gene_selection_s", top_genes_started_at, "Gene selection", genes=len(target_genes))
 
         # 1. Parallel Fetch
         results_map = {}
+        retrieval_events: list[tuple[str | None, str]] = []
+        retrieval_event_lock = Lock()
+
+        def capture_retrieval_progress(message: str, gene: str | None = None) -> None:
+            logger.info("[SUMMARY_RETRIEVAL] %s", message)
+            with retrieval_event_lock:
+                retrieval_events.append((gene, message))
 
         def fetch_gene_data(gene_symbol):
             c, r, s = self.evidence_agent.retrieve_gene_context(
                 gene_symbol,
-                top_k=10,
-                progress_callback=progress_callback,
+                top_k=5,
+                progress_callback=lambda message: capture_retrieval_progress(message, gene_symbol),
             )
             return gene_symbol, c, r, s
 
         max_workers = 1 if ENABLE_LLM_REFERENCE_EXTRACTION else min(5, max(1, len(target_genes)))
+        emit_progress(
+            progress_callback,
+            f"Retrieving literature for {len(target_genes)} selected genes",
+        )
         fetch_started_at = time.perf_counter()
         batch_context = (
-            self.evidence_agent.interactive_request_batch(progress_callback)
+            self.evidence_agent.interactive_request_batch(capture_retrieval_progress)
             if hasattr(self.evidence_agent, "interactive_request_batch")
             else nullcontext()
         )
         with batch_context:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 future_to_gene = {executor.submit(fetch_gene_data, g): g for g in target_genes}
+                completed_genes = 0
+                progress_milestones = {
+                    max(1, (len(target_genes) + 1) // 2),
+                    len(target_genes),
+                }
                 for future in as_completed(future_to_gene):
                     try:
                         g_sym, c, r, s = future.result()
@@ -808,7 +851,20 @@ class ExplanationAgent:
                     except Exception as exc:
                         logger.error(f"Gene {future_to_gene[future]} error: {exc}")
                         results_map[future_to_gene[future]] = ([], [], "ERROR")
-        mark_timing("gene_context_fetch_s", fetch_started_at, "Literature retrieval across selected genes", genes=len(target_genes), workers=max_workers)
+                    completed_genes += 1
+                    if completed_genes in progress_milestones:
+                        emit_progress(
+                            progress_callback,
+                            f"Literature retrieval: {completed_genes}/{len(target_genes)} genes complete",
+                        )
+        fetch_elapsed = mark_timing(
+            "gene_context_fetch_s",
+            fetch_started_at,
+            "Literature retrieval across selected genes",
+            live=False,
+            genes=len(target_genes),
+            workers=max_workers,
+        )
 
         evidence_backed_genes = [
             gene
@@ -818,44 +874,42 @@ class ExplanationAgent:
                 for ref in results_map.get(gene, ([], [], "ERROR"))[1]
             )
         ]
+        europe_pmc_events = [
+            (gene, message)
+            for gene, message in retrieval_events
+            if message.startswith("Sending query to Europe PMC")
+        ]
+        semantic_scholar_events = [
+            (gene, message)
+            for gene, message in retrieval_events
+            if message.startswith("Sending query to Semantic Scholar")
+        ]
+        queried_genes = {
+            gene
+            for gene, _message in europe_pmc_events + semantic_scholar_events
+            if gene
+        }
+        reused_gene_count = max(0, len(target_genes) - len(queried_genes))
+        emit_progress(
+            progress_callback,
+            f"Literature sources: {reused_gene_count} genes reused the local index; "
+            f"Europe PMC {len(europe_pmc_events)} requests for "
+            f"{len({gene for gene, _message in europe_pmc_events if gene})} genes; "
+            f"Semantic Scholar {len(semantic_scholar_events)} requests",
+        )
+        emit_progress(
+            progress_callback,
+            f"Literature ready: {len(evidence_backed_genes)}/{len(target_genes)} genes with citable evidence; "
+            f"{format_duration(fetch_elapsed)}",
+        )
         if target_genes and not evidence_backed_genes:
-            health: dict[str, Any] = {}
-            s2_agent = getattr(self.evidence_agent, "s2", None)
-            if s2_agent is not None and hasattr(s2_agent, "get_health_status"):
-                health = s2_agent.get_health_status() or {}
             genes_text = ", ".join(target_genes)
-            if language == "ko":
-                reason = (
-                    "Europe PMC에서 적합한 문헌을 찾지 못했고, 보완 검색에 사용되는 Semantic Scholar도 현재 요청을 제한하고 있습니다."
-                    if health.get("last_status_code") == 429
-                    else "현재 연결된 문헌 소스에서 해당 논문을 검색할 수 없습니다."
-                )
-                message = (
-                    f"{genes_text}에 대해 인용 가능한 문헌이 색인되어 있지 않으며, {reason} "
-                    "따라서 출처 없는 해석은 생성하지 않았습니다. 잠시 후 다시 시도해 주세요."
-                )
-            else:
-                reason = (
-                    "Europe PMC did not yield eligible evidence, and the Semantic Scholar fallback is currently rate-limiting requests."
-                    if health.get("last_status_code") == 429
-                    else "No papers could be retrieved from the configured literature sources at this time."
-                )
-                message = (
-                    f"No citable literature is indexed for {genes_text}. {reason} "
-                    "The portal did not generate an uncited interpretation; please try again later."
-                )
+            message = (
+                f"No citable literature is currently indexed for {genes_text}; "
+                "the contribution summary will continue while fallback retrieval runs in the background"
+            )
             logger.warning("[SUMMARY_EVIDENCE] %s", message)
-            if language == "ko":
-                emit_progress(
-                    progress_callback,
-                    f"요약 중단: {genes_text}에 대해 인용 가능한 문헌이 없습니다",
-                )
-            else:
-                emit_progress(
-                    progress_callback,
-                    f"Summary stopped: no citable literature is available for {genes_text}",
-                )
-            raise LiteratureEvidenceUnavailableError(message)
+            emit_progress(progress_callback, message)
 
         # 2. Sequential Assembly: literature refs are numbered; structured database evidence is rendered separately.
         ctx_sections: list[str] = []
@@ -937,101 +991,72 @@ class ExplanationAgent:
 
         selected_gene_text = ", ".join(target_genes) if target_genes else "None available"
 
-        if target_genes:
-            intro_started_at = time.perf_counter()
-            intro_text = self._generate_intro(
-                gene_count=len(target_genes),
-                selected_genes=selected_gene_text,
-                top_genes_summary=model_ranking_text,
-                language=language,
-            )
-            mark_timing("intro_drafting_s", intro_started_at, "Intro drafting")
-        else:
-            intro_text = "No contributing genes were available for detailed interpretation."
-
         structured_sections: list[str] = []
         raw_gene_sections: list[dict[str, Any]] = []
-        intro_block = self._section_block(ui_label(language, "key_findings"), intro_text)
-        if intro_block:
-            structured_sections.append(intro_block)
 
         gene_takeaways: list[str] = []
         contribution_lookup = top_for_display.set_index("Gene")["individual_contribution"].to_dict()
+        contribution_lookup.update(
+            bottom_for_display.set_index("Gene")["individual_contribution"].to_dict()
+        )
 
         if target_genes:
             gene_sections_started_at = time.perf_counter()
-            for gene in target_genes:
-                one_gene_started_at = time.perf_counter()
-                contribution = float(contribution_lookup.get(gene, 0.0))
-                if gene in evidence_backed_genes:
-                    emit_progress(
-                        progress_callback,
-                        f'Drafting gene-level interpretation for "{gene}" with {self.llm.model}',
-                    )
-                    gene_section = self._generate_gene_section(
-                        gene=gene,
-                        individual_contribution=(
-                            "selected top-contributor rank only; exact value withheld"
+            emit_progress(progress_callback, "Drafting concise gene evidence sections")
+            groups = [
+                ("risk_increasing", ui_label(language, "simple_top_genes"), top_selected_genes),
+                ("risk_lowering", ui_label(language, "simple_bottom_genes"), bottom_selected_genes),
+            ]
+            for group_key, group_label, group_genes in groups:
+                evidence_inputs = []
+                for gene in group_genes:
+                    if gene not in evidence_backed_genes:
+                        continue
+                    contribution = float(contribution_lookup.get(gene, 0.0))
+                    evidence_inputs.append({
+                        "gene": gene,
+                        "individual_contribution": (
+                            "rank only; exact value withheld"
                             if self.minimize_sensitive_context else f"{contribution:.2f}"
                         ),
-                        evidence_context=gene_context_map.get(gene, ""),
-                        citation_rules=gene_citation_rules.get(gene, ""),
-                        language=language,
-                    )
-                elif language == "ko":
-                    emit_progress(
-                        progress_callback,
-                        f'색인된 문헌이 없어 "{gene}"의 문헌 해석을 건너뜁니다',
-                    )
-                    gene_section = {
-                        "why_it_matters": (
-                            f"{gene}는 이 개인의 상위 기여 유전자 중 하나이므로 포함되었습니다 "
-                            f"(기여도 {contribution:.2f})."
-                        ),
-                        "disease_relevance": "현재 이 유전자에 대해 인용 가능한 문헌이 색인되어 있지 않습니다.",
-                        "clinical_meaning": "근거 문헌이 확보될 때까지 문헌 기반 해석을 제공할 수 없습니다.",
-                    }
-                else:
-                    emit_progress(
-                        progress_callback,
-                        f'Skipping literature interpretation for "{gene}" because no indexed evidence is available',
-                    )
-                    gene_section = {
-                        "why_it_matters": (
-                            f"{gene} is included because it is one of this individual's top contributors "
-                            f"(contribution {contribution:.2f})."
-                        ),
-                        "disease_relevance": "No citable literature is currently indexed for this gene.",
-                        "clinical_meaning": "A literature-based interpretation is unavailable until supporting sources are retrieved.",
-                    }
-                section_parts = [
-                    f"### {gene}",
-                    self._subsection_block(ui_label(language, "why_it_matters"), gene_section.get("why_it_matters", "")),
-                    self._subsection_block(self._disease_relevance_label(language), gene_section.get("disease_relevance", "")),
-                    self._subsection_block(ui_label(language, "clinical_meaning"), gene_section.get("clinical_meaning", "")),
-                ]
-                section_text = "\n\n".join([part for part in section_parts if part.strip()])
-                if section_text.strip():
-                    structured_sections.append(section_text)
-                raw_gene_sections.append({
-                    "gene": gene,
-                    "individual_contribution": contribution,
-                    "why_it_matters": gene_section.get("why_it_matters", "").strip(),
-                    "disease_relevance": gene_section.get("disease_relevance", "").strip(),
-                    "clinical_meaning": gene_section.get("clinical_meaning", "").strip(),
-                })
-
-                takeaway = " ".join(
-                    part for part in [
-                        gene_section.get("why_it_matters", "").strip(),
-                        gene_section.get("clinical_meaning", "").strip(),
-                    ]
-                    if part
+                        "citation_rules": gene_citation_rules.get(gene, ""),
+                        "evidence_context": gene_context_map.get(gene, ""),
+                    })
+                generated = self._generate_gene_group_sections(
+                    group_label=group_label,
+                    genes=evidence_inputs,
+                    language=language,
                 )
-                if takeaway:
-                    gene_takeaways.append(f"{gene}: {takeaway}")
-                mark_timing(f"gene_section::{gene}_s", one_gene_started_at, f'Gene section drafting for "{gene}"')
-            mark_timing("gene_sections_total_s", gene_sections_started_at, "All gene section drafting", genes=len(target_genes))
+                structured_sections.append(f"## {group_label}")
+                for gene in group_genes:
+                    contribution = float(contribution_lookup.get(gene, 0.0))
+                    gene_section = generated.get(gene.upper())
+                    if gene_section is None:
+                        gene_section = {
+                            "disease_relevance": (
+                                "현재 이 유전자에 대해 인용 가능한 문헌이 색인되어 있지 않습니다. 보완 검색은 백그라운드에서 진행됩니다."
+                                if language == "ko"
+                                else "No citable literature is currently indexed for this gene; fallback retrieval is running in the background."
+                            ),
+                        }
+                    section_parts = [
+                        f"### {gene}",
+                        gene_section.get("disease_relevance", "").strip(),
+                    ]
+                    section_text = "\n\n".join([part for part in section_parts if part.strip()])
+                    if section_text.strip():
+                        structured_sections.append(section_text)
+                    raw_gene_sections.append({
+                        "gene": gene,
+                        "group": group_key,
+                        "group_title": group_label,
+                        "individual_contribution": contribution,
+                        "disease_relevance": gene_section.get("disease_relevance", "").strip(),
+                    })
+                    takeaway = gene_section.get("disease_relevance", "").strip()
+                    if takeaway:
+                        gene_takeaways.append(f"{gene}: {takeaway}")
+            mark_timing("gene_sections_total_s", gene_sections_started_at, "Gene evidence drafting", genes=len(target_genes), sections=2)
 
             verified_rows_started_at = time.perf_counter()
             verified_database_block = self._render_verified_databases_section(target_genes, language=language)
@@ -1073,21 +1098,18 @@ class ExplanationAgent:
                 chunk_by_global_id,
             )
         )
-        intro_text = self._remap_citations(intro_text, old_to_display).strip()
         integrated_view_text = self._remap_citations(locals().get("integrated_view_text", ""), old_to_display).strip()
         remapped_gene_sections: list[dict[str, Any]] = []
         for section in raw_gene_sections:
             remapped_gene_sections.append({
                 "gene": section["gene"],
+                "group": section.get("group"),
+                "group_title": section.get("group_title"),
                 "individual_contribution": section["individual_contribution"],
                 "titles": {
-                    "why_it_matters": ui_label(language, "why_it_matters"),
                     "disease_relevance": self._disease_relevance_label(language),
-                    "clinical_meaning": ui_label(language, "clinical_meaning"),
                 },
-                "why_it_matters": self._remap_citations(section["why_it_matters"], old_to_display).strip(),
                 "disease_relevance": self._remap_citations(section["disease_relevance"], old_to_display).strip(),
-                "clinical_meaning": self._remap_citations(section["clinical_meaning"], old_to_display).strip(),
             })
 
         mark_timing("reference_formatting_s", reference_format_started_at, "Reference formatting", refs=len(references_out), live=False)
@@ -1106,6 +1128,7 @@ class ExplanationAgent:
             bottom_rows=bottom_rows,
             gene_sections=remapped_gene_sections,
             language=language,
+            plain_language_interpretation=integrated_view_text,
         )
 
         disclaimer_title = ui_label(language, "disclaimer_title")
@@ -1123,6 +1146,7 @@ class ExplanationAgent:
             "individual_id": pid,
             "language": language,
             "gene_count": len(target_genes),
+            "genes_per_section": selected_count,
             "disclaimer": {
                 "title": disclaimer_title,
                 "body": disclaimer_body,
@@ -1131,15 +1155,12 @@ class ExplanationAgent:
             "top_genes": {
                 "title": ui_label(language, "top_genes"),
                 "rows": top_rows,
-                "selected_genes": target_genes,
+                "selected_genes": top_selected_genes,
             },
             "bottom_genes": {
                 "title": ui_label(language, "bottom_genes"),
                 "rows": bottom_rows,
-            },
-            "key_findings": {
-                "title": ui_label(language, "key_findings"),
-                "body": intro_text,
+                "selected_genes": bottom_selected_genes,
             },
             "gene_sections": remapped_gene_sections,
             "verified_databases": {
@@ -1184,7 +1205,7 @@ class ExplanationAgent:
         self,
         pid: str,
         question: str,
-        gene_count: int = 2,
+        gene_count: int = 5,
         existing_references: list[dict[str, Any]] | None = None,
         conversation_history: list[str] | None = None,
         conversation_state: dict[str, Any] | None = None,

@@ -578,13 +578,20 @@ def split_reference_genes(gene_text: str) -> list[str]:
 
 def publication_dedup_key(record: dict[str, Any]) -> str:
     """Return a provider-neutral key when shared identifiers are available."""
-    pmid = str(record.get("pmid") or "").strip()
+    external_ids = (
+        record.get("externalIds")
+        if isinstance(record.get("externalIds"), dict)
+        else {}
+    )
+    pmid = str(record.get("pmid") or external_ids.get("PubMed") or "").strip()
     if pmid:
         return f"PMID:{pmid}"
-    pmcid = str(record.get("pmcid") or "").strip().upper()
+    pmcid = str(
+        record.get("pmcid") or external_ids.get("PubMedCentral") or ""
+    ).strip().upper()
     if pmcid:
         return f"PMCID:{pmcid}"
-    doi = str(record.get("doi") or "").strip().lower()
+    doi = str(record.get("doi") or external_ids.get("DOI") or "").strip().lower()
     if doi:
         return f"DOI:{doi}"
     return extract_publication_id(record)
@@ -692,6 +699,27 @@ def has_zero_citation_count(record: dict[str, Any]) -> bool:
         return int(value) == 0
     except (TypeError, ValueError):
         return False
+
+
+NON_ARTICLE_NOTICE_RE = re.compile(
+    r"^\s*(correction|erratum|retraction|expression\s+of\s+concern)\s*:",
+    flags=re.IGNORECASE,
+)
+
+
+def is_non_article_notice_title(title: str) -> bool:
+    return bool(NON_ARTICLE_NOTICE_RE.search(title or ""))
+
+
+def literature_paper_is_eligible(record: dict[str, Any], gene: str) -> bool:
+    """Apply the complete cache-to-Chroma publication eligibility policy."""
+    return bool(
+        extract_publication_id(record)
+        and str(record.get("abstract") or "").strip()
+        and not has_zero_citation_count(record)
+        and not is_non_article_notice_title(str(record.get("title") or ""))
+        and paper_gene_identity_is_valid(record, gene)
+    )
 
 
 def build_reference_hit(
@@ -819,10 +847,11 @@ def merge_references_preserve_numbers(
         else:
             existing_ref = next((item for item in merged if item.get("n") == canonical_n), None)
             if existing_ref is not None:
-                existing_gene = (existing_ref.get("gene") or "").strip()
-                new_gene = (ref.get("gene") or "").strip()
-                if new_gene and new_gene not in [g.strip() for g in existing_gene.split(",") if g.strip()]:
-                    existing_ref["gene"] = ", ".join([part for part in [existing_gene, new_gene] if part])
+                existing_genes = split_reference_genes(str(existing_ref.get("gene") or ""))
+                new_genes = split_reference_genes(str(ref.get("gene") or ""))
+                merged_genes = unique_preserving_order([*existing_genes, *new_genes])
+                if merged_genes:
+                    existing_ref["gene"] = ", ".join(merged_genes)
 
                 existing_phenotype = (existing_ref.get("phenotype") or "").strip()
                 new_phenotype = (ref.get("phenotype") or "").strip()

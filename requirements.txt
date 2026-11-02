@@ -1,15 +1,20 @@
-fastapi
-uvicorn[standard]
-pydantic
-python-dotenv
+# Pinned dependencies for the XPRS Portal Python 3.11 runtime.
+# The additional index supplies the CPU-only PyTorch wheel.
+--extra-index-url https://download.pytorch.org/whl/cpu
 
-pandas
-numpy
-scipy
-pyarrow
+fastapi==0.115.9
+uvicorn[standard]==0.34.2
+pydantic==2.12.4
+python-dotenv==1.1.0
 
-openai
-requests
-chromadb
-sentence-transformers
-reportlab
+pandas==2.2.3
+numpy==1.26.4
+scipy==1.15.3
+pyarrow==20.0.0
+
+openai==2.30.0
+requests==2.32.5
+chromadb==1.0.12
+sentence-transformers==4.1.0
+reportlab==4.5.0
+torch==2.6.0+cpu

@@ -22,8 +22,6 @@ docs/weekly-progress-*.md
 # Runtime state
 logs/*
 !logs/.gitkeep
-cache_s2/*
-!cache_s2/.gitkeep
 cache_literature/*
 !cache_literature/.gitkeep
 chroma/*
@@ -48,11 +46,10 @@ data_private/
 *_cohort.rds
 xprs_rare_findings_*.tsv
 
-# Large/derived R inputs and generated browser plot payloads
+# Large/derived R inputs
 r/*.RDS
 r/*.rds
 r/*.fam
-static/plots/*
 
 # Source-paper copies are local inputs; curated Markdown notes remain publishable.
 ref/*.pdf

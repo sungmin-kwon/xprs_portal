@@ -12,7 +12,7 @@
 
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css?v=0.16.11" />
-  <link rel="stylesheet" href="/static/dashboard.css?v=89" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=90" />
   <link rel="stylesheet" href="/static/rare_variant_detail.css?v=1" />
 </head>
 
@@ -79,7 +79,11 @@
     <main class="page">
       <div class="left-column">
         <section class="panel viz-panel" style="display:flex; flex-direction:column;">
-          <div class="panel-header">
+          <div class="panel-header visualization-panel-header">
+            <button id="generate-visualizations-btn" class="primary-header-btn visualization-generate-btn" type="button" disabled>
+              <span class="material-symbols-outlined" aria-hidden="true">monitoring</span>
+              <span id="generate-visualizations-label" data-i18n="generateVisualizations">Generate Visualizations</span>
+            </button>
             <div class="status" id="viz-status"></div>
           </div>
 
@@ -101,6 +105,10 @@
                 </button>
               </div>
               <div class="viz-content">
+                <div id="density-plot-placeholder" class="viz-empty-state visualization-prompt">
+                  <span class="material-symbols-outlined" aria-hidden="true">monitoring</span>
+                  <p data-i18n="visualizationPrompt">Generate visualizations to view this plot.</p>
+                </div>
                 <div id="density-plot" class="plotly-box" style="display:none;"></div>
               </div>
             </div>
@@ -120,6 +128,10 @@
                 </button>
               </div>
               <div class="viz-content">
+                <div id="manhattan-plot-placeholder" class="viz-empty-state visualization-prompt">
+                  <span class="material-symbols-outlined" aria-hidden="true">monitoring</span>
+                  <p data-i18n="visualizationPrompt">Generate visualizations to view this plot.</p>
+                </div>
                 <div id="manhattan-plot" class="plotly-box" style="display:none;"></div>
               </div>
             </div>
@@ -276,8 +288,8 @@
 
         <section class="landing-section landing-section--gene-count">
           <div class="landing-section__copy">
-            <label id="gene-count-label" data-i18n="geneCountLabel">Genes to Include</label>
-            <div class="landing-section__hint" data-i18n="geneCountHint">Choose how many of this individual's highest-contributing genes to interpret in detail</div>
+            <label id="gene-count-label" data-i18n="geneCountLabel">Genes per Section</label>
+            <div class="landing-section__hint" data-i18n="geneCountHint">Include this many risk-increasing and risk-lowering genes</div>
           </div>
           <div class="gene-count-slider-wrap">
             <input
@@ -287,9 +299,9 @@
               min="1"
               max="5"
               step="1"
-              value="2"
+              value="5"
               aria-labelledby="gene-count-label"
-              aria-valuetext="2 genes"
+              aria-valuetext="5 genes per section"
             >
             <div class="gene-count-scale" aria-hidden="true">
               <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
@@ -329,7 +341,7 @@
   <script src="/static/vendor/katex/katex.min.js?v=0.16.11"></script>
   <script src="/static/vendor/katex/contrib/auto-render.min.js?v=0.16.11"></script>
   <script src="/static/rare_variant_detail.js?v=1"></script>
-  <script src="/static/dashboard.js?v=108"></script>
+  <script src="/static/dashboard.js?v=110"></script>
 
 </body>
 </html>

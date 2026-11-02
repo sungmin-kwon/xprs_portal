@@ -61,9 +61,9 @@ def run_chat_request(req: ChatRequest, progress_callback=None, data_root=None) -
     session["disease_display_name"] = disease_config.display_name
     session["cohort"] = cohort.slug
     try:
-        gene_count = int(session.get("gene_count") or session.get("gene_count_used") or 2)
+        gene_count = int(session.get("gene_count") or session.get("gene_count_used") or 5)
     except (TypeError, ValueError):
-        gene_count = 2
+        gene_count = 5
     gene_count = max(1, min(gene_count, expl_agent.MAX_SUMMARY_GENES))
     existing_references = session.get("references", [])
     # K-PREDICT summaries contain locally calculated scores for display. Do not

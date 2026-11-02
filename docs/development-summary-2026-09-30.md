@@ -184,8 +184,9 @@ The repository was prepared for a public/private split in which code is public
 and controlled cohort data remain external:
 
 - Private source files, derived releases, caches, vector stores, session logs,
-  generated plots, evaluation responses, and local environments are excluded
-  through `.gitignore`.
+  evaluation responses, and local environments are excluded through `.gitignore`.
+  Plot payloads are now generated in memory rather than written beneath
+  `static/`.
 - Legacy R scripts that depended on unavailable local source data were removed;
   the remaining `r/README.md` explains the legacy rebuild boundary.
 - `README.md`, `DATA_ACCESS.md`, `SECURITY.md`, `NOTICE.md`, and the data

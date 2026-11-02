@@ -67,9 +67,25 @@ class SemanticScholarRuntimeTests(unittest.TestCase):
     @patch("agents.semantic_scholar.requests.get")
     def test_manual_key_probe_distinguishes_invalid_and_rate_limited(self, mock_get):
         mock_get.return_value = FakeResponse(403, text="forbidden")
-        self.assertEqual(self.make_agent().probe_api_key()["status"], "invalid")
+        invalid = self.make_agent().probe_api_key()
+        self.assertEqual(invalid["status"], "invalid")
+        self.assertEqual(invalid["query"], "human genetics")
         mock_get.return_value = FakeResponse(429)
         self.assertEqual(self.make_agent().probe_api_key()["status"], "rate_limited")
+
+    @patch("agents.semantic_scholar.requests.get")
+    def test_key_probe_does_not_replace_pool_specific_attempt(self, mock_get):
+        agent = self.make_agent()
+        agent._update_status(last_status_code=429, last_error="rate limited")
+        agent._record_cached_query_request("TP53", None, succeeded=False)
+
+        mock_get.return_value = FakeResponse(200, data={"data": []})
+        self.assertEqual(agent.probe_api_key()["status"], "ok")
+
+        attempt = agent.get_query_attempts()[0]
+        self.assertEqual(attempt["gene"], "TP53")
+        self.assertEqual(attempt["outcome"], "rate_limited")
+        self.assertEqual(attempt["http_status"], 429)
 
     def test_chroma_process_lock_rejects_a_second_writer(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
@@ -11,9 +10,7 @@ from starlette.requests import Request
 from agents.explanation import ExplanationAgent
 from routes.summary import summary_preview
 from schemas import SummaryRequest
-
-
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support import ContractTestCase, ROOT
 
 
 class FakeGeneAgent:
@@ -30,20 +27,27 @@ class FakeGeneAgent:
         })
         return top, pd.DataFrame()
 
+    def get_bottom_genes(self, pid=None, bottom_n=None, **_kwargs):
+        count = bottom_n or self.default_top_n
+        return pd.DataFrame({
+            "Gene": [f"LOW_{index}" for index in range(1, count + 1)],
+            "contribution": [-float(index) for index in range(1, count + 1)],
+        })
+
 
 class FakeExplanationAgent:
     def __init__(self):
         self.gene_agent = FakeGeneAgent()
 
 
-class SummaryGeneSelectionTests(unittest.TestCase):
+class SummaryGeneSelectionTests(ContractTestCase):
     @staticmethod
     def request():
         return Request({"type": "http", "headers": []})
 
-    def test_summary_request_defaults_to_two_genes(self):
+    def test_summary_request_defaults_to_five_genes_per_section(self):
         request = SummaryRequest(individual_id="HG00001")
-        self.assertEqual(request.gene_count, 2)
+        self.assertEqual(request.gene_count, 5)
 
     def test_summary_request_rejects_counts_outside_one_to_five(self):
         for invalid_count in (0, 6):
@@ -51,14 +55,17 @@ class SummaryGeneSelectionTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     SummaryRequest(individual_id="HG00001", gene_count=invalid_count)
 
-    def test_target_genes_are_the_requested_top_contributors(self):
+    def test_target_genes_include_both_contribution_directions(self):
         agent = ExplanationAgent.__new__(ExplanationAgent)
         agent.gene_agent = FakeGeneAgent()
 
-        self.assertEqual(agent.get_target_genes("HG00001"), ["GENE_A", "GENE_B"])
         self.assertEqual(
-            agent.get_target_genes("HG00001", gene_count=4),
-            ["GENE_A", "GENE_B", "GENE_C", "GENE_D"],
+            agent.get_target_genes("HG00001"),
+            ["GENE_A", "GENE_B", "GENE_C", "GENE_D", "GENE_E", "LOW_1", "LOW_2", "LOW_3", "LOW_4", "LOW_5"],
+        )
+        self.assertEqual(
+            agent.get_target_genes("HG00001", gene_count=2),
+            ["GENE_A", "GENE_B", "LOW_1", "LOW_2"],
         )
 
     def test_simple_summary_restores_compact_top_and_bottom_five_rankings(self):
@@ -87,9 +94,18 @@ class SummaryGeneSelectionTests(unittest.TestCase):
             bottom_rows=bottom_rows,
             gene_sections=[],
             language="en",
+            plain_language_interpretation=(
+                "The strongest contributions cluster around insulin-producing cell function [1,3].\n\n"
+                "These model contributions do not prove that the selected genes cause disease [6]."
+            ),
         )
 
-        self.assertIn("Gene Contribution Rankings", summary)
+        self.assertIn("Plain-Language Interpretation", summary)
+        self.assertIn("insulin-producing cell function [1,3]", summary)
+        self.assertIn("do not prove", summary)
+        self.assertLess(summary.index("Risk Overview"), summary.index("Plain-Language Interpretation"))
+        self.assertLess(summary.index("Plain-Language Interpretation"), summary.index("Top 5 (risk-increasing)"))
+        self.assertIn("insulin-producing cell function", payload["plain_language_interpretation"])
         self.assertIn("Top 5 (risk-increasing)", summary)
         self.assertIn("Bottom 5 (risk-lowering)", summary)
         self.assertIn("TOP_5", summary)
@@ -104,26 +120,37 @@ class SummaryGeneSelectionTests(unittest.TestCase):
         with patch("routes.summary.get_expl_agent", return_value=FakeExplanationAgent()):
             result = summary_preview(request, self.request())
 
-        self.assertEqual(result["genes"], ["GENE_A", "GENE_B", "GENE_C"])
-        self.assertEqual(result["gene_count"], 3)
+        self.assertEqual(
+            result["genes"],
+            ["GENE_A", "GENE_B", "GENE_C", "LOW_1", "LOW_2", "LOW_3"],
+        )
+        self.assertEqual(result["gene_count"], 6)
 
-    def test_dashboard_uses_a_bounded_slider_with_two_gene_default(self):
+    def test_dashboard_gene_selection_controls(self):
+        self.run_contract_checks((
+            "_check_dashboard_uses_a_bounded_slider_with_five_gene_default",
+            "_check_slider_updates_the_existing_gene_count_pipeline",
+            "_check_chat_composer_controls_share_height_and_alignment",
+            "_check_slider_labels_account_for_thumb_center",
+        ))
+
+    def _check_dashboard_uses_a_bounded_slider_with_five_gene_default(self):
         html = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
         self.assertIn('type="range"', html)
         self.assertIn('id="summary-gene-count"', html)
         self.assertIn('min="1"', html)
         self.assertIn('max="5"', html)
         self.assertIn('step="1"', html)
-        self.assertIn('value="2"', html)
+        self.assertIn('value="5"', html)
         self.assertNotIn("data-gene-count", html)
         self.assertNotIn('id="gene-count-value"', html)
 
-    def test_slider_updates_the_existing_gene_count_pipeline(self):
+    def _check_slider_updates_the_existing_gene_count_pipeline(self):
         javascript = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
         self.assertIn('summaryGeneCount.addEventListener("input"', javascript)
         self.assertIn("setSummaryGeneCount(summaryGeneCount.value", javascript)
 
-    def test_chat_composer_controls_share_height_and_alignment(self):
+    def _check_chat_composer_controls_share_height_and_alignment(self):
         css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 
         self.assertIn("--composer-control-height: 46px", css)
@@ -131,7 +158,7 @@ class SummaryGeneSelectionTests(unittest.TestCase):
         self.assertIn("margin: 0;", css)
         self.assertIn("line-height: 1;", css)
 
-    def test_slider_labels_account_for_thumb_center(self):
+    def _check_slider_labels_account_for_thumb_center(self):
         css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 
         self.assertIn("--slider-thumb-size: 1.25rem", css)

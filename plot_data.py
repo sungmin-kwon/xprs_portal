@@ -1,4 +1,3 @@
-import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -175,23 +174,3 @@ def load_plot_data_store(disease: str = "breast_cancer") -> PlotDataStore:
         full_prs=full_prs,
         disease_config=config,
     )
-
-
-def write_plotdata_files(individual_id: str, out_dir: Path, disease: str = "breast_cancer") -> dict[str, Path]:
-    config = enabled_disease_config(disease)
-    store = load_plot_data_store(config.slug)
-    payload = store.build_plot_payload(individual_id)
-
-    out_dir.mkdir(parents=True, exist_ok=True)
-    manhattan_path = out_dir / f"{individual_id}_manhattan.json"
-    density_path = out_dir / f"{individual_id}_density.json"
-
-    with open(manhattan_path, "w", encoding="utf-8") as f:
-        json.dump(payload["manhattan"], f, ensure_ascii=False)
-    with open(density_path, "w", encoding="utf-8") as f:
-        json.dump(payload["density"], f, ensure_ascii=False)
-
-    return {
-        "manhattan": manhattan_path,
-        "density": density_path,
-    }
