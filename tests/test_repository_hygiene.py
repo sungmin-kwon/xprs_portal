@@ -29,6 +29,24 @@ class RepositoryHygieneTests(unittest.TestCase):
         self.assertIsNotNone(pseudonym_pattern.search(private_style_id))
         self.assertIsNone(pseudonym_pattern.search(b"KP-ABCDEF123456"))
 
+    def test_deployment_specific_paths_and_hosts_are_rejected(self):
+        patterns = {rule: pattern for pattern, rule in PRIVATE_SOURCE_PATTERNS}
+        self.assertIsNotNone(
+            patterns["deployment home path"].search(
+                b"/data/" + b"home/example-user/xprs_portal"
+            )
+        )
+        self.assertIsNotNone(
+            patterns["deployment host IP"].search(
+                b"http://" + b"192.0.2.10:9009/admin/documents"
+            )
+        )
+        self.assertIsNone(
+            patterns["deployment host IP"].search(
+                b"http://127.0.0.1:9009/healthz"
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

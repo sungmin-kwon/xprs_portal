@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+import threading
 
 from agents.rag import RAGAgent
 from tests.support import ROOT
@@ -54,8 +55,11 @@ class FakeCollection:
             },
         ]
 
-    def get(self, where=None, include=None, **_kwargs):
+    def get(self, where=None, include=None, ids=None, **_kwargs):
         rows = self.rows
+        if ids is not None:
+            wanted = set(ids)
+            rows = [row for row in rows if row["id"] in wanted]
         if where:
             rows = [
                 row
@@ -72,11 +76,22 @@ class FakeCollection:
             else None,
         }
 
+    def delete(self, ids=None, where=None):
+        if ids is not None:
+            wanted = set(ids)
+            self.rows = [row for row in self.rows if row["id"] not in wanted]
+        elif where:
+            self.rows = [
+                row for row in self.rows
+                if not all(row["metadata"].get(key) == value for key, value in where.items())
+            ]
+
 
 class AdminDocumentBrowserTests(unittest.TestCase):
     def setUp(self):
         self.rag = RAGAgent.__new__(RAGAgent)
         self.rag._collection = FakeCollection()
+        self.rag._upsert_lock = threading.Lock()
 
     def test_inventory_groups_documents_by_gene_and_pool(self):
         inventory = self.rag.document_inventory()
@@ -167,6 +182,23 @@ class AdminDocumentBrowserTests(unittest.TestCase):
         )
         self.assertEqual(europe_pmc["total"], 1)
         self.assertEqual(europe_pmc["documents"][0]["source"], "europe_pmc")
+
+    def test_one_exact_document_can_be_deleted_without_touching_other_records(self):
+        deleted = self.rag.delete_document_by_id("s2::phenotype::GENE1::b")
+
+        self.assertEqual(deleted["gene"], "GENE1")
+        self.assertEqual(deleted["source"], "semanticscholar")
+        remaining = self.rag.browse_documents(gene="GENE1")
+        self.assertEqual(remaining["total"], 2)
+        self.assertNotIn(
+            "s2::phenotype::GENE1::b",
+            [row["id"] for row in remaining["documents"]],
+        )
+        self.assertEqual(len(self.rag._collection.rows), 3)
+
+    def test_deleting_an_unknown_document_is_a_noop(self):
+        self.assertIsNone(self.rag.delete_document_by_id("missing"))
+        self.assertEqual(len(self.rag._collection.rows), 4)
 
 
 if __name__ == "__main__":

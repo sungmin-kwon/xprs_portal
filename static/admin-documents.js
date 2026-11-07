@@ -5,7 +5,7 @@
   const state = {
     coverage: null, inventory: null, view: "coverage", selectedGene: "",
     pool: "all", source: "all", phenotype: "", search: "", sort: "citations_desc", offset: 0,
-    coverageState: "all", coveragePool: "all", requestController: null, manualQueryKey: "", checkingS2: false, lastS2Check: null, enrichmentPollTimer: null,
+    coverageState: "all", coveragePool: "all", requestController: null, manualQueryKey: "", checkingS2: false, lastS2Check: null, enrichmentPollTimer: null, deleteTarget: null, deletingDocument: false,
   };
   const byId = (id) => document.getElementById(id);
   const elements = {
@@ -22,10 +22,13 @@
     coverageCount: byId("coverage-count"), coverageBody: byId("coverage-table-body"), coverageEmpty: byId("coverage-empty"),
     retrievalNotice: byId("retrieval-notice"),
     poolFilter: byId("pool-filter"), sourceFilter: byId("source-filter"), phenotypeFilter: byId("phenotype-filter"), documentSearch: byId("document-search"),
-    sortFilter: byId("sort-filter"), resultsCount: byId("results-count"), documentList: byId("document-list"),
+    sortFilter: byId("sort-filter"), resultsCount: byId("results-count"), documentNotice: byId("document-notice"), documentList: byId("document-list"),
     pagination: byId("pagination"), previousPage: byId("previous-page"), nextPage: byId("next-page"), pageIndicator: byId("page-indicator"),
     accessDialog: byId("admin-access-dialog"), accessForm: byId("admin-access-form"),
     accessCode: byId("admin-access-code"), accessStatus: byId("admin-access-status"), accessSubmit: byId("admin-access-submit"),
+    deleteDialog: byId("document-delete-dialog"), deleteForm: byId("document-delete-form"),
+    deleteName: byId("document-delete-name"), deleteStatus: byId("document-delete-status"),
+    deleteCancel: byId("document-delete-cancel"), deleteSubmit: byId("document-delete-submit"),
   };
 
   const formatNumber = (value) => new Intl.NumberFormat().format(Number(value || 0));
@@ -170,18 +173,18 @@
       const action = document.createElement("button");
       action.type = "button";
       action.className = "query-button";
-      const canContinue = Boolean(pool.incomplete_providers?.length);
+      const canRetry = Boolean(pool.incomplete_providers?.length);
       const hasIndexableCache = Number(pool.eligible_count || 0) > 0 && !pool.documents;
       action.textContent = pendingJob
         ? pendingJob.state === "queued" ? "Queued" : "In progress"
         : hasIndexableCache ? "Index cache"
-          : canContinue ? "Continue search" : "Search sources";
+          : canRetry ? "Retry fallback" : "Search sources";
       action.title = pendingJob
         ? `${pendingJob.query} is already ${pendingJob.state === "queued" ? "queued" : "being handled"}`
         : hasIndexableCache
           ? "Index eligible papers already present in the provider cache"
-          : canContinue
-            ? "Request one additional provider search page"
+          : canRetry
+            ? "Retry the one-shot Semantic Scholar fallback after an incomplete request"
             : "Search the configured literature providers and index eligible results";
       action.disabled = Boolean(pendingJob) || Boolean(state.manualQueryKey) || state.checkingS2;
       action.addEventListener("click", (event) => {
@@ -216,7 +219,7 @@
     elements.healthQueue.dataset.tone = queued ? "warning" : "good";
     elements.healthQueueDetail.textContent = queue.worker_alive === false
       ? "Worker is not running"
-      : `One page per action · ${queue.targets?.api_key_min_interval_seconds || "—"}s Semantic Scholar request spacing`;
+      : `One fallback request per query · up to 10 papers · ${queue.targets?.api_key_min_interval_seconds || "—"}s request spacing`;
     const jobs = queue.jobs || [];
     elements.queueBacklog.hidden = jobs.length === 0;
     elements.queueBacklogSummary.textContent = jobs.length === 1 ? "View 1 request" : `View ${formatNumber(jobs.length)} requests`;
@@ -393,7 +396,10 @@
     const heading = document.createElement("h2"); heading.className = "document-title";
     if (item.url && /^https?:\/\//i.test(item.url)) { const link = document.createElement("a"); link.href = item.url; link.target = "_blank"; link.rel = "noreferrer"; link.textContent = item.title; heading.appendChild(link); } else heading.textContent = item.title;
     titleArea.append(badges, heading);
-    const citations = document.createElement("div"); citations.className = "citation-count"; const value = document.createElement("strong"); value.textContent = item.citation_count == null ? "—" : formatNumber(item.citation_count); citations.append(value, document.createTextNode("citations")); header.append(titleArea, citations); card.appendChild(header);
+    const cardActions = document.createElement("div"); cardActions.className = "document-card-actions";
+    const citations = document.createElement("div"); citations.className = "citation-count"; const value = document.createElement("strong"); value.textContent = item.citation_count == null ? "—" : formatNumber(item.citation_count); citations.append(value, document.createTextNode("citations"));
+    const deleteButton = document.createElement("button"); deleteButton.type = "button"; deleteButton.className = "document-delete-button"; deleteButton.textContent = "Delete"; deleteButton.addEventListener("click", () => openDeleteDialog(item));
+    cardActions.append(citations, deleteButton); header.append(titleArea, cardActions); card.appendChild(header);
     const sourceLabel = item.source === "europe_pmc" ? "Europe PMC" : item.source === "semanticscholar" ? "Semantic Scholar" : titleCase(item.source || "unknown");
     const meta = document.createElement("p"); meta.className = "metadata-line"; meta.textContent = [sourceLabel, item.journal, item.phenotype ? `Phenotype: ${item.phenotype}` : "", item.paper_id ? `ID: ${item.paper_id}` : ""].filter(Boolean).join(" · "); card.appendChild(meta);
     const entityLine = document.createElement("div"); entityLine.className = "entity-line"; appendEntity(entityLine, "Genes", item.extracted_genes); appendEntity(entityLine, "Phenotypes", item.extracted_phenotypes); if (entityLine.childElementCount) card.appendChild(entityLine);
@@ -416,6 +422,60 @@
     const params = new URLSearchParams({ gene: state.selectedGene, pool: state.pool, source: state.source, phenotype: state.phenotype, search: state.search, sort: state.sort, offset: String(state.offset), limit: String(PAGE_SIZE) });
     try { renderDocuments(await fetchJson(`/api/admin/documents?${params}`, state.requestController.signal)); }
     catch (error) { if (error.name !== "AbortError") renderError(error.message || "Unable to load documents."); }
+  }
+
+  function showDocumentNotice(message, tone) {
+    elements.documentNotice.hidden = !message;
+    elements.documentNotice.className = `retrieval-notice ${tone || ""}`.trim();
+    elements.documentNotice.textContent = message || "";
+  }
+
+  function openDeleteDialog(item) {
+    state.deleteTarget = item;
+    elements.deleteName.textContent = item.title || "Untitled document";
+    elements.deleteStatus.textContent = "";
+    elements.deleteSubmit.disabled = false;
+    elements.deleteCancel.disabled = false;
+    if (typeof elements.deleteDialog.showModal === "function") elements.deleteDialog.showModal();
+    else elements.deleteDialog.setAttribute("open", "");
+  }
+
+  function closeDeleteDialog() {
+    if (state.deletingDocument) return;
+    state.deleteTarget = null;
+    if (typeof elements.deleteDialog.close === "function") elements.deleteDialog.close();
+    else elements.deleteDialog.removeAttribute("open");
+  }
+
+  async function deleteSelectedDocument(event) {
+    event.preventDefault();
+    if (!state.deleteTarget || state.deletingDocument) return;
+    const target = state.deleteTarget;
+    state.deletingDocument = true;
+    elements.deleteSubmit.disabled = true;
+    elements.deleteCancel.disabled = true;
+    elements.deleteStatus.textContent = "Deleting indexed document…";
+    try {
+      const response = await fetch("/api/admin/document-delete", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document_id: target.id }),
+      });
+      if (!response.ok) throw new Error(response.status === 404 ? "The indexed document no longer exists." : `HTTP ${response.status}`);
+      const result = await response.json();
+      state.deleteTarget = null;
+      elements.deleteDialog.close();
+      showDocumentNotice(`Deleted “${result.document?.title || target.title}” from the vector store. The provider cache was preserved.`, "is-success");
+      await Promise.all([loadDocuments(), refreshCoverageData()]);
+    } catch (error) {
+      elements.deleteStatus.textContent = error.message || "Unable to delete the indexed document.";
+    } finally {
+      state.deletingDocument = false;
+      elements.deleteSubmit.disabled = false;
+      elements.deleteCancel.disabled = false;
+    }
   }
 
   function showRetrievalNotice(message, tone) {
@@ -475,11 +535,11 @@
       if (result.status === "already_complete") {
         showRetrievalNotice(`${queryLabel}: the configured search stopping rule was already reached.`, "is-success");
       } else if (result.status === "indexed" || result.status === "already_indexed") {
-        showRetrievalNotice(`${queryLabel}: documents are now indexed${result.scheduled ? "; one continuation page is queued" : ""}.`, "is-success");
+        showRetrievalNotice(`${queryLabel}: documents are now indexed${result.scheduled ? "; one Semantic Scholar fallback request is queued" : ""}.`, "is-success");
       } else if (result.status === "enrichment_queued") {
         showRetrievalNotice(result.documents_present
           ? `${queryLabel}: additional retrieval is queued; the existing indexed documents remain available.`
-          : `${queryLabel}: no eligible documents are indexed yet; one additional search page is queued.`, "is-neutral");
+          : `${queryLabel}: no eligible documents are indexed yet; one Semantic Scholar fallback request is queued.`, "is-neutral");
       } else if (result.status === "enrichment_pending") {
         showRetrievalNotice(result.documents_present
           ? `${queryLabel}: additional retrieval is already queued or in progress; the existing indexed documents remain available.`
@@ -611,6 +671,9 @@
 
   document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => { showView(button.dataset.view); if (button.dataset.view === "documents" && state.selectedGene) loadDocuments(); }));
   elements.accessDialog.addEventListener("cancel", (event) => event.preventDefault());
+  elements.deleteDialog.addEventListener("cancel", (event) => { event.preventDefault(); closeDeleteDialog(); });
+  elements.deleteForm.addEventListener("submit", deleteSelectedDocument);
+  elements.deleteCancel.addEventListener("click", closeDeleteDialog);
   elements.s2KeyCheck.addEventListener("click", runS2KeyCheck);
   elements.geneSearch.addEventListener("input", () => { renderGeneList(); renderCoverageTable(); });
   elements.coverageState.addEventListener("change", () => { state.coverageState = elements.coverageState.value; renderCoverageTable(); });

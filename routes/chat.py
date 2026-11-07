@@ -45,6 +45,16 @@ def _validate_generation_model(model: str | None) -> None:
         raise HTTPException(status_code=400, detail=f"Unsupported generation model: {model}")
 
 
+def _latest_assistant_response(session: dict) -> str:
+    for message in reversed(session.get("messages") or []):
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        content = str(message.get("content") or "").strip()
+        if content:
+            return content
+    return str(session.get("simple_summary") or "").strip()
+
+
 def run_chat_request(req: ChatRequest, progress_callback=None, data_root=None) -> ChatResponse:
     disease_config = _disease_config(req)
     cohort = get_cohort_config(req.cohort)
@@ -66,9 +76,10 @@ def run_chat_request(req: ChatRequest, progress_callback=None, data_root=None) -
         gene_count = 5
     gene_count = max(1, min(gene_count, expl_agent.MAX_SUMMARY_GENES))
     existing_references = session.get("references", [])
-    # K-PREDICT summaries contain locally calculated scores for display. Do not
-    # feed those prior assistant messages back into an external model. The
-    # current user question and disease/gene-only model context are sufficient.
+    # K-PREDICT summaries contain locally calculated scores for display, so the
+    # ordinary follow-up prompt never receives prior assistant messages. A
+    # dedicated translation path may use the latest answer only after masking
+    # private values and restoring them locally after the model response.
     recent_history = [] if cohort.slug == "kpredict" else [
         str(msg.get("content") or "")
         for msg in session.get("messages", [])[-4:]
@@ -79,8 +90,18 @@ def run_chat_request(req: ChatRequest, progress_callback=None, data_root=None) -
         req.query,
         gene_count=gene_count,
         existing_references=existing_references,
+        summary_context={
+            "Detailed Explanation": session.get("detailed_summary", ""),
+            "Generated Explanation": session.get("detailed_summary", ""),
+            "References": existing_references,
+            "RAG Context Compact": session.get("rag_context_compact", ""),
+            "Model Safe Context": session.get("model_safe_context", ""),
+            "Report Payload": session.get("report_payload", {}),
+            "Gene Count Used": session.get("gene_count_used") or gene_count,
+        },
         conversation_history=recent_history,
         conversation_state=session.get("conversation_state", {}),
+        prior_assistant_response=_latest_assistant_response(session),
         language=req.language or session.get("language", "en"),
         progress_callback=progress_callback,
     )

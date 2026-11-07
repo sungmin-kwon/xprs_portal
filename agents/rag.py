@@ -134,6 +134,35 @@ class RAGAgent:
         with self._upsert_lock:
             self._collection.delete(where=where)
 
+    def delete_document_by_id(self, document_id: str) -> Dict[str, Any] | None:
+        """Delete one exact Chroma record and return its display metadata.
+
+        Provider caches are intentionally outside this operation. An admin can
+        therefore remove a bad indexed record without destroying the original
+        retrieval response, and a later explicit re-index can restore it.
+        """
+        wanted = str(document_id or "").strip()
+        if not wanted:
+            return None
+        with self._upsert_lock:
+            existing = self._collection.get(
+                ids=[wanted],
+                include=["metadatas"],
+            )
+            ids = existing.get("ids") or []
+            metadata_rows = existing.get("metadatas") or []
+            if wanted not in ids:
+                return None
+            index = ids.index(wanted)
+            metadata = dict(metadata_rows[index] or {}) if index < len(metadata_rows) else {}
+            self._collection.delete(ids=[wanted])
+        return {
+            "id": wanted,
+            "gene": str(metadata.get("gene") or "").strip() or None,
+            "title": str(metadata.get("title") or "").strip() or "Untitled document",
+            "source": str(metadata.get("source") or "").strip().lower() or None,
+        }
+
     @staticmethod
     def _admin_pool_label(metadata: Dict[str, Any]) -> str:
         """Return the display/filter pool for a stored document."""

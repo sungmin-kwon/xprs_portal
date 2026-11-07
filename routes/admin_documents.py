@@ -22,6 +22,10 @@ class ManualRetrievalRequest(BaseModel):
     phenotype: str | None = Field(default=None, max_length=100)
 
 
+class DocumentDeletionRequest(BaseModel):
+    document_id: str = Field(min_length=1, max_length=512)
+
+
 def _require_admin_access(request: Request) -> None:
     """Protect the unlinked browser with XPRS_ADMIN_TOKEN.
 
@@ -151,3 +155,18 @@ def documents_for_gene(
         offset=offset,
         limit=limit,
     )
+
+
+@router.post("/api/admin/document-delete", include_in_schema=False)
+def delete_indexed_document(
+    payload: DocumentDeletionRequest,
+    request: Request,
+    response: Response,
+):
+    """Delete one exact vector-store record; provider caches remain intact."""
+    _require_admin_access(request)
+    response.headers["Cache-Control"] = "no-store"
+    deleted = get_rag_agent().delete_document_by_id(payload.document_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Indexed document not found")
+    return {"deleted": True, "cache_preserved": True, "document": deleted}

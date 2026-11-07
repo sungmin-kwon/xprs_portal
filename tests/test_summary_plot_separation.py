@@ -10,6 +10,7 @@ class SummaryPlotSeparationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
         cls.page = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
+        cls.css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
 
     def test_summary_starts_missing_visualizations_without_waiting(self):
         start = self.script.index("async function generateSummary()")
@@ -67,6 +68,47 @@ class SummaryPlotSeparationTests(unittest.TestCase):
             '$("generate-visualizations-btn")?.addEventListener("click", generateVisualizations);',
             self.script,
         )
+
+    def test_visualization_action_states_keep_a_fixed_toolbar_height(self):
+        self.assertIn("height: 3rem;", self.css)
+        self.assertIn("flex: 0 0 3rem;", self.css)
+        self.assertIn("height: 2.25rem;", self.css)
+        self.assertIn("max-height: 2.25rem;", self.css)
+        self.assertIn(".visualization-generate-btn > span", self.css)
+        self.assertIn("max-height: 2.25rem;\n    overflow: hidden;", self.css)
+
+    def test_visualization_loading_state_is_not_repeated_in_status_pill(self):
+        start = self.script.index("async function loadPlotsForIndividual")
+        end = self.script.index("function ensureVisualizationsForIndividual", start)
+        plot_flow = self.script[start:end]
+
+        self.assertNotIn('setStatus($("viz-status"), t("visualizationLoading"));', plot_flow)
+        self.assertIn('setStatus($("viz-status"), "");', plot_flow)
+        self.assertIn('setStatus($("viz-status"), t("visualizationUnavailable"));', plot_flow)
+
+    def test_first_plot_render_hides_prompts_before_plotly_measures_width(self):
+        start = self.script.index("async function loadPlotsForIndividual")
+        end = self.script.index("function ensureVisualizationsForIndividual", start)
+        plot_flow = self.script[start:end]
+
+        density_data = plot_flow.index("currentDensityData = payload.density;")
+        density_sync = plot_flow.index("syncVisualizationControls();", density_data)
+        density_render = plot_flow.index(
+            'await renderDensityPlotly(payload.density, "density-plot");',
+            density_sync,
+        )
+        manhattan_data = plot_flow.index("currentManhattanData = payload.manhattan;")
+        manhattan_sync = plot_flow.index("syncVisualizationControls();", manhattan_data)
+        manhattan_render = plot_flow.index(
+            'await renderManhattanPlotly(payload.manhattan, "manhattan-plot");',
+            manhattan_sync,
+        )
+
+        self.assertLess(density_data, density_sync)
+        self.assertLess(density_sync, density_render)
+        self.assertLess(manhattan_data, manhattan_sync)
+        self.assertLess(manhattan_sync, manhattan_render)
+        self.assertIn("scheduleDashboardPlotResize();", plot_flow)
 
     def test_pdf_prepares_missing_visualizations_before_capture(self):
         start = self.script.index("async function downloadPdfReport()")

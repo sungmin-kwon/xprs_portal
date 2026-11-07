@@ -16,7 +16,6 @@ let activeLoadingLogEl = null;
 let activeLoadingAnimatedLineEl = null;
 let activeLoadingAnimationTimer = null;
 let activeLoadingAnimatedBaseText = "";
-let geneSelectionPreviewRequestId = 0;
 let currentManhattanData = null;
 let currentDensityData = null;
 let currentDiseaseEvidence = null;
@@ -43,6 +42,7 @@ const THEME_PREFERENCE_KEY = "xprs.theme";
 const INDIVIDUAL_PREFERENCE_KEY = "xprs.individual_id";
 const INDIVIDUAL_SEARCH_LIMIT = 200;
 const INDIVIDUAL_SEARCH_DEBOUNCE_MS = 120;
+const SUMMARY_GENES_PER_SECTION = 5;
 
 const UI_TEXT = {
   en: {
@@ -70,15 +70,9 @@ const UI_TEXT = {
     referenceViewer: "Reference Abstract Viewer",
     noPaperYet: "No paper selected yet.",
     landingEyebrow: "XPRS Information Portal: BREAST CANCER",
-    landingTitle: "Configure XPRS Summary",
+    landingTitle: "Change Individual",
     individualId: "Individual ID",
     individualSearchPlaceholder: "Search Individual ID",
-    geneCountLabel: "Genes per Section",
-    geneCountHint: "Include this many risk-increasing and risk-lowering genes",
-    geneCountValue: (count) => `${count} ${count === 1 ? "gene" : "genes"} per section`,
-    genePreviewLoading: "Loading contribution genes...",
-    genePreviewNone: "No contributing genes are available.",
-    genePreviewGenes: (genes) => `Genes included across both sections: [${genes.join(", ")}]`,
     citedCount: (n) => `Cited ${n}`,
     viewOnPubMedPmc: "View on PubMed/PMC",
     viewOnSemanticScholar: "View on Semantic Scholar",
@@ -86,7 +80,7 @@ const UI_TEXT = {
     switchToEnglish: "Switch to English",
     darkMode: "Dark Mode",
     lightMode: "Light Mode",
-    generateSummaryAlert: "No XPRS summary generated yet.",
+    generateSummaryAlert: "Select an individual to continue.",
     viewDisclaimer: "View Disclaimer",
     closeDisclaimer: "Close Disclaimer",
     cancelAction: "Cancel",
@@ -172,15 +166,9 @@ const UI_TEXT = {
     referenceViewer: "논문초록 조회",
     noPaperYet: "선택된 논문이 없습니다.",
     landingEyebrow: "XPRS 정보 포털 : 유방암",
-    landingTitle: "XPRS 요약 설정",
+    landingTitle: "개인 변경",
     individualId: "개인 ID",
     individualSearchPlaceholder: "개인 ID 검색",
-    geneCountLabel: "섹션별 유전자 수",
-    geneCountHint: "위험 증가 및 위험 감소 유전자를 각각 같은 수만큼 포함합니다",
-    geneCountValue: (count) => `섹션별 ${count}개 유전자`,
-    genePreviewLoading: "기여 유전자 불러오는 중...",
-    genePreviewNone: "해석할 기여 유전자가 없습니다.",
-    genePreviewGenes: (genes) => `두 섹션에 포함할 유전자: [${genes.join(", ")}]`,
     citedCount: (n) => `${n}회 인용`,
     viewOnPubMedPmc: "PubMed/PMC에서 보기",
     viewOnSemanticScholar: "Semantic Scholar에서 보기",
@@ -188,7 +176,7 @@ const UI_TEXT = {
     switchToEnglish: "영어로 전환",
     darkMode: "다크 모드",
     lightMode: "라이트 모드",
-    generateSummaryAlert: "아직 XPRS 요약이 생성되지 않았습니다.",
+    generateSummaryAlert: "계속하려면 개인을 선택해 주세요.",
     viewDisclaimer: "고지 보기",
     closeDisclaimer: "고지 닫기",
     cancelAction: "취소",
@@ -409,7 +397,6 @@ function updateUIText() {
   syncDashboardNavigation();
   syncVisualizationControls();
   applyDiseaseMetadataToUI();
-  updateGeneCountControl();
   restoreSelectedIndividual();
 }
 
@@ -536,57 +523,7 @@ function syncIndividualSearchDisplay(pid = getSelectedIndividualId()) {
 }
 
 function getSummaryGeneCount() {
-  const input = $("summary-gene-count");
-  const value = Number.parseInt(input?.value || "5", 10);
-  return Math.max(1, Math.min(5, Number.isFinite(value) ? value : 5));
-}
-
-function updateGeneCountControl() {
-  const count = getSummaryGeneCount();
-  const input = $("summary-gene-count");
-  if (input) {
-    input.setAttribute("aria-valuetext", t("geneCountValue")(count));
-    input.style.setProperty("--slider-progress", `${((count - 1) / 4) * 100}%`);
-  }
-}
-
-function setSummaryGeneCount(count, { refresh = true } = {}) {
-  const input = $("summary-gene-count");
-  if (!input) return;
-  input.value = String(Math.max(1, Math.min(5, Number.parseInt(count, 10) || 5)));
-  updateGeneCountControl();
-  if (refresh) updateGeneSelectionPreview();
-}
-
-async function updateGeneSelectionPreview() {
-  const previewEl = $("gene-selection-preview");
-  const pid = getSelectedIndividualId();
-  if (!previewEl) return;
-
-  if (!pid) {
-    previewEl.textContent = "";
-    return;
-  }
-  const requestId = ++geneSelectionPreviewRequestId;
-  previewEl.textContent = t("genePreviewLoading");
-
-  try {
-    const res = await postJSON("/api/summary_preview", {
-      individual_id: pid,
-      disease: getActiveDiseaseSlug(),
-      cohort: getActiveCohortSlug(),
-      gene_count: getSummaryGeneCount(),
-      language: currentLanguage,
-    });
-    if (requestId !== geneSelectionPreviewRequestId) return;
-    const genes = Array.isArray(res?.genes) ? res.genes.filter(Boolean) : [];
-    previewEl.textContent = genes.length
-      ? t("genePreviewGenes")(genes)
-      : t("genePreviewNone");
-  } catch (_err) {
-    if (requestId !== geneSelectionPreviewRequestId) return;
-    previewEl.textContent = "";
-  }
+  return SUMMARY_GENES_PER_SECTION;
 }
 
 function openLandingModal() {
@@ -973,7 +910,6 @@ function applyLanguage(language) {
     language: currentLanguage,
     diseaseLabel: rareDetailDiseaseName,
   });
-  updateGeneSelectionPreview();
 }
 
 function toggleLanguage() {
@@ -1142,7 +1078,7 @@ function renderManhattanPlotly(manhattan, containerId, options = {}) {
 
   // Make sure Plotly is present
   if (!window.Plotly) throw new Error("Plotly.js not loaded. Did you add the CDN script tag?");
-  window.Plotly.newPlot(el, [trace], layout, config);
+  return window.Plotly.newPlot(el, [trace], layout, config);
 }
 
 function renderDensityPlotly(density, containerId) {
@@ -1274,7 +1210,7 @@ function renderDensityPlotly(density, containerId) {
 
   const config = { displaylogo: false, displayModeBar: false, responsive: true };
 
-  Plotly.newPlot(el, [traceDensity, traceHover], layout, config);
+  const plotReady = Plotly.newPlot(el, [traceDensity, traceHover], layout, config);
 
   // Hover interaction:
   // - move cursor line to hovered x
@@ -1328,6 +1264,7 @@ function renderDensityPlotly(density, containerId) {
   
     Plotly.relayout(el, { shapes: resetShapes, annotations: resetAnnotations });
   });
+  return plotReady;
 }
 
 async function loadAppInfo() {
@@ -2483,7 +2420,6 @@ async function loadIndividuals() {
   renderIndividualOptions(allIndividuals, {
     selectFallback: true,
     syncSearch: true,
-    refreshPreview: true,
   });
 }
 
@@ -2596,7 +2532,7 @@ async function loadRareFindings(pid) {
 
 function renderIndividualOptions(
   individuals,
-  { selectFallback = false, syncSearch = false, refreshPreview = false } = {},
+  { selectFallback = false, syncSearch = false } = {},
 ) {
   const sel = $("individual-id");
   if (!sel) return;
@@ -2638,7 +2574,6 @@ function renderIndividualOptions(
   }
   sel.disabled = visible.length === 0;
   setStatus($("individual-status"), t("loadedIndividuals")(individuals.length, visible.length));
-  if (refreshPreview) updateGeneSelectionPreview();
 }
 
 function selectIndividualById(pid) {
@@ -2649,7 +2584,6 @@ function selectIndividualById(pid) {
   sel.value = pid;
   lastSelectedIndividualId = pid;
   syncIndividualSearchDisplay(pid);
-  updateGeneSelectionPreview();
   return true;
 }
 
@@ -2703,7 +2637,9 @@ async function loadPlotsForIndividual(pid, { force = false } = {}) {
   const requestId = ++visualizationRequestId;
   visualizationRequestKey = key;
   visualizationLoading = true;
-  setStatus($("viz-status"), t("visualizationLoading"));
+  // The action button already communicates the loading state. Keep the
+  // adjacent status region available for failures instead of repeating it.
+  setStatus($("viz-status"), "");
   syncVisualizationControls();
 
   const loadPromise = (async () => {
@@ -2721,8 +2657,11 @@ async function loadPlotsForIndividual(pid, { force = false } = {}) {
         const denPlot = $("density-plot");
         if (denPlot) {
           currentDensityData = payload.density;
+          // Remove the full-width prompt before Plotly measures its flex
+          // container. Otherwise prompt + plot split the first render in two.
+          syncVisualizationControls();
           denPlot.style.display = "block";
-          renderDensityPlotly(payload.density, "density-plot");
+          await renderDensityPlotly(payload.density, "density-plot");
         }
       } catch (error) {
         console.warn("Density render failed:", error);
@@ -2735,8 +2674,9 @@ async function loadPlotsForIndividual(pid, { force = false } = {}) {
         const manPlot = $("manhattan-plot");
         if (manPlot) {
           currentManhattanData = payload.manhattan;
+          syncVisualizationControls();
           manPlot.style.display = "block";
-          renderManhattanPlotly(payload.manhattan, "manhattan-plot");
+          await renderManhattanPlotly(payload.manhattan, "manhattan-plot");
           syncManhattanPopoutButton();
           if ($("plot-overlay")?.classList.contains("is-open")) {
             renderExpandedManhattanPlot();
@@ -2751,6 +2691,7 @@ async function loadPlotsForIndividual(pid, { force = false } = {}) {
       }
 
       visualizationLoadedKey = currentDensityData && currentManhattanData ? key : "";
+      scheduleDashboardPlotResize();
       setStatus($("viz-status"), "");
       return payload;
     } catch (error) {
@@ -2764,6 +2705,7 @@ async function loadPlotsForIndividual(pid, { force = false } = {}) {
         visualizationLoadPromise = null;
         visualizationRequestKey = "";
         syncVisualizationControls();
+        scheduleDashboardPlotResize();
       }
     }
   })();
@@ -3035,7 +2977,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   updateUIText();
   installDashboardPlotResizeHandling();
   updateExportButtons();
-  updateGeneCountControl();
   clearLandingWarning();
   await loadDiseaseRegistry();
   await loadPhenotypeConfig();
@@ -3095,7 +3036,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     individualSelect.addEventListener("change", () => {
       lastSelectedIndividualId = individualSelect.value || lastSelectedIndividualId;
       syncIndividualSearchDisplay(lastSelectedIndividualId);
-      updateGeneSelectionPreview();
       closeIndividualDropdown();
     });
   }
@@ -3111,13 +3051,6 @@ window.addEventListener("DOMContentLoaded", async () => {
       openIndividualDropdown();
     });
     individualSearch.addEventListener("input", scheduleIndividualFilter);
-  }
-
-  const summaryGeneCount = $("summary-gene-count");
-  if (summaryGeneCount) {
-    summaryGeneCount.addEventListener("input", () => {
-      setSummaryGeneCount(summaryGeneCount.value || "5");
-    });
   }
 
   document.querySelectorAll("[data-language-option]").forEach((btn) => {

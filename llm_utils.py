@@ -24,10 +24,10 @@ VLLM_MODEL = os.getenv("VLLM_MODEL", "openai/gpt-oss")
 VLLM_API_KEY = os.getenv("VLLM_API_KEY", "EMPTY")
 
 # OpenRouter is OpenAI-API-compatible: same SDK, only base_url/key/model IDs differ.
-# Model IDs are namespaced, e.g. "openai/gpt-5.6-sol", "anthropic/claude-...".
+# Model IDs are namespaced, e.g. "openai/gpt-6.1-sol", "anthropic/claude-...".
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-5.6-sol")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "openai/gpt-6.1-sol")
 OPENROUTER_ZDR_REQUIRED = os.getenv("OPENROUTER_ZDR_REQUIRED", "true").lower() in {
     "1", "true", "yes", "on",
 }
@@ -54,6 +54,14 @@ _KPREDICT_SENSITIVE_PATTERNS = (
         "[PERCENTILE_REMOVED]",
     ),
     (
+        re.compile(r"\b\d+(?:\.\d+)?%\s+of\s+(?:this|the)\s+cohort\b", re.I),
+        "[PERCENTILE_REMOVED]",
+    ),
+    (
+        re.compile(r"\b(?:percentile|Pctl)\s*(?:is|=|:)?\s*\d+(?:\.\d+)?%?\b", re.I),
+        "[PERCENTILE_REMOVED]",
+    ),
+    (
         re.compile(
             r"\b(?:gene\s+)?contribution(?:\s+score)?\s*(?:is|=|:)?\s*-?\d+(?:\.\d+)?\b",
             re.I,
@@ -74,6 +82,36 @@ def sanitize_kpredict_text(value: str) -> str:
     return sanitized
 
 
+def mask_kpredict_sensitive_values(value: str) -> tuple[str, dict[str, str]]:
+    """Replace private values with stable opaque tokens for reversible transforms.
+
+    This is used for tasks such as translation where the exact locally rendered
+    values must survive, but must not be sent to the hosted model.
+    """
+    masked = str(value)
+    replacements: dict[str, str] = {}
+    next_index = 0
+
+    for pattern, _replacement in _KPREDICT_SENSITIVE_PATTERNS:
+        def replace_match(match: re.Match[str]) -> str:
+            nonlocal next_index
+            token = f"XPRSPRIVATEVALUE{next_index:04d}X"
+            next_index += 1
+            replacements[token] = match.group(0)
+            return token
+
+        masked = pattern.sub(replace_match, masked)
+
+    return masked, replacements
+
+
+def restore_kpredict_sensitive_values(value: str, replacements: dict[str, str]) -> str:
+    restored = str(value)
+    for token, original in replacements.items():
+        restored = re.sub(re.escape(token), lambda _match, text=original: text, restored, flags=re.I)
+    return restored
+
+
 class LLMAgent:
     """Wraps OpenRouter, local vLLM, or Ollama chat completions."""
 
@@ -81,7 +119,7 @@ class LLMAgent:
         self,
         provider: str = "openrouter",
         client: Optional[Any] = None,
-        model: str = "openai/gpt-5.6-sol",
+        model: str = "openai/gpt-6.1-sol",
         temperature: float = 0.2,
         ollama_url: str = "http://localhost:11434",
         privacy_mode: str | None = None,
@@ -100,6 +138,28 @@ class LLMAgent:
             {**message, "content": sanitize_kpredict_text(message.get("content", ""))}
             for message in messages
         ]
+
+    @staticmethod
+    def _completion_text(response: Any) -> str:
+        """Extract one completion with a useful error for malformed providers."""
+        choices = getattr(response, "choices", None)
+        if not choices:
+            raise RuntimeError("completion response contained no choices")
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None) if message is not None else None
+        if isinstance(content, str) and content.strip():
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for item in content:
+                if isinstance(item, dict) and isinstance(item.get("text"), str):
+                    parts.append(item["text"])
+                elif isinstance(getattr(item, "text", None), str):
+                    parts.append(item.text)
+            combined = "".join(parts)
+            if combined.strip():
+                return combined
+        raise RuntimeError("completion response contained no message content")
 
     def chat(self, messages: List[Dict[str, str]], timeout: int = 600) -> str:
         if self.provider in {"vllm", "openrouter"}:
@@ -121,7 +181,27 @@ class LLMAgent:
                 if self.temperature is not None:
                     request_kwargs["temperature"] = self.temperature
                 resp = self.client.chat.completions.create(**request_kwargs)
-                return resp.choices[0].message.content
+                try:
+                    return self._completion_text(resp)
+                except RuntimeError as malformed_error:
+                    # OpenRouter can occasionally return a syntactically valid
+                    # response envelope with no completion choice. Retry only
+                    # that narrow condition, with a hard cap of three attempts.
+                    for retry_number in (1, 2):
+                        logger.warning(
+                            "[LLM] %s returned a malformed completion for model=%s; "
+                            "retrying %s/2: %s",
+                            self.provider,
+                            self.model,
+                            retry_number,
+                            malformed_error,
+                        )
+                        retry_resp = self.client.chat.completions.create(**request_kwargs)
+                        try:
+                            return self._completion_text(retry_resp)
+                        except RuntimeError as retry_error:
+                            malformed_error = retry_error
+                    raise malformed_error
             except BadRequestError as e:
                 provider_name = {
                     "vllm": "vLLM",
@@ -139,7 +219,7 @@ class LLMAgent:
                             provider_name,
                             self.model,
                         )
-                        return resp.choices[0].message.content
+                        return self._completion_text(resp)
                     except Exception as retry_err:
                         e = retry_err
                 body = (

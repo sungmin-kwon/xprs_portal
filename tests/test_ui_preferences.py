@@ -38,6 +38,7 @@ class UiContractTests(ContractTestCase):
             "_check_overview_can_filter_private_individuals_by_disease_risk",
             "_check_public_overview_uses_single_disease_presentation",
             "_check_overview_density_plots_use_percentile_based_diverging_tints",
+            "_check_overview_header_actions_fit_narrow_disease_panels",
         ))
 
     def test_rare_variant_contracts(self):
@@ -64,8 +65,14 @@ class UiContractTests(ContractTestCase):
         self.assertIn("requestAccessCode", script)
         self.assertIn("The admin access code was not accepted.", script)
         self.assertIn('hasIndexableCache ? "Index cache"', script)
-        self.assertIn('canContinue ? "Continue search"', script)
+        self.assertIn('canRetry ? "Retry fallback"', script)
         self.assertNotIn('"Resume indexing"', script)
+        self.assertNotIn('"Continue search"', script)
+        self.assertIn('id="document-delete-dialog"', html)
+        self.assertIn('/api/admin/document-delete', script)
+        self.assertIn('@router.post("/api/admin/document-delete"', routes)
+        self.assertIn('<a class="portal-link" href="/">XPRS Overview</a>', html)
+        self.assertNotIn('class="portal-link" href="/dashboard"', html)
         self.assertNotIn("window.prompt", script)
         self.assertIn('pendingJob.state === "queued" ? "Queued" : "In progress"', script)
         self.assertIn("Tracked query pools", html)
@@ -455,6 +462,18 @@ class UiContractTests(ContractTestCase):
         self.assertNotIn("tint.solid", script)
         self.assertIn(".risk-tint-key__bar", css)
         self.assertIn("linear-gradient(90deg, #2a7bb5", css)
+
+    def _check_overview_header_actions_fit_narrow_disease_panels(self):
+        html = (STATIC / "home.html").read_text(encoding="utf-8")
+        css = (STATIC / "home.css").read_text(encoding="utf-8")
+
+        self.assertIn("container-type: inline-size", css)
+        self.assertIn("@container (max-width: 860px)", css)
+        self.assertIn("@container (max-width: 500px)", css)
+        self.assertIn("@container (max-width: 390px)", css)
+        self.assertIn(".risk-tint-key > span:not(.risk-tint-key__bar)", css)
+        self.assertIn("#cross-disease-heatmap-btn > span:not(.material-symbols-outlined)", css)
+        self.assertIn('data-i18n-aria="geneHeatmap"', html)
 
 
 if __name__ == "__main__":

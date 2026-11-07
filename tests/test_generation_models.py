@@ -15,8 +15,8 @@ class GenerationModelTests(unittest.TestCase):
         self.assertEqual(
             [model["id"] for model in models],
             [
-                "openai/gpt-5.6-sol",
-                "anthropic/claude-opus-5",
+                "openai/gpt-6.1-sol",
+                "anthropic/claude-opus-5.5",
                 "qwen/qwen3.8-27b",
                 "google/gemma-4-31b-it",
             ],
@@ -48,7 +48,7 @@ class GenerationModelTests(unittest.TestCase):
 
     def test_public_environment_default_matches_ui_default(self):
         template = (ROOT / ".env.example").read_text(encoding="utf-8")
-        self.assertIn("LLM_MODEL=openai/gpt-5.6-sol", template)
+        self.assertIn("LLM_MODEL=openai/gpt-6.1-sol", template)
 
     def test_llm_transport_uses_openrouter_without_legacy_direct_providers(self):
         source = (ROOT / "llm_utils.py").read_text(encoding="utf-8")

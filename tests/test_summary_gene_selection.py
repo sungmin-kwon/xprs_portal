@@ -70,6 +70,8 @@ class SummaryGeneSelectionTests(ContractTestCase):
 
     def test_simple_summary_restores_compact_top_and_bottom_five_rankings(self):
         agent = ExplanationAgent.__new__(ExplanationAgent)
+        agent.primary_phenotype = "type 2 diabetes"
+        agent.disease_display_name = "Type 2 Diabetes"
         top_rows = [
             {
                 "gene": f"TOP_{index}",
@@ -101,6 +103,12 @@ class SummaryGeneSelectionTests(ContractTestCase):
         )
 
         self.assertIn("Plain-Language Interpretation", summary)
+        self.assertIn(
+            "This individual's PRS for type 2 diabetes is higher than about 75.0% of the cohort",
+            summary,
+        )
+        self.assertNotIn("stand-alone clinical decision", summary)
+        self.assertEqual(payload["risk_overview"]["details"], "")
         self.assertIn("insulin-producing cell function [1,3]", summary)
         self.assertIn("do not prove", summary)
         self.assertLess(summary.index("Risk Overview"), summary.index("Plain-Language Interpretation"))
@@ -128,27 +136,25 @@ class SummaryGeneSelectionTests(ContractTestCase):
 
     def test_dashboard_gene_selection_controls(self):
         self.run_contract_checks((
-            "_check_dashboard_uses_a_bounded_slider_with_five_gene_default",
-            "_check_slider_updates_the_existing_gene_count_pipeline",
+            "_check_dashboard_uses_the_fixed_five_gene_report_structure",
+            "_check_individual_modal_does_not_configure_summary_generation",
             "_check_chat_composer_controls_share_height_and_alignment",
-            "_check_slider_labels_account_for_thumb_center",
         ))
 
-    def _check_dashboard_uses_a_bounded_slider_with_five_gene_default(self):
+    def _check_dashboard_uses_the_fixed_five_gene_report_structure(self):
         html = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn('type="range"', html)
-        self.assertIn('id="summary-gene-count"', html)
-        self.assertIn('min="1"', html)
-        self.assertIn('max="5"', html)
-        self.assertIn('step="1"', html)
-        self.assertIn('value="5"', html)
-        self.assertNotIn("data-gene-count", html)
-        self.assertNotIn('id="gene-count-value"', html)
-
-    def _check_slider_updates_the_existing_gene_count_pipeline(self):
         javascript = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
-        self.assertIn('summaryGeneCount.addEventListener("input"', javascript)
-        self.assertIn("setSummaryGeneCount(summaryGeneCount.value", javascript)
+        self.assertNotIn('id="summary-gene-count"', html)
+        self.assertIn("const SUMMARY_GENES_PER_SECTION = 5;", javascript)
+        self.assertIn("return SUMMARY_GENES_PER_SECTION;", javascript)
+
+    def _check_individual_modal_does_not_configure_summary_generation(self):
+        html = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
+        javascript = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
+        self.assertIn('data-i18n="landingTitle">Change Individual</h2>', html)
+        self.assertNotIn("Configure XPRS Summary", html)
+        self.assertNotIn("Genes per Section", html)
+        self.assertNotIn("updateGeneSelectionPreview", javascript)
 
     def _check_chat_composer_controls_share_height_and_alignment(self):
         css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
@@ -157,17 +163,6 @@ class SummaryGeneSelectionTests(ContractTestCase):
         self.assertIn("height: var(--composer-control-height)", css)
         self.assertIn("margin: 0;", css)
         self.assertIn("line-height: 1;", css)
-
-    def _check_slider_labels_account_for_thumb_center(self):
-        css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-
-        self.assertIn("--slider-thumb-size: 1.25rem", css)
-        self.assertIn("left: calc(var(--slider-thumb-size) / 2)", css)
-        self.assertIn("left: calc(25% + var(--slider-thumb-size) / 4)", css)
-        self.assertIn("left: calc(75% - var(--slider-thumb-size) / 4)", css)
-        self.assertIn("left: calc(100% - var(--slider-thumb-size) / 2)", css)
-        self.assertIn(".gene-count-scale > span", css)
-
 
 if __name__ == "__main__":
     unittest.main()

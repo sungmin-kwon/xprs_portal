@@ -1,20 +1,21 @@
 # XPRS Portal administration runbook
 
-This runbook covers the current XPRS Portal deployment on the login node. It
-is intended for the portal administrator and deliberately excludes secret
-values and private participant data.
+This runbook covers a single-process XPRS Portal deployment on a login or
+application node. Replace `/path/to/xprs_portal` and `PORTAL_HOST` with the
+local deployment values. The runbook deliberately excludes secret values and
+private participant data.
 
 ## Deployment at a glance
 
 | Item | Current deployment |
 |---|---|
-| Project directory | `/data/home/sungminkwon/xprs_portal` |
+| Project directory | `/path/to/xprs_portal` |
 | Python environment | `.xprs_portal/` |
 | Application | FastAPI/Uvicorn, `server:app` |
 | Service port | `9009`, bound to `0.0.0.0` |
 | tmux session | `xprs` |
 | Local health check | `http://127.0.0.1:9009/healthz` |
-| Browser entry point | `http://147.47.200.131:9009/` |
+| Browser entry point | `http://PORTAL_HOST:9009/` |
 | Public cohort | 1000 Genomes demonstration |
 | Private cohort | K-PREDICT, protected by server-side access checks |
 | LLM gateway | OpenRouter with ZDR required and data collection denied |
@@ -29,7 +30,7 @@ terminated tmux server therefore requires a manual restart.
 ### 1. Check the session, process, and port
 
 ```bash
-cd /data/home/sungminkwon/xprs_portal
+cd /path/to/xprs_portal
 tmux ls
 ss -ltnp | grep ':9009'
 ps -ef | grep '[u]vicorn.*server:app'
@@ -50,8 +51,8 @@ write the same store.
 Use the project environment and bind to all interfaces:
 
 ```bash
-cd /data/home/sungminkwon/xprs_portal
-tmux new-session -d -s xprs -c /data/home/sungminkwon/xprs_portal \
+cd /path/to/xprs_portal
+tmux new-session -d -s xprs -c /path/to/xprs_portal \
   'exec ./.xprs_portal/bin/uvicorn server:app --host 0.0.0.0 --port 9009'
 ```
 
@@ -155,7 +156,7 @@ Security rules:
 3. Keep `.env` readable only by the account owner:
 
    ```bash
-   chmod 600 /data/home/sungminkwon/xprs_portal/.env
+   chmod 600 /path/to/xprs_portal/.env
    ```
 
 4. Rotate a token immediately if it is disclosed, update `.env`, and restart
@@ -173,7 +174,7 @@ Use the dedicated K-PREDICT token rather than distributing the administrator
 token:
 
 ```text
-http://147.47.200.131:9009/?cohort=kpredict#token=VALUE
+http://PORTAL_HOST:9009/?cohort=kpredict#token=VALUE
 ```
 
 The K-PREDICT cookie lasts 12 hours. A browser with an old or missing cookie
@@ -184,7 +185,7 @@ return HTTP 404 rather than revealing whether private data are configured.
 ### Retrieval administration
 
 ```text
-http://147.47.200.131:9009/admin/documents#token=VALUE
+http://PORTAL_HOST:9009/admin/documents#token=VALUE
 ```
 
 The administrator cookie lasts 8 hours. The page returns 404 when
@@ -192,15 +193,18 @@ The administrator cookie lasts 8 hours. The page returns 404 when
 
 - per-gene retrieval coverage and stored-document inspection;
 - general and phenotype-specific query-pool status;
-- cached-result indexing and one-page manual continuation;
-- one-off manual literature retrieval; and
+- cached-result indexing and explicit retry actions;
+- per-source success, failure, and eligibility status;
+- exact indexed-document deletion while preserving provider caches; and
 - an explicit Semantic Scholar API-key check.
 
-Do not repeatedly click a query action. Check the continuation queue and active
-request shown by the page. Each admin continuation advances at most one Semantic
-Scholar page. Semantic Scholar 429 responses indicate
-provider throttling, not necessarily an invalid key. The key checker separates
-authentication failures from rate limiting.
+Do not repeatedly click a query action. Check the background queue and active
+request shown by the page. Europe PMC is the primary live source. A Semantic
+Scholar fallback makes at most one request for 10 raw papers; a successful
+response is terminal even if no paper passes the indexing rules. Failed or
+rate-limited requests may be retried later. HTTP 429 indicates provider
+throttling, not necessarily an invalid key; the key checker distinguishes
+authentication failure from rate limiting.
 
 ### Internal evaluation page
 
@@ -208,13 +212,13 @@ The evaluation feature is intentionally de-emphasized in the current UI. When
 enabled, its access link is:
 
 ```text
-http://147.47.200.131:9009/evaluation#token=VALUE
+http://PORTAL_HOST:9009/evaluation#token=VALUE
 ```
 
 Responses are private runtime data. Export them with:
 
 ```bash
-cd /data/home/sungminkwon/xprs_portal
+cd /path/to/xprs_portal
 ./.xprs_portal/bin/python scripts/export_evaluation_responses.py \
   --output /PRIVATE/OUTPUT/evaluation-responses.csv
 ```
@@ -280,8 +284,8 @@ The current retrieval path is provider-neutral and multi-disease:
 4. skip the disease-specific Europe PMC request when the general pool already
    has at least five eligible papers, including two for the active disease;
 5. when Europe PMC and local evidence provide no usable literature, continue
-   answer generation and enqueue one Semantic Scholar page in the background;
-   do not paginate it automatically during chatbot use;
+   answer generation and enqueue one Semantic Scholar request capped at 10 raw
+   papers; neither chatbot nor admin requests paginate a successful fallback;
 6. filter gene-symbol ambiguity and biomedical relevance;
 7. embed accepted documents with BGE-M3;
 8. retrieve dense candidates and rerank them with MedCPT; and
@@ -344,7 +348,7 @@ The repository uses SSH for GitHub and `main` tracks `origin/main`.
 Before updating:
 
 ```bash
-cd /data/home/sungminkwon/xprs_portal
+cd /path/to/xprs_portal
 git status --short --branch
 git fetch origin
 git log --oneline --decorate --graph --max-count=12 --all
@@ -367,7 +371,7 @@ Before publishing a new public commit, run at minimum:
 
 ```bash
 ./.xprs_portal/bin/python -m unittest discover -s tests
-./.xprs_portal/bin/python -m compileall -q .
+./.xprs_portal/bin/python -m compileall -q agents routes scripts tests *.py
 ./.xprs_portal/bin/python scripts/check_public_repo.py
 git diff --check
 ```
@@ -402,7 +406,7 @@ reference-paper dialog, and PDF download.
 Useful diagnostic commands:
 
 ```bash
-df -h /data/home/sungminkwon
+df -h /path/to/xprs_portal
 du -sh chroma cache_literature logs 2>/dev/null
 free -h
 tmux capture-pane -p -t xprs:0.0 -S -500

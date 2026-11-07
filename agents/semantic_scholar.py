@@ -38,15 +38,24 @@ PRIMARY_PHENOTYPE = "breast cancer"
 # Keep interactive response pages small to reduce the cost of abstract-rich
 # searches. Retrieval quality comes from the general + phenotype pool union and
 # reranker rather than one oversized upstream response.
-S2_GENERAL_LIMIT = max(1, int(os.getenv("S2_GENERAL_LIMIT", "10")))
-S2_PRIMARY_LIMIT = max(1, int(os.getenv("S2_PRIMARY_LIMIT", "10")))
+S2_FALLBACK_RESULT_LIMIT = 10
+S2_GENERAL_LIMIT = min(
+    S2_FALLBACK_RESULT_LIMIT,
+    max(1, int(os.getenv("S2_GENERAL_LIMIT", str(S2_FALLBACK_RESULT_LIMIT)))),
+)
+S2_PRIMARY_LIMIT = min(
+    S2_FALLBACK_RESULT_LIMIT,
+    max(1, int(os.getenv("S2_PRIMARY_LIMIT", str(S2_FALLBACK_RESULT_LIMIT)))),
+)
 S2_PUBLIC_MIN_INTERVAL_SECONDS = float(os.getenv("S2_PUBLIC_MIN_INTERVAL_SECONDS", "2.0"))
 S2_API_KEY_MIN_INTERVAL_SECONDS = float(os.getenv("S2_API_KEY_MIN_INTERVAL_SECONDS", "15.0"))
 S2_REQUEST_JITTER_SECONDS = max(0.0, float(os.getenv("S2_REQUEST_JITTER_SECONDS", "0.25")))
 S2_DEFAULT_MAX_RETRIES = max(1, int(os.getenv("S2_DEFAULT_MAX_RETRIES", "3")))
-S2_SEARCH_RAW_RESULT_CAP = max(
-    1, int(os.getenv("S2_ENRICHMENT_MAX_RAW_RESULTS", "50"))
-)
+# Semantic Scholar is an emergency fallback behind Europe PMC. One successful
+# gene/pool request is terminal and may return at most ten raw papers. This is
+# deliberately not configurable upward: pagination and alternate-query sweeps
+# previously multiplied requests against an unstable upstream API.
+S2_SEARCH_RAW_RESULT_CAP = S2_FALLBACK_RESULT_LIMIT
 
 STATUS_UNSET = object()
 
@@ -674,7 +683,7 @@ class SemanticScholarAgent:
         max_raw_results: int,
     ) -> list[dict[str, Any]]:
         """Normalize current and legacy cache pagination into query states."""
-        expected = gene_search_strategies(gene, phenotype)
+        expected = gene_search_strategies(gene, phenotype)[:1]
         stored = payload.get("search_strategies")
         stored_by_query = {
             str(item.get("query") or "").strip(): item
@@ -704,7 +713,15 @@ class SemanticScholarAgent:
                 "fetch_ok": prior.get("fetch_ok") is True,
                 "raw_examined": raw_examined,
                 "next_offset": max(0, int(prior.get("next_offset") or raw_examined)),
-                "complete": bool(prior.get("complete")) or raw_examined >= max_raw_results,
+                # A successful request is terminal under the one-shot fallback
+                # policy, even when Semantic Scholar returns fewer than ten
+                # records. Failed requests do not create a successful cache and
+                # may therefore be retried later.
+                "complete": (
+                    bool(prior.get("complete"))
+                    or prior.get("fetch_ok") is True
+                    or raw_examined >= max_raw_results
+                ),
                 "page_size": max(1, int(prior.get("page_size") or page_size)),
             })
         return states
@@ -993,6 +1010,7 @@ class SemanticScholarAgent:
     ) -> List[Dict[str, Any]]:
         started_at = time.perf_counter()
         query = gene_search_query(gene, phenotype)
+        limit = min(S2_FALLBACK_RESULT_LIMIT, max(1, int(limit)))
 
         if not self.cache_dir:
             return self.search(
@@ -1149,7 +1167,7 @@ class SemanticScholarAgent:
             "page_size": limit,
             "raw_examined": len(papers),
             "next_offset": len(papers),
-            "pagination_complete": False,
+            "pagination_complete": True,
             "search_strategy_version": GENE_SEARCH_STRATEGY_VERSION,
             "search_strategies": [
                 {
@@ -1158,10 +1176,12 @@ class SemanticScholarAgent:
                     "fetch_ok": index == 0,
                     "raw_examined": len(papers) if index == 0 else 0,
                     "next_offset": len(papers) if index == 0 else 0,
-                    "complete": (len(papers) < limit) if index == 0 else False,
+                    "complete": index == 0,
                     "page_size": limit,
                 }
-                for index, strategy in enumerate(gene_search_strategies(gene, phenotype))
+                for index, strategy in enumerate(
+                    gene_search_strategies(gene, phenotype)[:1]
+                )
             ],
             "data": papers,
         }

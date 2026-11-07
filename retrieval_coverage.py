@@ -32,7 +32,9 @@ def _semantic_scholar_cache(payload: dict[str, Any]) -> dict[str, Any]:
     phenotype = str(payload.get("phenotype") or "").strip().lower()
     papers = [row for row in payload.get("data", []) if isinstance(row, dict)]
     raw_examined = int(payload.get("raw_examined") or len(papers))
-    expected = gene_search_strategies(gene, phenotype or None)
+    # Semantic Scholar is a one-shot fallback: only the canonical query is
+    # expected, with a strict ten-paper cap and no alternate-query sweep.
+    expected = gene_search_strategies(gene, phenotype or None)[:1]
     stored = {
         str(row.get("query") or "").strip(): row
         for row in payload.get("search_strategies") or []
@@ -46,11 +48,14 @@ def _semantic_scholar_cache(payload: dict[str, Any]) -> dict[str, Any]:
             prior = {
                 "raw_examined": raw_examined,
                 "complete": bool(payload.get("pagination_complete")),
+                "fetch_ok": payload.get("fetch_ok") is True,
             }
         prior = prior or {}
         examined = max(0, int(prior.get("raw_examined") or 0))
         strategy_states.append(
-            bool(prior.get("complete")) or examined >= S2_SEARCH_RAW_RESULT_CAP
+            bool(prior.get("complete"))
+            or prior.get("fetch_ok") is True
+            or examined >= S2_SEARCH_RAW_RESULT_CAP
         )
     strategies_complete = sum(strategy_states)
     pagination_complete = bool(expected) and strategies_complete == len(expected)

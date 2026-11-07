@@ -43,6 +43,11 @@ class ConversationAgent:
     #   - "What treatment do I need?" / "Should I take tamoxifen?"
     #   - "How worried should I be?" / "Should I tell my family?"
     TURN_TYPES = {"biomedical_followup", "casual_chat", "off_domain_request", "medical_advice_seeking"}
+    TRANSLATION_REQUEST_PATTERNS = (
+        re.compile(r"\btranslate\s+(?:this|that|the above|the previous|your (?:answer|response)|the (?:answer|response|summary|report))\b", re.I),
+        re.compile(r"\b(?:korean|english)\s+(?:translation|version)\b", re.I),
+        re.compile(r"(?:이것|이거|위\s*내용|이전\s*(?:답변|응답)|답변|응답|요약|보고서).*(?:번역|옮겨|바꿔)", re.I),
+    )
     SMALLTALK_FALLBACK_PATTERNS = [
         re.compile(r"^\s*(hi|hello|hey|yo|sup|what'?s up|whats up|howdy)\b", re.I),
         re.compile(r"^\s*(thanks|thank you|thx|cool|nice|lol|haha|ok|okay)\b[!. ]*$", re.I),
@@ -58,16 +63,32 @@ class ConversationAgent:
         re.compile(r"\bc\+\+\b", re.I),
         re.compile(r"\bjavascript\b", re.I),
         re.compile(r"\bsql\b", re.I),
+        re.compile(r"\b(?:write|generate|provide|create)\s+(?:a\s+)?(?:code|script)\b", re.I),
+        re.compile(r"\bdebug(?:ging)?\s+(?:the\s+)?(?:code|software|pipeline)\b", re.I),
     ]
     # Deliberately conservative: only catch unambiguous first-person, action-seeking phrasing.
     # General/research questions like "what does TP53 do" must not match these.
     MEDICAL_ADVICE_FALLBACK_PATTERNS = [
         re.compile(r"\bshould\s+i\b", re.I),
         re.compile(r"\b(do|did|will|am|was)\s+i\s+(have|get|develop|need|require|qualify|risk)\b", re.I),
+        re.compile(r"\bdoes\s+this\s+mean\s+i\s+(?:have|will|get|develop|need)\b", re.I),
+        re.compile(
+            r"\bshould\s+my\s+(?:child|children|family|parent|parents|sibling|siblings)\s+"
+            r"(?:get|have|undergo|seek|take)\b",
+            re.I,
+        ),
         re.compile(r"\bwhat\s+(should|do)\s+i\s+(do|take|use|try)\b", re.I),
         re.compile(r"\bhow\s+worried\s+(should\s+)?i\b", re.I),
         re.compile(r"\b(my)\s+(treatment|medication|prognosis|diagnosis|screening)\s+(plan|option|choice|should)\b", re.I),
         re.compile(r"\bam\s+i\s+(at\s+risk|going\s+to\s+(get|have|develop))\b", re.I),
+        re.compile(
+            r"(?:제가|나는|내가).*(?:걱정해야|검사를?\s*받아야|검진을?\s*받아야|"
+            r"치료를?\s*받아야|약을?\s*먹어야|복용해야)",
+        ),
+        re.compile(
+            r"(?:저|제|나|내)\s*(?:아이|자녀|가족).*(?:검사|검진).*(?:받아야|해야)",
+        ),
+        re.compile(r"(?:저|제가|나는|내가).*(?:암|당뇨병|질환).*(?:인가요|입니까|있나요|걸리나요)"),
     ]
     BIOMEDICAL_KEYWORDS = (
         "gene", "genes", "cancer", "cancers", "tumor", "tumors", "tumour", "tumours",
@@ -102,7 +123,10 @@ class ConversationAgent:
         text_lower = (text or "").lower()
         hits = [
             gene for gene in available_genes
-            if re.search(rf"\b{re.escape(gene.lower())}\b", text_lower)
+            if re.search(
+                rf"(?<![a-z0-9_-]){re.escape(gene.lower())}(?![a-z0-9_-])",
+                text_lower,
+            )
         ]
         return unique_preserving_order(hits)
 
@@ -111,12 +135,145 @@ class ConversationAgent:
         values = [str(h).strip() for h in (history or []) if str(h).strip()]
         return "\n".join(f"- {item}" for item in values[-4:])
 
+    @classmethod
+    def translation_target(cls, question: str) -> str | None:
+        text = (question or "").strip()
+        if not text:
+            return None
+        is_translation_request = bool(
+            re.search(r"\btranslat(?:e|ion)\b", text, re.I)
+            or re.search(r"(?:번역|옮겨)", text)
+            or any(pattern.search(text) for pattern in cls.TRANSLATION_REQUEST_PATTERNS)
+        )
+        if not is_translation_request:
+            return None
+        if re.search(r"\b(?:into|to|in)\s+korean\b|\bkorean\s+(?:translation|version)\b", text, re.I) \
+                or re.search(r"(?:한국어|한글)로", text):
+            return "ko"
+        if re.search(r"\b(?:into|to|in)\s+english\b|\benglish\s+(?:translation|version)\b", text, re.I) \
+                or re.search(r"영어로", text):
+            return "en"
+        return "auto"
+
+    @classmethod
+    def _deterministic_context_resolution(
+        cls,
+        question: str,
+        state: ConversationState,
+        available_genes: list[str],
+    ) -> dict[str, Any] | None:
+        """Resolve unambiguous corrections and ordinal references locally.
+
+        These short turns should not depend on an LLM correctly remembering the
+        order of genes in the preceding answer. More open-ended references still
+        go through the normal resolver.
+        """
+        text = (question or "").strip()
+        state_genes = [gene for gene in state.active_genes if gene in available_genes]
+        if not text or not state_genes:
+            return None
+
+        correction_segment: str | None = None
+        english_correction = re.search(
+            r"\b(?:i\s+meant|i\s+was\s+asking\s+about|what\s+i\s+meant\s+was)\b(.+)",
+            text,
+            re.I,
+        )
+        if english_correction:
+            correction_segment = re.split(
+                r"\b(?:not|rather\s+than|instead\s+of)\b",
+                english_correction.group(1),
+                maxsplit=1,
+                flags=re.I,
+            )[0]
+        elif re.search(r"(?:말고|아니고)", text):
+            correction_segment = re.split(r"(?:말고|아니고)", text, maxsplit=1)[-1]
+
+        if correction_segment is not None:
+            corrected_genes = cls._match_available_genes(correction_segment, available_genes)
+            if corrected_genes:
+                # A correction changes the entity in the preceding question; it
+                # does not normally replace the question itself.  For example,
+                # after "Does CDKAL1 have direct evidence for type 2 diabetes?",
+                # "I meant KCNQ1" should ask the same evidence question about
+                # KCNQ1 rather than degrade into generic gene information.
+                prior_question = (
+                    state.last_resolved_question or state.last_user_query or text
+                    if len(state_genes) == 1
+                    else text
+                )
+                corrected_text = " and ".join(corrected_genes)
+                explicitly_named = cls._match_available_genes(text, available_genes)
+                rejected_genes = [
+                    gene for gene in explicitly_named
+                    if gene not in corrected_genes
+                ]
+                if not rejected_genes and len(state_genes) == 1:
+                    rejected_genes = state_genes
+
+                resolved_question = prior_question
+                for rejected_gene in rejected_genes:
+                    resolved_question = re.sub(
+                        rf"(?<![a-z0-9_-]){re.escape(rejected_gene)}(?![a-z0-9_-])",
+                        corrected_text,
+                        resolved_question,
+                        flags=re.I,
+                    )
+                if resolved_question == prior_question and prior_question == text:
+                    resolved_question = text
+                return {
+                    "turn_type": "biomedical_followup",
+                    "resolved_genes": corrected_genes,
+                    "resolved_phenotypes": list(state.active_phenotypes),
+                    "resolved_intent": state.active_intent or "followup",
+                    "resolved_question": resolved_question,
+                }
+
+        ordinal_patterns = (
+            (r"\b(?:first|1st)\s+gene\b|(?:첫\s*번째|첫째)\s*유전자", 0),
+            (r"\b(?:second|2nd)\s+gene\b|(?:두\s*번째|둘째)\s*유전자", 1),
+            (r"\b(?:third|3rd)\s+gene\b|(?:세\s*번째|셋째)\s*유전자", 2),
+            (r"\b(?:fourth|4th)\s+gene\b|(?:네\s*번째|넷째)\s*유전자", 3),
+            (r"\b(?:fifth|5th)\s+gene\b|(?:다섯\s*번째|다섯째)\s*유전자", 4),
+        )
+        selected_gene: str | None = None
+        matched_pattern: str | None = None
+        for pattern, index in ordinal_patterns:
+            if re.search(pattern, text, re.I) and index < len(state_genes):
+                selected_gene = state_genes[index]
+                matched_pattern = pattern
+                break
+        if selected_gene is None and re.search(r"\b(?:last|final)\s+gene\b|마지막\s*유전자", text, re.I):
+            selected_gene = state_genes[-1]
+            matched_pattern = r"\b(?:last|final)\s+gene\b|마지막\s*유전자"
+
+        if selected_gene and matched_pattern:
+            return {
+                "turn_type": "biomedical_followup",
+                "resolved_genes": [selected_gene],
+                "resolved_phenotypes": list(state.active_phenotypes),
+                "resolved_intent": state.active_intent or "followup",
+                "resolved_question": re.sub(matched_pattern, selected_gene, text, flags=re.I),
+            }
+        return None
+
     @staticmethod
     def _fallback_resolution(
         question: str,
         state: ConversationState,
         available_genes: list[str],
     ) -> dict[str, Any]:
+        translation_target = ConversationAgent.translation_target(question)
+        if translation_target:
+            return {
+                "turn_type": "biomedical_followup",
+                "resolved_genes": list(state.active_genes),
+                "resolved_phenotypes": list(state.active_phenotypes),
+                "resolved_intent": state.active_intent or "translate_previous_response",
+                "resolved_question": question,
+                "translation_target": translation_target,
+            }
+
         turn_type = ConversationAgent.classify_turn_fallback(question, available_genes)
         if turn_type == "off_domain_request":
             return {
@@ -204,6 +361,29 @@ class ConversationAgent:
         explicit_genes = self._match_available_genes(question, available_genes)
         state_genes = [g for g in state.active_genes if g in available_genes]
 
+        translation_target = self.translation_target(question)
+        if translation_target:
+            return {
+                "turn_type": "biomedical_followup",
+                "resolved_genes": state_genes,
+                "resolved_phenotypes": list(state.active_phenotypes),
+                "resolved_intent": state.active_intent or "translate_previous_response",
+                "resolved_question": question,
+                "translation_target": translation_target,
+            }
+
+        deterministic_route = self.classify_turn_fallback(question, available_genes)
+        if deterministic_route in {"medical_advice_seeking", "off_domain_request"}:
+            return self._fallback_resolution(question, state, available_genes)
+
+        deterministic_context = self._deterministic_context_resolution(
+            question,
+            state,
+            available_genes,
+        )
+        if deterministic_context:
+            return deterministic_context
+
         if not self.llm:
             return self._fallback_resolution(question, state, available_genes)
 
@@ -219,6 +399,7 @@ Return JSON with keys:
 
 Rules:
 - Questions about XPRS/PRS methodology, interpretation, scoring logic, required inputs, or meaning of outputs are biomedical_followup.
+- Requests to translate, rephrase, or restate the previous XPRS response are biomedical_followup and preserve the current genes and intent.
 - Requests to write code, scripts, reproduce the pipeline computationally, debug software, or implement XPRS/PRS are off_domain_request even if they mention XPRS/PRS.
 - casual_chat is only for light banter, greetings, jokes, or small side remarks.
 - medical_advice_seeking is reserved for clearly first-person, action-seeking medical questions where the user is asking what THEY personally should do, take, be tested for, or worry about. Examples:
@@ -354,21 +535,29 @@ Recent conversation:
         if not text:
             return "biomedical_followup"
         lowered = text.lower()
+        if cls.translation_target(text):
+            return "biomedical_followup"
         # Medical-advice patterns are checked BEFORE the biomedical-keyword shortcut,
         # because "should I get tested for cancer?" contains "cancer" but is still
         # a medical-advice request, not a research question.
         if any(pattern.search(text) for pattern in cls.MEDICAL_ADVICE_FALLBACK_PATTERNS):
             return "medical_advice_seeking"
-        if any(re.search(rf"\b{re.escape(gene.lower())}\b", lowered) for gene in (available_genes or [])):
-            return "biomedical_followup"
-        if any(keyword in lowered for keyword in cls.BIOMEDICAL_KEYWORDS):
-            return "biomedical_followup"
         if cls.is_smalltalk_turn(text):
             return "casual_chat"
         if any(pattern.search(text) for pattern in cls.OFFTOPIC_FALLBACK_PATTERNS):
             return "casual_chat"
         if any(pattern.search(text) for pattern in cls.OFFDOMAIN_FALLBACK_PATTERNS):
             return "off_domain_request"
+        if any(
+            re.search(
+                rf"(?<![a-z0-9_-]){re.escape(gene.lower())}(?![a-z0-9_-])",
+                lowered,
+            )
+            for gene in (available_genes or [])
+        ):
+            return "biomedical_followup"
+        if any(keyword in lowered for keyword in cls.BIOMEDICAL_KEYWORDS):
+            return "biomedical_followup"
         return "biomedical_followup"
 
     @classmethod

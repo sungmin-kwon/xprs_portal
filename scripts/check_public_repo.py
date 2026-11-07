@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail when tracked files contain common secrets or private cohort artifacts."""
+"""Fail when publishable files contain secrets or deployment/private artifacts."""
 
 from __future__ import annotations
 
@@ -44,6 +44,14 @@ SECRET_PATTERNS = (
 
 PRIVATE_SOURCE_PATTERNS = (
     (re.compile(rb"/media/" + rb"leelabsg-storage1/"), "internal storage path"),
+    (re.compile(rb"/data/home/[A-Za-z0-9._-]+/"), "deployment home path"),
+    (
+        re.compile(
+            rb"https?://(?!(?:127\.0\.0\.1|0\.0\.0\.0)(?::|/))"
+            rb"(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?/"
+        ),
+        "deployment host IP",
+    ),
     (
         re.compile(rb"\bKP-(?!ABCDEF123456\b)[A-F0-9]{12}\b"),
         "K-PREDICT pseudonymous individual ID",
@@ -110,7 +118,7 @@ def main() -> int:
         print("Matched values are intentionally not printed.")
         return 1
 
-    print("Public-repository check passed: no tracked secrets or private cohort artifacts found.")
+    print("Public-repository check passed: no publishable secrets or private/deployment artifacts found.")
     return 0
 
 

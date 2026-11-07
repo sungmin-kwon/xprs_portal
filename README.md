@@ -1,9 +1,10 @@
 # XPRS Portal
 
 XPRS Portal is a FastAPI application for exploring individual gene contributions
-to a polygenic risk score (PRS). It combines cohort-level visualizations,
-gene-level contribution rankings, biomedical literature, Open Targets
-associations, and an OpenRouter-powered explanatory chatbot.
+to a polygenic risk score (PRS). It combines a multi-disease cohort overview,
+on-demand PRS visualizations, common- and rare-variant evidence, biomedical
+literature, Open Targets associations, and an OpenRouter-powered explanatory
+chatbot.
 
 The software is distributed under GPL-3.0 in keeping with the upstream XPRS
 project. See `NOTICE.md` for attribution and third-party material notices.
@@ -40,6 +41,27 @@ cohort.
 Literature retrieval can still answer explicit questions about other diseases
 when papers for the selected genes are available.
 
+## Portal workflow
+
+- The **XPRS Overview** compares an individual's available disease-specific PRS
+  percentiles. K-PREDICT cards also show disease-linked rare-variant alerts and
+  carrier findings without combining common- and rare-variant evidence into an
+  unsupported score.
+- The protected **Cohort Analysis** page filters K-PREDICT individuals by
+  disease, PRS percentile, rare-variant status, gene, and molecular consequence.
+  A finding drawer provides the underlying ClinVar, consequence, confidence,
+  allele-frequency, and disease-panel context.
+- The **dashboard** generates the PRS density and gene-based Manhattan plots on
+  demand. It presents the five strongest risk-increasing and five strongest
+  risk-lowering gene contributions, a concise plain-language interpretation,
+  literature-backed follow-up chat, and a downloadable detailed PDF report.
+- K-PREDICT-only exploratory views include an individual cross-disease gene
+  heatmap and a clearly labeled population gene-architecture prototype.
+
+The public 1000 Genomes profile remains a single-disease demonstration, so its
+overview uses one full-width breast-cancer density plot rather than empty cards
+for unsupported diseases.
+
 ## Stack
 
 - FastAPI and Pydantic backend
@@ -69,12 +91,12 @@ collection. A request follows this sequence:
    explicitly match the active disease. Otherwise, query the disease-specific
    pool to restore relevant evidence.
 3. If Europe PMC and the local index still provide no usable literature, let
-   answer generation continue and enqueue one 10-result Semantic Scholar page
-   as an emergency background fallback. The chatbot never waits for this
-   request or paginates it automatically.
-4. An administrator can explicitly continue an incomplete Semantic Scholar
-   cache. Each action advances at most one page through the shared worker,
-   preserving the cached offset and yielding to interactive retrieval.
+   answer generation continue and enqueue one Semantic Scholar request capped
+   at 10 raw papers as an emergency background fallback. The chatbot never
+   waits for this request.
+4. Treat that one successful Semantic Scholar request as the completed fallback
+   search for the gene and pool. Neither the chatbot nor the admin page
+   paginates it or tries alternate query aliases automatically.
 5. Analyze the question as `primary_disease`, `other_disease`, or
    `disease_neutral`.
 6. Retrieve a fixed union of dense candidates from relevant phenotype and
@@ -92,16 +114,12 @@ collection. A request follows this sequence:
 10. Return the highest-ranked papers with `disease_match`, `source_pool`, raw
    reranker score, and target-phenotype metadata.
 
-Semantic Scholar fallback and continuation work runs outside the interactive
-answer path and is limited to one page per queued action. Repeated explicit
-admin continuations can still work toward the configured coverage targets, but
-the portal no longer launches an unattended multi-page sweep. Canonical
-phenotype queries can fall through to up to two
-configured phenotype aliases; ambiguous short symbols can also fall through
-to broader symbol queries. Each strategy is capped at 50 raw results, and a
-low-yield strategy gives way to the next strategy after two consecutive pages
-that add no eligible documents. Results are deduplicated across strategies.
-Eligibility requires a
+Semantic Scholar fallback work runs outside the interactive answer path through
+one serialized worker. Duplicate jobs are coalesced, interactive Europe PMC
+retrieval takes priority, and provider rate-limit status is visible to the
+administrator. A failed request may be retried later; a successful response is
+terminal even when none of its 10 raw papers passes the indexing rules. Results
+are deduplicated across providers and query pools. Eligibility requires a
 paper ID, abstract, validated gene identity, and at least one citation;
 correction, erratum, retraction, and expression-of-concern notices are excluded.
 Short symbols that can also be ordinary acronyms are searched with gene-sense
@@ -181,22 +199,22 @@ uvicorn server:app --host 127.0.0.1 --port 9009
 The first retrieval initializes BGE-M3 and MedCPT. Hugging Face model weights
 are downloaded to the user cache when not already available.
 
-## Read-only retrieval administration
+## Retrieval administration
 
 The unlinked `/admin/documents` page combines retrieval-coverage monitoring
 with the earlier gene-by-gene ChromaDB document browser. Its coverage table is
 cohort-neutral: it reports every gene observed in a provider cache or ChromaDB,
-along with cached query responses, indexed documents, pagination
-completion, manual continuation, and active cooldowns. It does not divide
-genes into the legacy public-cohort plan and an "outside plan" group.
+along with cached query responses, indexed documents, per-source query status,
+manual indexing or retry actions, and active cooldowns. It does not divide genes
+into the legacy public-cohort plan and an "outside plan" group.
 
 For missing or interrupted pools, an administrator can issue one manual
-literature query from the coverage table. This action uses the same
-serialized request lock, rate-limit cooldown, cache, document eligibility
-rules, Chroma upsert path, and serialized continuation queue as chatbot-driven
-retrieval. Cached papers are processed before any upstream request. A first
-manual action can create one Semantic Scholar fallback cache; each subsequent
-continuation advances that cache by at most one page.
+literature query from the coverage table. This action uses the same serialized
+request lock, rate-limit cooldown, provider cache, document eligibility rules,
+and Chroma upsert path as chatbot-driven retrieval. Cached papers are processed
+before any upstream request. Europe PMC remains the primary source; Semantic
+Scholar remains a one-request, 10-paper emergency fallback rather than an
+interactive pagination path.
 
 The Semantic Scholar status card also provides an explicit API-key check. It
 sends one keyed, one-result request only when clicked, reports authentication
@@ -210,10 +228,12 @@ breast-cancer paper that is also returned by a `gene + breast cancer` search.
 Both provenance records can be retained in ChromaDB, while retrieval candidate
 assembly deduplicates matching Semantic Scholar paper IDs before reranking.
 
-The Documents view retains the general-query, phenotype-query, and Open
-Targets filters; dynamic query-phenotype selector; title/abstract search;
-citation sorting; and expandable stored text. The page and its APIs never
-return vector embeddings and do not provide database mutation operations.
+The Documents view provides general-query, phenotype-query, Open Targets, and
+provider filters; a dynamic query-phenotype selector; title/abstract search;
+citation sorting; expandable stored text; and retrieval-source status. It never
+returns vector embeddings. An administrator may delete one exact indexed
+Chroma record after confirmation; the provider cache is preserved, so the
+record can be evaluated and indexed again under the current eligibility rules.
 
 Set `XPRS_ADMIN_TOKEN` and open the page once as
 `/admin/documents#token=VALUE`. URL fragments are not transmitted in HTTP
@@ -312,9 +332,12 @@ storage paths, evaluation responses, and private-cohort filenames without
 printing any matched secret value.
 
 The focused suite covers disease-intent resolution, Korean disease aliases,
-unknown named phenotypes, soft primary-disease prioritization, explicit
-other-disease override, reranker ordering, multi-provider ingestion, source
-identity, and repository hygiene.
+multi-turn context retention, bilingual behavior, numerical consistency,
+privacy filtering, clinical-safety boundaries, citation normalization,
+evidence-scarcity behavior, reranker ordering, multi-provider ingestion,
+source identity, and repository hygiene. The deterministic chatbot evaluation
+set is documented in [`tests/README.md`](tests/README.md) and stored under
+`benchmarks/`.
 
 Retrieval comparison reports are retained under `benchmarks/`. Generated
 corpora, abstracts, embeddings, Chroma/LanceDB indexes, and blinded-review files
@@ -323,7 +346,8 @@ are intentionally excluded from the public repository surface.
 ## API highlights
 
 - `GET /` — landing page
-- `GET /dashboard` — dashboard
+- `GET /dashboard` — disease-specific visualizations and chatbot
+- `GET /cohort-analysis` — protected K-PREDICT cohort analysis
 - `GET /evaluation` — internal pilot survey; response submission is token-protected
 - `GET /api/cohorts` — cohort catalog
 - `GET /api/diseases` — ordered disease catalog
@@ -334,9 +358,10 @@ are intentionally excluded from the public repository surface.
 - `GET /api/tasks/{task_id}/events` — progress stream
 - `GET /api/health/semanticscholar` — non-probing Semantic Scholar status
 - `GET /api/health/rag` — dense store and reranker configuration status
-- `POST /api/report/pdf` — PDF report
+- `POST /api/plotdata` — generate visualization payloads on demand
+- `POST /api/report/pdf` — detailed PDF report
 
-The read-only administration routes and survey submission API are intentionally
+The administration routes, private K-PREDICT APIs, and survey submission API are intentionally
 omitted from this public API list and from the generated OpenAPI schema.
 
 ## Public data and GitHub size

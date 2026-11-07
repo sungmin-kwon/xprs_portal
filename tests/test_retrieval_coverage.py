@@ -54,7 +54,7 @@ class RetrievalCoverageTests(unittest.TestCase):
         self.assertEqual({row["source"] for row in pool["sources"]}, {"semanticscholar", "europe_pmc"})
         self.assertEqual(result["summary"]["providers"], ["europe_pmc", "semanticscholar"])
 
-    def test_sparse_finished_epmc_does_not_hide_incomplete_semantic_scholar(self):
+    def test_one_successful_semantic_scholar_request_is_terminal(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             s2 = root / "s2"; s2.mkdir()
@@ -70,7 +70,7 @@ class RetrievalCoverageTests(unittest.TestCase):
                 "search_strategy_version": 2,
                 "search_strategies": [{
                     "name": "identity", "query": "TP53", "complete": False,
-                    "raw_examined": 10,
+                    "fetch_ok": True, "raw_examined": 3,
                 }],
                 "data": [],
             }), encoding="utf-8")
@@ -83,12 +83,12 @@ class RetrievalCoverageTests(unittest.TestCase):
             )
 
         pool = result["genes"][0]["pools"][0]
-        self.assertEqual(pool["status"], "indexed")
+        self.assertEqual(pool["status"], "complete")
         self.assertFalse(pool["target_reached"])
-        self.assertFalse(pool["all_providers_terminal"])
-        self.assertEqual(pool["incomplete_providers"], ["semanticscholar"])
+        self.assertTrue(pool["all_providers_terminal"])
+        self.assertEqual(pool["incomplete_providers"], [])
 
-    def test_incomplete_zero_yield_cache_is_not_labeled_ready_to_index(self):
+    def test_zero_yield_semantic_scholar_cache_is_terminal_for_that_provider(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             s2 = root / "s2"; s2.mkdir()
@@ -99,7 +99,7 @@ class RetrievalCoverageTests(unittest.TestCase):
                 "pagination_complete": False, "search_strategy_version": 2,
                 "search_strategies": [{
                     "name": "identity", "query": "LAMC1-AS1 colorectal cancer",
-                    "complete": True, "raw_examined": 30,
+                    "fetch_ok": True, "complete": True, "raw_examined": 10,
                 }],
                 "data": [{"paperId": "unrelated", "title": "Unrelated paper"}],
             }), encoding="utf-8")
@@ -112,7 +112,7 @@ class RetrievalCoverageTests(unittest.TestCase):
         self.assertEqual(pool["status"], "partial")
         self.assertEqual(pool["eligible_count"], 0)
         statuses = {row["source"]: row for row in pool["provider_statuses"]}
-        self.assertEqual(statuses["semanticscholar"]["state"], "incomplete")
+        self.assertEqual(statuses["semanticscholar"]["state"], "complete")
 
     def test_target_reached_is_complete_without_fallback_cache(self):
         with tempfile.TemporaryDirectory() as temporary:

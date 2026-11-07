@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable, Optional
 
 from config import LANGUAGE_LABELS
@@ -52,6 +53,31 @@ def is_cancer_phenotype(phenotype: str) -> bool:
 
 def normalize_output_language(language: str | None) -> str:
     return "ko" if str(language or "").lower().startswith("ko") else "en"
+
+
+def infer_output_language(text: str | None, fallback: str | None = "en") -> str:
+    """Choose a response language from the current turn when it is clear.
+
+    Explicit language instructions take precedence, followed by the writing
+    system used in the question. Inputs without natural-language evidence
+    (for example ``KCNQ1?``) retain the dashboard/session language.
+    """
+    value = str(text or "").strip()
+    default = normalize_output_language(fallback)
+    if not value:
+        return default
+
+    if re.search(r"\b(?:in|into)\s+korean\b|\bkorean\s+(?:answer|response|version)\b", value, re.I) \
+            or re.search(r"(?:한국어|한글)(?:로|으로)\s*(?:답|설명|작성|말)", value):
+        return "ko"
+    if re.search(r"\b(?:in|into)\s+english\b|\benglish\s+(?:answer|response|version)\b", value, re.I) \
+            or re.search(r"영어(?:로|으로)\s*(?:답|설명|작성|말)", value):
+        return "en"
+    if re.search(r"[가-힣ㄱ-ㅎㅏ-ㅣ]", value):
+        return "ko"
+    if re.search(r"\b[a-z]{2,}\b", value, re.I):
+        return "en"
+    return default
 
 
 def ui_label(language: str | None, key: str, **kwargs: Any) -> str:

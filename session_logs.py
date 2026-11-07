@@ -87,6 +87,8 @@ def load_session_log(individual_id: str, session_id: str) -> dict:
                 payload = _normalize_legacy_payload(json.load(f))
                 payload.setdefault("simple_summary", "")
                 payload.setdefault("detailed_summary", "")
+                payload.setdefault("rag_context_compact", "")
+                payload.setdefault("model_safe_context", "")
                 payload.setdefault("report_payload", {})
                 payload.setdefault("references", [])
                 payload.setdefault("timings", {})
@@ -121,6 +123,8 @@ def load_session_log(individual_id: str, session_id: str) -> dict:
         },
         "simple_summary": "",
         "detailed_summary": "",
+        "rag_context_compact": "",
+        "model_safe_context": "",
         "report_payload": {},
         "references": [],
         "timings": {},
@@ -151,6 +155,8 @@ def load_session_log_by_id(session_id: str, individual_id: str | None = None) ->
         payload = _normalize_legacy_payload(memory_payload)
         payload.setdefault("simple_summary", "")
         payload.setdefault("detailed_summary", "")
+        payload.setdefault("rag_context_compact", "")
+        payload.setdefault("model_safe_context", "")
         payload.setdefault("report_payload", {})
         payload.setdefault("references", [])
         payload.setdefault("timings", {})

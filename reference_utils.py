@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # intended gene change. The version is stored in both the JSON cache and Chroma
 # metadata so old lexical-only matches cannot silently remain citable.
 GENE_IDENTITY_POLICY_VERSION = 2
-GENE_SEARCH_STRATEGY_VERSION = 2
+GENE_SEARCH_STRATEGY_VERSION = 3
 
 # Short symbols are particularly prone to acronym collisions. A small curated
 # identity record improves both search precision and deterministic validation;
@@ -86,11 +86,12 @@ def gene_search_strategies(
 ) -> list[dict[str, str]]:
     """Return ordered, deduplicated Semantic Scholar recall strategies.
 
-    The first query remains the most identity-specific query used for an
-    interactive cache miss. Later strategies are consumed incrementally by
-    rescue/background pagination. Broad acronym searches are safe to include
-    here because every returned paper must still pass the independent gene
-    identity gate before it can enter RAG or the reference list.
+    The first query remains the identity-specific query used by the current
+    one-shot fallback. Additional strategies are retained for legacy-cache
+    normalization and controlled maintenance tooling, but are not traversed by
+    chatbot or admin requests. Every returned paper must still pass the
+    independent gene-identity gate before it can enter RAG or the reference
+    list.
     """
     profile = gene_identity_profile(gene)
     symbol = profile["symbol"] or str(gene).strip()
@@ -640,11 +641,11 @@ def normalize_citations(text: str) -> str:
 
     def repl(match: re.Match) -> str:
         inner = match.group(1).strip()
-        if not re.fullmatch(r"[0-9,，\s\-–]+", inner):
+        if not re.fullmatch(r"[0-9,，;；\s\-–]+", inner):
             return match.group(0)
 
         nums: list[int] = []
-        for token in re.split(r"\s*[,，]\s*", inner):
+        for token in re.split(r"\s*[,，;；]\s*", inner):
             token = token.strip()
             if not token:
                 continue
@@ -666,7 +667,7 @@ def normalize_citations(text: str) -> str:
         ordered = [x for x in nums if not (x in seen or seen.add(x))]
         return "".join(f"[{x}]" for x in ordered) if ordered else match.group(0)
 
-    return re.sub(r"\[([0-9,\s\-–]+)\]", repl, text)
+    return re.sub(r"\[([0-9,，;；\s\-–]+)\]", repl, text)
 
 
 def text_mentions_gene(text: str, gene: str) -> bool:

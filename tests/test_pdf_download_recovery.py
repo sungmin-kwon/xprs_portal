@@ -27,7 +27,7 @@ class PdfDownloadRecoveryTests(unittest.TestCase):
     def test_pdf_response_is_length_delimited(self):
         session = {
             "cohort": "1000_genomes",
-            "generation_model": "openai/gpt-5.6-sol",
+            "generation_model": "openai/gpt-6.1-sol",
         }
         payload = ReportPdfRequest(
             session_id="session-id",

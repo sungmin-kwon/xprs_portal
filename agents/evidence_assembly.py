@@ -131,7 +131,7 @@ class EvidenceAssemblyAgent:
         self,
         progress_callback: Optional[Callable[[str], None]] = None,
     ):
-        """Give one user request priority over background S2 pagination.
+        """Give one user request priority over the background S2 fallback.
 
         Europe PMC is queried first, so an existing Semantic Scholar cooldown
         must never delay the primary literature request.
@@ -559,8 +559,8 @@ class EvidenceAssemblyAgent:
 
         Automatic retrieval treats any eligible Europe PMC document as usable
         evidence. Semantic Scholar is contacted only when Europe PMC yields no
-        eligible document at all. An explicit admin action may force one S2
-        page so coverage can still be inspected or extended deliberately.
+        eligible document at all. An explicit admin action may force the one
+        permitted S2 request so its coverage can still be inspected.
         """
         europe_pmc_completed, europe_pmc_eligible = self._fetch_europe_pmc_pool(
             gene,
@@ -605,7 +605,7 @@ class EvidenceAssemblyAgent:
             reason = "Europe PMC was unavailable"
         emit_progress(
             progress_callback,
-            f"{reason}; requesting one Semantic Scholar fallback page",
+            f"{reason}; requesting the one-shot Semantic Scholar fallback",
         )
         semantic_scholar_completed = self._fetch_semantic_scholar_pool(
             gene,
@@ -626,7 +626,7 @@ class EvidenceAssemblyAgent:
         """Populate one missing query pool from cache or a literature provider.
 
         This is the narrow mutation exposed by the protected retrieval admin
-        page. It reuses the interactive Semantic Scholar lock/cooldown and the
+        request. It reuses the interactive Semantic Scholar lock/cooldown and the
         same eligibility/indexing rules for every provider.
         """
         pool_type = "phenotype" if phenotype else "general"

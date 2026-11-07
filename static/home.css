@@ -489,12 +489,18 @@ label {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  container-type: inline-size;
 }
 
 .disease-panel-header {
   justify-content: space-between;
   padding: 1rem 1rem 0.85rem;
   border-bottom: 1px solid var(--border);
+}
+
+.disease-panel-header > :first-child {
+  min-width: 0;
+  flex: 1 1 240px;
 }
 
 .disease-panel-header p {
@@ -504,6 +510,8 @@ label {
 }
 
 .disease-panel-actions {
+  min-width: 0;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
   gap: 0.55rem;
@@ -1766,5 +1774,75 @@ body.dark-theme .heatmap-status.is-error {
 
   .risk-filter-actions > button {
     flex: 1;
+  }
+}
+
+/* The central disease panel can become narrow well before the viewport does,
+   especially while the individual and rare-variant panes are also visible. */
+@container (max-width: 860px) {
+  .disease-panel-header {
+    align-items: center;
+    flex-direction: row;
+    padding-block: 0.75rem;
+  }
+
+  .disease-panel-actions {
+    width: auto;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+  }
+
+  .risk-tint-key {
+    width: auto;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .risk-tint-key > span:not(.risk-tint-key__bar) {
+    display: none;
+  }
+
+  .risk-tint-key__bar {
+    width: 76px;
+  }
+
+  .analysis-btn {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .icon-btn {
+    flex: 0 0 40px;
+  }
+}
+
+@container (max-width: 500px) {
+  .disease-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .disease-panel-actions {
+    width: 100%;
+  }
+
+  .risk-tint-key {
+    margin-right: auto;
+  }
+
+  .analysis-btn {
+    flex: 1 1 auto;
+  }
+}
+
+@container (max-width: 390px) {
+  #cross-disease-heatmap-btn > span:not(.material-symbols-outlined) {
+    display: none;
+  }
+
+  #cross-disease-heatmap-btn {
+    width: 40px;
+    flex: 0 0 40px;
+    padding: 0;
   }
 }

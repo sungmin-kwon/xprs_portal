@@ -12,11 +12,14 @@ from typing import Any, Iterator
 
 logger = logging.getLogger(__name__)
 
-S2_ENRICHMENT_PAGE_SIZE = max(1, int(os.getenv("S2_ENRICHMENT_PAGE_SIZE", "10")))
-S2_ENRICHMENT_MAX_RAW_RESULTS = max(
-    S2_ENRICHMENT_PAGE_SIZE,
-    int(os.getenv("S2_ENRICHMENT_MAX_RAW_RESULTS", "50")),
+S2_ENRICHMENT_PAGE_SIZE = min(
+    10,
+    max(1, int(os.getenv("S2_ENRICHMENT_PAGE_SIZE", "10"))),
 )
+# One successful Semantic Scholar fallback request is the complete search for
+# a gene/pool. Keep the cap equal to the page size so neither the background
+# worker nor the admin page can paginate beyond ten raw papers.
+S2_ENRICHMENT_MAX_RAW_RESULTS = S2_ENRICHMENT_PAGE_SIZE
 S2_ENRICHMENT_GENERAL_TARGET = max(
     1, int(os.getenv("S2_ENRICHMENT_GENERAL_TARGET", "30"))
 )
@@ -26,14 +29,8 @@ S2_ENRICHMENT_PRIMARY_TARGET = max(
 S2_ENRICHMENT_NAMED_TARGET = max(
     1, int(os.getenv("S2_ENRICHMENT_NAMED_TARGET", "15"))
 )
-S2_ENRICHMENT_ZERO_YIELD_PAGES = max(
-    1, int(os.getenv("S2_ENRICHMENT_ZERO_YIELD_PAGES", "2"))
-)
 S2_ENRICHMENT_START_DELAY_SECONDS = max(
     0.0, float(os.getenv("S2_ENRICHMENT_START_DELAY_SECONDS", "30"))
-)
-S2_ENRICHMENT_MAX_PAGES_PER_JOB = max(
-    1, int(os.getenv("S2_ENRICHMENT_MAX_PAGES_PER_JOB", "1"))
 )
 S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS = max(
     0.0,
@@ -55,7 +52,7 @@ class EnrichmentJob:
 
 
 class LiteratureEnrichmentQueue:
-    """Single, checkpointed background paginator shared by every cohort."""
+    """Single background worker for one-shot Semantic Scholar fallbacks."""
 
     def __init__(self, *, s2_agent: Any, rag_agent: Any):
         self.s2 = s2_agent
@@ -125,7 +122,6 @@ class LiteratureEnrichmentQueue:
                 "primary_phenotype": S2_ENRICHMENT_PRIMARY_TARGET,
                 "named_phenotype": S2_ENRICHMENT_NAMED_TARGET,
                 "raw_result_cap": S2_ENRICHMENT_MAX_RAW_RESULTS,
-                "max_pages_per_job": S2_ENRICHMENT_MAX_PAGES_PER_JOB,
                 "api_key_min_interval_seconds": S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS,
             },
         }
@@ -257,12 +253,9 @@ class LiteratureEnrichmentQueue:
             page_size=S2_ENRICHMENT_PAGE_SIZE,
             max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
         )
-        zero_yield_pages = int(status.get("zero_yield_pages") or 0)
-        pages_requested = 0
-
         # A chatbot miss reaches the queue before a Semantic Scholar cache
-        # exists. Make the first provider request here so answer generation
-        # never waits for Semantic Scholar or its rate-limit cooldown.
+        # exists. Make the one permitted provider request here so answer
+        # generation never waits for Semantic Scholar or its cooldown.
         if not status.get("fetch_ok"):
             papers = self.s2.cached_for_gene(
                 job.gene,
@@ -271,7 +264,6 @@ class LiteratureEnrichmentQueue:
                 max_retries=1,
                 api_key_min_interval_seconds=S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS,
             )
-            pages_requested = 1
             status = self.s2.pagination_status(
                 job.gene,
                 job.phenotype,
@@ -295,129 +287,17 @@ class LiteratureEnrichmentQueue:
             if docs:
                 self.rag.upsert_docs(docs)
                 eligible_ids.update(doc["id"] for doc in docs)
-                zero_yield_pages = 0
-            else:
-                zero_yield_pages += 1
-
-        while (
-            len(eligible_ids) < job.target_eligible
-            and pages_requested < S2_ENRICHMENT_MAX_PAGES_PER_JOB
-        ):
-            with self._activity:
-                while self._interactive_retrievals > 0:
-                    self._activity.wait(timeout=5.0)
-
-            result = self.s2.fetch_next_cached_page(
-                job.gene,
-                phenotype=job.phenotype,
-                page_size=S2_ENRICHMENT_PAGE_SIZE,
-                max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
-                api_key_min_interval_seconds=S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS,
-            )
-            pages_requested += 1
-            if not result.get("ok"):
-                logger.warning(
-                    "[S2_ENRICH] page fetch paused gene=%s pool=%s phenotype=%s reason=%s",
-                    job.gene,
-                    job.pool_type,
-                    job.phenotype,
-                    result.get("reason"),
-                )
-                break
-
-            new_docs = self.s2.papers_to_docs(
-                job.gene,
-                result.get("new_papers") or [],
-                pool_type=job.pool_type,
-                phenotype=job.phenotype,
-            )
-            unseen = [doc for doc in new_docs if doc["id"] not in eligible_ids]
-            if unseen:
-                self.rag.upsert_docs(unseen)
-                eligible_ids.update(doc["id"] for doc in unseen)
-                zero_yield_pages = 0
-            else:
-                zero_yield_pages += 1
-
-            logger.info(
-                "[S2_ENRICH] page complete gene=%s pool=%s phenotype=%s raw=%d eligible=%d added=%d",
-                job.gene,
-                job.pool_type,
-                job.phenotype,
-                int(result.get("raw_examined") or 0),
-                len(eligible_ids),
-                len(unseen),
-            )
-            self.s2.record_enrichment_status(
-                job.gene,
-                job.phenotype,
-                eligible_count=len(eligible_ids),
-                zero_yield_pages=zero_yield_pages,
-                complete=False,
-            )
-            if result.get("pagination_complete"):
-                break
-            if zero_yield_pages >= S2_ENRICHMENT_ZERO_YIELD_PAGES:
-                advanced = bool(
-                    hasattr(self.s2, "advance_to_next_search_strategy")
-                    and self.s2.advance_to_next_search_strategy(
-                        job.gene,
-                        job.phenotype,
-                        page_size=S2_ENRICHMENT_PAGE_SIZE,
-                        max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
-                    )
-                )
-                if advanced:
-                    logger.info(
-                        "[S2_ENRICH] switching recall strategy after %d zero-yield pages gene=%s pool=%s phenotype=%s",
-                        zero_yield_pages,
-                        job.gene,
-                        job.pool_type,
-                        job.phenotype,
-                    )
-                    zero_yield_pages = 0
-                    continue
-                logger.info(
-                    "[S2_ENRICH] stopping after %d zero-yield pages gene=%s pool=%s phenotype=%s",
-                    zero_yield_pages,
-                    job.gene,
-                    job.pool_type,
-                    job.phenotype,
-                )
-                break
-
-        if (
-            pages_requested >= S2_ENRICHMENT_MAX_PAGES_PER_JOB
-            and len(eligible_ids) < job.target_eligible
-        ):
-            logger.info(
-                "[S2_ENRICH] per-action page budget reached gene=%s pool=%s phenotype=%s pages=%d",
-                job.gene,
-                job.pool_type,
-                job.phenotype,
-                pages_requested,
-            )
-
-        final_status = self.s2.pagination_status(
-            job.gene,
-            job.phenotype,
-            page_size=S2_ENRICHMENT_PAGE_SIZE,
-            max_raw_results=S2_ENRICHMENT_MAX_RAW_RESULTS,
+        stop_reason = (
+            "eligible_target"
+            if len(eligible_ids) >= job.target_eligible
+            else "one_shot_fallback_complete"
         )
-        if len(eligible_ids) >= job.target_eligible:
-            stop_reason = "eligible_target"
-        elif zero_yield_pages >= S2_ENRICHMENT_ZERO_YIELD_PAGES:
-            stop_reason = "zero_yield_pages"
-        elif final_status.get("pagination_complete"):
-            stop_reason = "source_exhausted_or_raw_cap"
-        else:
-            stop_reason = None
         self.s2.record_enrichment_status(
             job.gene,
             job.phenotype,
             eligible_count=len(eligible_ids),
-            zero_yield_pages=zero_yield_pages,
-            complete=stop_reason is not None,
+            zero_yield_pages=0 if eligible_ids else 1,
+            complete=True,
             stop_reason=stop_reason,
         )
 

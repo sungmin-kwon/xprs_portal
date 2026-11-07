@@ -19,8 +19,12 @@ from agents.gene_importance import GeneImportanceAgent
 from agents.local_reference import LocalReferenceAgent
 from agents.open_targets import OpenTargetsAgent
 from agents.query_analysis import QueryAnalysisAgent
-from config import REF_DIR
-from llm_utils import LLMAgent
+from config import PHENOTYPE_LABELS_KO, REF_DIR
+from llm_utils import (
+    LLMAgent,
+    mask_kpredict_sensitive_values,
+    restore_kpredict_sensitive_values,
+)
 from plot_data import load_plot_data_store
 from reference_utils import (
     extract_publication_id,
@@ -34,6 +38,7 @@ from text_utils import (
     emit_progress,
     emit_timing,
     format_duration,
+    infer_output_language,
     normalize_output_language,
     ui_label,
     unique_preserving_order,
@@ -256,14 +261,21 @@ class ExplanationAgent:
                         "role": "user",
                         "content": (
                             "Return JSON with exactly two keys: overall_interpretation and gene_overview.\n"
-                            "Write 1-2 short sentences in overall_interpretation that give the overall pattern "
-                            "and what it means within the reference cohort. Write 1-2 short sentences in "
+                            "Write 1-2 short sentences in overall_interpretation that summarize the main "
+                            "biological or evidence pattern across the selected genes. Do not discuss the "
+                            "overall PRS, percentile, or reference-cohort position here, and do not say that "
+                            "those values were not provided; the Risk Overview presents them separately. "
+                            "Write 1-2 short sentences in "
                             "gene_overview that summarize the gene-level pattern without listing every gene. "
                             "Write both fields for a non-specialist reader and use only the provided takeaways. Avoid "
                             "specialist jargon; if a technical term is unavoidable, explain it in plain "
                             "language. Clearly distinguish a gene's contribution to this PRS model from "
                             "proof that it causes disease, and do not describe a risk-lowering contribution "
-                            "as clinically protective. Keep citations sparse: place at most one citation "
+                            "as clinically protective. State that gene-evidence limitation at most once when "
+                            "it is relevant. Do not repeat a generic diagnosis, prognosis, or clinical-decision "
+                            "warning in either field; the report has a dedicated disclaimer for that purpose. "
+                            "The safety rules below govern the claims you may make, but should not be restated "
+                            "as boilerplate. Keep citations sparse: place at most one citation "
                             "group at the end of a sentence and include no more than three of the most "
                             "directly relevant reference numbers in that group.\n"
                             f"Output language: {output_language}. If Korean, use consistent formal 존댓말.\n\n"
@@ -495,6 +507,11 @@ class ExplanationAgent:
         if not text:
             return ""
 
+        # Expand grouped citations and ranges before applying a number map.
+        # Otherwise a range such as [2-4] never matches the single-number
+        # remapper and can survive with stale or ambiguous reference numbers.
+        text = normalize_citations(text)
+
         def replace(match: re.Match) -> str:
             old_val = int(match.group(1))
             if old_val in mapping:
@@ -511,6 +528,7 @@ class ExplanationAgent:
         chunk_by_global_id: dict[int, str],
     ) -> tuple[str, str, list[dict[str, Any]], dict[int, int]]:
         """Canonicalize citations and return compact, display-numbered refs."""
+        answer = normalize_citations(answer)
         used_ids = [int(value) for value in re.findall(r"\[(\d+)\]", answer)]
         old_to_display: dict[int, int] = {}
         display_refs: dict[int, dict[str, Any]] = {}
@@ -606,6 +624,62 @@ class ExplanationAgent:
         return "risk_relative_highest"
 
     @staticmethod
+    def _is_personal_prs_position_question(question: str) -> bool:
+        text = str(question or "").strip()
+        lowered = text.lower()
+        mentions_prs = bool(
+            re.search(r"\bprs\b|polygenic\s+risk\s+score", lowered)
+            or re.search(r"다유전자\s*위험\s*점수", text)
+        )
+        mentions_position = bool(
+            re.search(r"percentile|cohort\s+(?:position|rank)|position\s+in\s+(?:the\s+)?cohort", lowered)
+            or re.search(r"백분위|코호트.*(?:위치|순위)", text)
+        )
+        requests_own_value = bool(
+            re.search(r"\bmy\b|\brepeat\b|this\s+individual", lowered)
+            or re.search(r"(?:제|내|이\s*개인).*(?:PRS|다유전자)", text, re.I)
+        )
+        return mentions_prs and mentions_position and requests_own_value
+
+    def _local_prs_position_answer(
+        self,
+        summary_context: dict[str, Any] | None,
+        language: str,
+    ) -> str:
+        report_payload = (summary_context or {}).get("Report Payload") or {}
+        risk_overview = report_payload.get("risk_overview") or {}
+        try:
+            percentile = float(risk_overview.get("percentile"))
+        except (TypeError, ValueError):
+            return ""
+
+        disease_name = self.primary_phenotype
+        if language == "ko":
+            disease_name = PHENOTYPE_LABELS_KO.get(
+                self.primary_phenotype,
+                self.disease_display_name,
+            )
+        relative_position = ui_label(language, self._relative_risk_key(percentile))
+        summary = ui_label(
+            language,
+            "simple_risk_sentence",
+            disease_name=disease_name,
+            percentile=f"{percentile:.1f}",
+            relative_position=relative_position,
+        )
+        if language == "ko":
+            explanation = (
+                f"여기서 {percentile:.1f}%는 선택된 참조 코호트 안에서의 상대적 순위를 뜻하며, "
+                f"{disease_name} 발병 확률이 {percentile:.1f}%라는 의미는 아닙니다."
+            )
+        else:
+            explanation = (
+                f"Here, {percentile:.1f}% is a relative rank within the selected reference cohort; "
+                f"it does not mean a {percentile:.1f}% probability of developing {disease_name}."
+            )
+        return f"{summary}\n\n{explanation}"
+
+    @staticmethod
     def _render_compact_gene_rankings(
         top_rows: list[dict[str, Any]],
         bottom_rows: list[dict[str, Any]],
@@ -672,16 +746,26 @@ class ExplanationAgent:
         percentile = density_profile.get("percentile") if density_profile else None
         relative_position = ui_label(language, self._relative_risk_key(percentile))
         if percentile is not None:
+            primary_phenotype = str(getattr(self, "primary_phenotype", "") or "").strip().lower()
+            if language == "ko":
+                disease_name = PHENOTYPE_LABELS_KO.get(
+                    primary_phenotype,
+                    str(getattr(self, "disease_display_name", "") or primary_phenotype),
+                )
+            else:
+                disease_name = primary_phenotype or str(
+                    getattr(self, "disease_display_name", "") or "this disease"
+                ).strip().lower()
             risk_summary = ui_label(
                 language,
                 "simple_risk_sentence",
+                disease_name=disease_name,
                 percentile=f"{percentile:.1f}",
                 relative_position=relative_position,
             )
         else:
             risk_summary = ui_label(language, "simple_risk_fallback")
 
-        risk_context = ui_label(language, "simple_risk_context")
         highlight_items: list[dict[str, Any]] = []
         gene_lookup = {item["gene"]: item for item in gene_sections}
 
@@ -719,7 +803,6 @@ class ExplanationAgent:
         markdown_parts = [
             f"### {risk_title}",
             risk_summary,
-            risk_context,
         ]
         if plain_language_interpretation.strip():
             markdown_parts.extend([
@@ -738,7 +821,7 @@ class ExplanationAgent:
             "risk_overview": {
                 "title": risk_title,
                 "summary": risk_summary,
-                "details": risk_context,
+                "details": "",
                 "percentile": round(float(percentile), 2) if percentile is not None else None,
                 "prs_value": density_profile.get("prs_value") if density_profile else None,
                 "relative_position": relative_position,
@@ -1207,8 +1290,10 @@ class ExplanationAgent:
         question: str,
         gene_count: int = 5,
         existing_references: list[dict[str, Any]] | None = None,
+        summary_context: dict[str, Any] | None = None,
         conversation_history: list[str] | None = None,
         conversation_state: dict[str, Any] | None = None,
+        prior_assistant_response: str = "",
         language: str = "en",
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> dict[str, Any]:
@@ -1236,6 +1321,81 @@ class ExplanationAgent:
             "resolved_question": question,
         }
         turn_type = (resolution.get("turn_type") or "biomedical_followup").strip()
+
+        translation_target = resolution.get("translation_target")
+        if translation_target == "auto":
+            translation_target = "en" if language == "ko" else "ko"
+        if translation_target in {"en", "ko"}:
+            target_name = "Korean" if translation_target == "ko" else "English"
+            logger.info(
+                "[FOLLOWUP_QUERY] scope=translation target=%s source_chars=%s state_genes=%s",
+                translation_target,
+                len(prior_assistant_response or ""),
+                state.active_genes,
+            )
+            if not (prior_assistant_response or "").strip():
+                answer = ui_label(translation_target, "translation_source_missing")
+                return {
+                    "Generated Answer": answer,
+                    "References": existing_references or [],
+                    "Gene Count Used": gene_count,
+                    "Threshold Used": None,
+                    "Discussed Genes": state.active_genes,
+                    "Conversation State": state.to_session(),
+                    "Store In History": False,
+                }
+
+            emit_progress(progress_callback, f"Translating the previous response into {target_name}")
+            source_text = prior_assistant_response.strip()
+            replacements: dict[str, str] = {}
+            if self.minimize_sensitive_context:
+                source_text, replacements = mask_kpredict_sensitive_values(source_text)
+
+            try:
+                translated = (self.llm.chat([
+                    {
+                        "role": "system",
+                        "content": (
+                            f"Translate the supplied XPRS portal response into {target_name}. "
+                            "Return only the translated response. Preserve Markdown, HTML tags, "
+                            "gene symbols, model names, URLs, citation numbers, and every token "
+                            "matching XPRSPRIVATEVALUE####X exactly. Do not add, remove, summarize, "
+                            "or reinterpret any scientific claim."
+                        ),
+                    },
+                    {"role": "user", "content": source_text},
+                ], timeout=180) or "").strip()
+            except Exception:
+                logger.exception("Translation of the prior XPRS response failed")
+                translated = ""
+
+            if not translated:
+                answer = ui_label(translation_target, "translation_failed")
+                store_in_history = False
+            else:
+                answer = restore_kpredict_sensitive_values(translated, replacements)
+                store_in_history = True
+
+            next_state = self.conversation_agent.build_next_state(
+                previous_state=state,
+                question=question,
+                resolution=resolution,
+                discussed_genes=state.active_genes,
+            ) if self.conversation_agent else state
+            return {
+                "Generated Answer": answer,
+                "References": existing_references or [],
+                "Gene Count Used": gene_count,
+                "Threshold Used": None,
+                "Discussed Genes": state.active_genes,
+                "Conversation State": next_state.to_session(),
+                "Store In History": store_in_history,
+            }
+
+        # For ordinary follow-ups, answer in the language of the current turn
+        # when it is unambiguous. The dashboard/session setting remains the
+        # fallback for gene-only or otherwise language-neutral input.
+        language = infer_output_language(question, fallback=language)
 
         if turn_type == "off_domain_request":
             logger.info(
@@ -1326,6 +1486,30 @@ class ExplanationAgent:
                 "Store In History": False,
             }
 
+        if self._is_personal_prs_position_question(question):
+            local_answer = self._local_prs_position_answer(summary_context, language)
+            if local_answer:
+                logger.info(
+                    "[FOLLOWUP_QUERY] scope=local_prs_position question=%r percentile_source=session_report",
+                    question,
+                )
+                emit_progress(progress_callback, "Reading PRS position from this session")
+                next_state = self.conversation_agent.build_next_state(
+                    previous_state=state,
+                    question=question,
+                    resolution=resolution,
+                    discussed_genes=state.active_genes,
+                )
+                return {
+                    "Generated Answer": local_answer,
+                    "References": existing_references or [],
+                    "Gene Count Used": gene_count,
+                    "Threshold Used": None,
+                    "Discussed Genes": state.active_genes,
+                    "Conversation State": next_state.to_session(),
+                    "Store In History": True,
+                }
+
         effective_question = resolution.get("resolved_question") or question
 
         initial_methodology_query = self.local_reference_agent.is_methodology_query(
@@ -1347,6 +1531,26 @@ class ExplanationAgent:
                 "disease_intent": "disease_neutral",
             }
         )
+
+        # The deterministic conversation resolver is authoritative for context
+        # carried across turns.  Query analysis may not rediscover a phenotype
+        # when the latest message is only an ordinal reference or correction.
+        carried_phenotypes = [
+            value for value in (resolution.get("resolved_phenotypes") or [])
+            if isinstance(value, str) and value.strip()
+        ]
+        analyzed_phenotypes = [
+            value for value in (analysis.get("phenotypes") or [])
+            if isinstance(value, str) and value.strip()
+        ]
+        if analyzed_phenotypes:
+            # Persist an explicitly analyzed phenotype for the next pronoun or
+            # correction turn even when the turn resolver itself omitted it.
+            resolution["resolved_phenotypes"] = analyzed_phenotypes
+        elif carried_phenotypes:
+            analysis["phenotypes"] = carried_phenotypes
+            if analysis.get("disease_intent") in {None, "", "disease_neutral"}:
+                analysis["disease_intent"] = "primary_disease"
 
         resolved_genes = resolution.get("resolved_genes") or []
         if resolved_genes:
@@ -1385,18 +1589,67 @@ class ExplanationAgent:
                 "Gene Count Used": gene_count,
             }
         else:
-            emit_progress(progress_callback, "Loading summary context for follow-up")
+            cached = dict(summary_context or {})
+            report_payload = cached.get("Report Payload") or {}
 
-            def _background_summary_progress(_: str) -> None:
-                return
+            # Older in-memory sessions may not contain Model Safe Context.  A
+            # safe replacement can be reconstructed from generated evidence
+            # prose without including the individual ID, PRS, percentile, sex,
+            # genotype, or exact contribution values.
+            if self.minimize_sensitive_context and not cached.get("Model Safe Context"):
+                safe_sections: list[str] = []
+                for section in report_payload.get("gene_sections") or []:
+                    if not isinstance(section, dict):
+                        continue
+                    gene = str(section.get("gene") or "").strip()
+                    relevance = str(section.get("disease_relevance") or "").strip()
+                    if gene and relevance:
+                        safe_sections.append(f"### {gene}\n{relevance}")
+                integrated = report_payload.get("integrated_view") or {}
+                if isinstance(integrated, dict):
+                    integrated_body = str(integrated.get("body") or "").strip()
+                    if integrated_body:
+                        safe_sections.append(integrated_body)
+                cached["Model Safe Context"] = "\n\n".join(safe_sections)
 
-            base = self.build_explanation(
-                pid,
-                evaluate=False,
-                gene_count=gene_count,
-                language=language,
-                progress_callback=_background_summary_progress,
+            has_cached_context = any(
+                str(cached.get(key) or "").strip()
+                for key in (
+                    "Detailed Explanation",
+                    "Generated Explanation",
+                    "RAG Context Compact",
+                    "Model Safe Context",
+                )
             )
+            if has_cached_context:
+                emit_progress(progress_callback, "Reusing saved summary context")
+                logger.info(
+                    "[FOLLOWUP_CONTEXT] Reused saved summary context; full summary rebuild skipped"
+                )
+                base = {
+                    "Detailed Explanation": cached.get("Detailed Explanation", ""),
+                    "Generated Explanation": cached.get("Generated Explanation", ""),
+                    "References": cached.get("References") or existing_references or [],
+                    "RAG Context Compact": cached.get("RAG Context Compact", ""),
+                    "Model Safe Context": cached.get("Model Safe Context", ""),
+                    "Gene Count Used": cached.get("Gene Count Used") or gene_count,
+                }
+            else:
+                emit_progress(progress_callback, "Loading summary context for follow-up")
+
+                def _background_summary_progress(_: str) -> None:
+                    return
+
+                logger.info(
+                    "[FOLLOWUP_CONTEXT] No saved summary context was available; rebuilding once"
+                )
+                base = self.build_explanation(
+                    pid,
+                    evaluate=False,
+                    gene_count=gene_count,
+                    language=language,
+                    progress_callback=_background_summary_progress,
+                )
         logger.info(
             "[FOLLOWUP_QUERY] scope=%s question=%r effective_question=%r rewritten=%r genes=%s phenotypes=%s state_genes=%s",
             analysis.get("scope"),
@@ -1554,11 +1807,10 @@ class ExplanationAgent:
 
         merged_references, ref_number_map = merge_references_preserve_numbers(existing_references, cited_refs)
 
-        def remap_reference(match: re.Match) -> str:
-            current_n = int(match.group(1))
-            return f"[{ref_number_map.get(current_n, current_n)}]"
-
-        answer = re.sub(r"\[(\d+)\]", remap_reference, answer)
+        # This also expands any citation range before remapping. References
+        # absent from the canonical map are removed instead of leaking a stale
+        # local number into the conversation-wide reference list.
+        answer = self._remap_citations(answer, ref_number_map)
 
         next_state = self.conversation_agent.build_next_state(
             previous_state=state,

@@ -84,6 +84,11 @@ def run_summary_request(req: SummaryRequest, progress_callback=None, data_root=N
     session["threshold_used"] = None
     session["simple_summary"] = result.get("Simple Explanation", "")
     session["detailed_summary"] = result.get("Detailed Explanation", result.get("Generated Explanation", ""))
+    # Preserve the already-built follow-up context in the session.  Follow-up
+    # questions can then retrieve only the genes they actually discuss instead
+    # of rebuilding all top/bottom gene sections on every turn.
+    session["rag_context_compact"] = result.get("RAG Context Compact", "")
+    session["model_safe_context"] = result.get("Model Safe Context", "")
     session["report_payload"] = result.get("Report Payload", {})
     session["timings"] = result.get("Timings", {})
     session["messages"].append({
