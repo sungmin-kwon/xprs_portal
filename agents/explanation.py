@@ -484,7 +484,22 @@ class ExplanationAgent:
             self._render_ranked_genes_table(top_df, ui_label(language, "top_genes"), language=language),
             self._render_ranked_genes_table(bottom_df, ui_label(language, "bottom_genes"), language=language),
         ]
+        note = self._population_rank_note(language)
+        if note:
+            sections.append(f'<p class="population-rank-note"><em>{html.escape(note)}</em></p>')
         return "\n\n".join(part for part in sections if part.strip()).strip()
+
+    def _population_rank_note(self, language: str) -> str:
+        """Explain Population Rank for the active cohort.
+
+        The column is a gene-level cohort property (variance-based for
+        K-PREDICT, mean-based for the public cohort), the same for every
+        individual, and was easy to misread as the person's own rank.
+        """
+        basis = getattr(self.gene_agent, "population_rank_basis", None)
+        if basis not in {"mean", "variance"}:
+            return ""
+        return ui_label(language, f"population_rank_note_{basis}")
 
     def _build_verified_database_rows(self, genes: list[str], language: str = "en") -> list[dict[str, Any]]:
         if self.ot_agent is None:
@@ -835,6 +850,9 @@ class ExplanationAgent:
                         f"| {rank if rank is not None else '—'} |"
                     )
                 parts.append("\n".join(table))
+            note = self._population_rank_note(language)
+            if note and len(parts) > 1:
+                parts.append(f"_{note}_")
 
         return "\n\n".join(parts)
 
@@ -1398,6 +1416,7 @@ class ExplanationAgent:
                 "body": disclaimer_body,
             },
             "risk_overview": simple_payload.get("risk_overview", {}),
+            "population_rank_note": self._population_rank_note(language),
             "top_genes": {
                 "title": ui_label(language, "top_genes"),
                 "rows": top_rows,

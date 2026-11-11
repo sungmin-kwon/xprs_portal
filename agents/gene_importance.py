@@ -8,6 +8,9 @@ from text_utils import is_unannotated_region, unannotated_region_label
 
 
 class GeneImportanceAgent:
+    # population_rank sorts genes by mean contribution across the public cohort.
+    population_rank_basis = "mean"
+
     def __init__(
         self,
         csv_path: str,
@@ -88,6 +91,9 @@ class GeneImportanceAgent:
 
 class KPredictGeneImportanceAgent:
     """Read one K-PREDICT contribution column without loading the full matrix."""
+
+    # population_rank sorts genes by contribution variance (kpredict_data.py).
+    population_rank_basis = "variance"
 
     def __init__(self, root: Path, disease: str, default_top_n: int = 5):
         self.root = Path(root)

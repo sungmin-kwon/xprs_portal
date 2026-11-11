@@ -638,6 +638,8 @@ def build_pdf_report(
     )
     if not top_table_added and not bottom_table_added:
         story.extend(technical_heading_flowables)
+    elif report.get("population_rank_note"):
+        story.append(p(str(report["population_rank_note"]), small_style))
 
     current_gene_group = None
     for section in report.get("gene_sections") or []:

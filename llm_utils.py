@@ -123,10 +123,14 @@ class LLMAgent:
         temperature: float = 0.2,
         ollama_url: str = "http://localhost:11434",
         privacy_mode: str | None = None,
+        fallback_model: str | None = None,
     ):
         self.provider = provider
         self.client = client
         self.model = model
+        # Second allowlisted model, tried once when the primary keeps returning
+        # empty completions (e.g. its only ZDR-eligible endpoint is degraded).
+        self.fallback_model = fallback_model if fallback_model and fallback_model != model else None
         self.temperature = temperature
         self.ollama_url = ollama_url
         self.privacy_mode = privacy_mode
@@ -229,6 +233,24 @@ class LLMAgent:
                             return self._completion_text(retry_resp)
                         except RuntimeError as retry_error:
                             malformed_error = retry_error
+                    if self.provider == "openrouter" and self.fallback_model:
+                        logger.warning(
+                            "[LLM] model=%s still returned no completion after retries; "
+                            "falling back once to model=%s: %s",
+                            self.model,
+                            self.fallback_model,
+                            malformed_error,
+                        )
+                        fallback_resp = self.client.chat.completions.create(
+                            **{**request_kwargs, "model": self.fallback_model}
+                        )
+                        try:
+                            return self._completion_text(fallback_resp)
+                        except RuntimeError as fallback_error:
+                            raise RuntimeError(
+                                f"{malformed_error}; fallback model {self.fallback_model} also failed: "
+                                f"{fallback_error}"
+                            ) from fallback_error
                     raise malformed_error
             except BadRequestError as e:
                 provider_name = {
@@ -327,6 +349,7 @@ def build_llm_agent(
     client: Optional[Any],
     model: Optional[str],
     privacy_mode: str | None = None,
+    fallback_model: str | None = None,
 ):
     return build_llm_agent_with_temperature(
         provider,
@@ -334,6 +357,7 @@ def build_llm_agent(
         model=model,
         temperature=LLM_TEMPERATURE,
         privacy_mode=privacy_mode,
+        fallback_model=fallback_model,
     )
 
 
@@ -343,6 +367,7 @@ def build_llm_agent_with_temperature(
     model: Optional[str],
     temperature: float | None,
     privacy_mode: str | None = None,
+    fallback_model: str | None = None,
 ):
     if provider == "ollama":
         logger.info("[INIT] LLM Agent: Ollama (Model: %s @ %s)", OLLAMA_MODEL, OLLAMA_BASE_URL)
@@ -374,4 +399,5 @@ def build_llm_agent_with_temperature(
         model=model or OPENROUTER_MODEL,
         temperature=temperature,
         privacy_mode=privacy_mode,
+        fallback_model=fallback_model,
     )

@@ -158,8 +158,26 @@ def _build_llm_bound_agents(
         client=bundle["client"],
         model=model,
         privacy_mode=privacy_mode,
+        fallback_model=generation_fallback_model(),
     )
     return llm, QueryAnalysisAgent(llm=llm), ConversationAgent(llm=llm)
+
+
+def generation_fallback_model() -> str | None:
+    """Return LLM_FALLBACK_MODEL if it is on the generation allowlist.
+
+    Only allowlisted models may receive portal prompts, so an unknown value
+    is ignored (with a warning) rather than used.
+    """
+    from config import GENERATION_MODEL_IDS
+
+    candidate = os.getenv("LLM_FALLBACK_MODEL", "").strip()
+    if not candidate:
+        return None
+    if candidate not in GENERATION_MODEL_IDS:
+        logger.warning("[INIT] Ignoring LLM_FALLBACK_MODEL=%s: not in the generation allowlist", candidate)
+        return None
+    return candidate
 
 
 def _build_expl_agent_for_model(bundle: dict[str, Any], model: str):

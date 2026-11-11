@@ -349,6 +349,25 @@ class ChatbotQualityTests(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(format_contribution(value), expected)
 
+    def test_population_rank_note_matches_each_cohorts_ranking_basis(self):
+        from agents.gene_importance import GeneImportanceAgent, KPredictGeneImportanceAgent
+
+        self.assertEqual(GeneImportanceAgent.population_rank_basis, "mean")
+        self.assertEqual(KPredictGeneImportanceAgent.population_rank_basis, "variance")
+
+        agent = ExplanationAgent.__new__(ExplanationAgent)
+        agent.gene_agent = type("Gene", (), {"population_rank_basis": "variance"})()
+        note = agent._population_rank_note("en")
+        self.assertIn("varies across the reference cohort", note)
+        self.assertIn("not this person's rank", note)
+        self.assertIn("분산", agent._population_rank_note("ko"))
+
+        agent.gene_agent = type("Gene", (), {"population_rank_basis": "mean"})()
+        self.assertIn("average contribution", agent._population_rank_note("en"))
+
+        agent.gene_agent = object()  # unknown basis: say nothing rather than guess
+        self.assertEqual(agent._population_rank_note("en"), "")
+
     def test_contribution_displays_use_shared_formatter(self):
         root = Path(__file__).resolve().parents[1]
         explanation_source = (root / "agents" / "explanation.py").read_text(encoding="utf-8")
