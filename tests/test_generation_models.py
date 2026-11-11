@@ -10,20 +10,22 @@ class GenerationModelTests(unittest.TestCase):
             (ROOT / "models.json").read_text(encoding="utf-8")
         )
 
-    def test_generation_allowlist_has_two_frontier_and_two_open_weight_models(self):
+    def test_generation_allowlist_has_three_frontier_and_two_open_weight_models(self):
         models = self.model_config["generation"]
         self.assertEqual(
             [model["id"] for model in models],
             [
                 "openai/gpt-6.1-sol",
+                "openai/gpt-6-sol",
                 "anthropic/claude-opus-5.5",
                 "qwen/qwen3.8-27b",
                 "google/gemma-4-31b-it",
             ],
         )
-        self.assertTrue(models[0]["default"])
-        self.assertIn("open-weight", models[2]["label"])
+        self.assertTrue(models[1]["default"])
+        self.assertEqual(sum(bool(model.get("default")) for model in models), 1)
         self.assertIn("open-weight", models[3]["label"])
+        self.assertIn("open-weight", models[4]["label"])
 
     def test_reference_extraction_default_remains_gpt_5_mini(self):
         models = self.model_config["reference_extraction"]
@@ -48,7 +50,7 @@ class GenerationModelTests(unittest.TestCase):
 
     def test_public_environment_default_matches_ui_default(self):
         template = (ROOT / ".env.example").read_text(encoding="utf-8")
-        self.assertIn("LLM_MODEL=openai/gpt-6.1-sol", template)
+        self.assertIn("LLM_MODEL=openai/gpt-6-sol", template)
 
     def test_llm_transport_uses_openrouter_without_legacy_direct_providers(self):
         source = (ROOT / "llm_utils.py").read_text(encoding="utf-8")

@@ -697,6 +697,14 @@ function syncEvidenceSummaryButton() {
   btn.disabled = !isPrivatePreview() || !currentDiseaseEvidence;
 }
 
+// Mirrors text_utils.format_contribution: 3 significant figures, scientific
+// notation below 0.001, so small risk-lowering contributions never show as 0.00.
+function formatContribution(value) {
+  if (value === 0) return "0";
+  if (Math.abs(value) < 1e-3) return value.toExponential(2);
+  return String(Number(value.toPrecision(3)));
+}
+
 function evidenceGeneRows(items, emptyKey) {
   if (!Array.isArray(items) || !items.length) {
     return `<p class="evidence-empty">${escapeHtml(t(emptyKey))}</p>`;
@@ -704,7 +712,7 @@ function evidenceGeneRows(items, emptyKey) {
   return `<div class="evidence-gene-list">${items.map((item) => {
     const score = Number(item.contribution);
     const scoreText = Number.isFinite(score)
-      ? `${score >= 0 ? "+" : ""}${score.toFixed(2)}`
+      ? `${score >= 0 ? "+" : ""}${formatContribution(score)}`
       : "—";
     const direction = score >= 0 ? "is-increasing" : "is-lowering";
     return `<div class="evidence-gene-row">

@@ -87,6 +87,7 @@ class LocalReferenceAgent:
                     "tokens": _tokenize_reference_text(f"{title} {heading} {section_text}"),
                 })
 
+            file_start = len(entries)
             for line in lines:
                 stripped = line.strip()
                 if stripped.startswith("#"):
@@ -98,6 +99,18 @@ class LocalReferenceAgent:
                 # are intentionally short and must not be discarded as noise.
                 buffer.append(line.rstrip())
             flush_buffer()
+
+            # Routed sections rarely include the Citation section itself, so
+            # attach it to every section from this file. Without it, a note that
+            # summarizes a different published model (e.g. a T2DM PRS study) is
+            # indistinguishable from documentation of the model behind a report.
+            file_entries = entries[file_start:]
+            citation = next(
+                (entry["text"] for entry in file_entries if entry["heading"].lower() == "citation"),
+                "",
+            )
+            for entry in file_entries:
+                entry["source_citation"] = citation
         return entries
 
     def _sections_by_heading(

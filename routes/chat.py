@@ -151,7 +151,7 @@ def chat(req: ChatRequest, request: Request):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logging.error("Failed to write chat session log: %s", e)
+        logging.exception("Chat request failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -37,6 +37,7 @@ from reference_utils import (
 from text_utils import (
     emit_progress,
     emit_timing,
+    format_contribution,
     format_duration,
     infer_output_language,
     normalize_output_language,
@@ -69,6 +70,46 @@ SAFETY_RULES = (
     "- It is fine to describe what genes do biologically, what the literature reports as "
     "associations, and what the PRS distribution shows. The line is at acting as a clinician."
 )
+
+
+PATIENT_REFERENCE_EN = re.compile(
+    r"\b(?:this|the|my|our)\s+(?:patient|individual|person|participant|report|results?)\b"
+    r"|\bpatient'?s\b|\bmy\b",
+    re.I,
+)
+PATIENT_REFERENCE_KO = re.compile(
+    r"이\s*(?:환자|개인|사람|대상자|보고서|리포트|결과)"
+    r"|환자(?:의|가|는|에게|분)"
+    r"|(?:제|내)\s*(?:PRS|결과|보고서|리포트|점수|위험)",
+    re.I,
+)
+GENE_QUESTION = re.compile(r"\bgenes?\b|contribut\w*|\bloc(?:us|i)\b|유전자|기여", re.I)
+CALCULATION_QUESTION = re.compile(
+    r"\b(?:calculat\w*|comput\w*|formula\w*|equation\w*|deriv\w*|how\s+is\s+\w+\s+(?:made|built|constructed))\b"
+    r"|계산|산출|공식|수식",
+    re.I,
+)
+
+
+def user_facing_wording_rules(disease_display_name: str) -> str:
+    """Rules that keep prompt internals out of answers shown to clinicians.
+
+    In clinician testing (2026-11-11), models wrote "the XPRS background does
+    not provide …" and "the supplied material describes … type 2 diabetes",
+    exposing prompt structure and a reference note about a different model.
+    """
+    return (
+        "Wording rules — the answer is read by a clinician viewing this individual's XPRS report:\n"
+        "- Never mention internal inputs such as 'the background', 'the supplied/provided material', "
+        "'the notes', 'the evidence context' or 'the reference index'.\n"
+        "- When something is unavailable, say what is missing from the reader's point of view, for example "
+        "'This report does not include a lifetime risk estimate.' For method questions, say "
+        "'The XPRS documentation does not report …'.\n"
+        f"- The model behind this report is the {disease_display_name} XPRS model. A methodology section "
+        "whose source study concerns a different disease or model is general background only: never present "
+        "that study's model, cohort or results as this report's model, and do not mention it unless it is "
+        "directly useful as an example."
+    )
 
 
 class LiteratureEvidenceUnavailableError(RuntimeError):
@@ -310,20 +351,49 @@ class ExplanationAgent:
         n_max: int,
         language: str = "en",
         methodology_query: bool = False,
+        report_question: bool = False,
+        shown_report_values: str = "",
     ) -> str:
         output_language = "Korean" if normalize_output_language(language) == "ko" else "English"
         evidence_context = compact_ctx if compact_ctx else "(No evidence context available.)"
         reference_index = ref_index if ref_index else "(No references available.)"
         methodology_instructions = ""
-        if methodology_query:
+        if methodology_query and self._is_calculation_question(question):
+            # The six-part walkthrough suits "how is XPRS calculated?" but made
+            # every PRS-related question (accuracy, covariates, thresholds) a
+            # page of equations in clinician testing.
             methodology_instructions = (
-                "This is a PRS/XPRS methodology question. Give the level of detail warranted by the supplied "
-                "methodology sections rather than only restating their overview. For a calculation question, "
-                "explain: (1) what is being calculated, (2) required inputs, (3) preprocessing and SNP-to-gene "
-                "mapping, (4) each supplied equation with its variables, (5) population-relative interpretation, "
-                "and (6) important limitations. Clearly distinguish calculation of the underlying PRS from "
-                "XPRS decomposition and interpretation. Do not introduce formulas or details absent from the notes.\n"
+                "This is a PRS/XPRS calculation question. Give the level of detail warranted by the supplied "
+                "methodology sections rather than only restating their overview. Explain: (1) what is being "
+                "calculated, (2) required inputs, (3) preprocessing and SNP-to-gene mapping, (4) each supplied "
+                "equation with its variables, (5) population-relative interpretation, and (6) important "
+                "limitations. Clearly distinguish calculation of the underlying PRS from XPRS decomposition "
+                "and interpretation. Do not introduce formulas or details absent from the notes.\n"
             )
+        elif methodology_query:
+            methodology_instructions = (
+                "This is a general PRS/XPRS question. Answer it directly and concisely from the supplied "
+                "methodology sections. Do not walk through the calculation pipeline or reproduce equations "
+                "unless the question asks for them. If the notes do not contain what is asked (for example "
+                "model performance metrics), say so plainly in one or two sentences.\n"
+            )
+        elif report_question:
+            methodology_instructions = (
+                "This question is about the individual's XPRS report. Answer it directly from the XPRS "
+                "background first, in a few short paragraphs. Use any methodology notes only to explain a "
+                "concept the answer needs; do not walk through the calculation pipeline or reproduce "
+                "equations unless asked. If a requested value or metric (for example absolute or lifetime "
+                "risk, or model accuracy) is not in the background, say so plainly in one or two sentences "
+                "instead of explaining the method at length.\n"
+            )
+            if shown_report_values:
+                # The values themselves are never sent; only the fact that the
+                # reader sees them, so the model stops calling them missing.
+                methodology_instructions += (
+                    f"The reader sees this individual's {shown_report_values} directly above your answer. "
+                    "Do not say the report lacks them, and do not state, estimate or round any of those "
+                    "numbers yourself.\n"
+                )
         try:
             raw = self.llm.chat(
                 [
@@ -347,6 +417,7 @@ class ExplanationAgent:
                             "Do not use plain square brackets to display equations, and do not leave LaTeX fragments undelimited.\n\n"
                             f"{methodology_instructions}\n"
                             f"{SAFETY_RULES}\n\n"
+                            f"{user_facing_wording_rules(self.disease_display_name)}\n\n"
                             f"Primary disease context: {self.disease_display_name}\n"
                             f"Largest valid reference number: {n_max}\n\n"
                             f"Background:\n{background}\n\n"
@@ -360,6 +431,9 @@ class ExplanationAgent:
             )
             return self._extract_json_object(raw).get("answer", "").strip()
         except Exception:
+            # The caller turns an empty answer into an explicit failure message;
+            # log here so provider outages are visible instead of silent.
+            logger.exception("[FOLLOWUP] answer generation failed for model=%s", self.llm.model)
             return ""
 
     @staticmethod
@@ -380,7 +454,7 @@ class ExplanationAgent:
             rows_html.append(
                 "<tr>"
                 f"<td>{html.escape(str(row['gene']))}</td>"
-                f"<td>{float(row['individual_contribution']):.2f}</td>"
+                f"<td>{format_contribution(row['individual_contribution'])}</td>"
                 f"<td>{str(row['population_rank']) if row['population_rank'] is not None else '—'}</td>"
                 "</tr>"
             )
@@ -636,10 +710,29 @@ class ExplanationAgent:
             or re.search(r"백분위|코호트.*(?:위치|순위)", text)
         )
         requests_own_value = bool(
-            re.search(r"\bmy\b|\brepeat\b|this\s+individual", lowered)
+            re.search(r"\brepeat\b", lowered)
             or re.search(r"(?:제|내|이\s*개인).*(?:PRS|다유전자)", text, re.I)
+            or ExplanationAgent._is_patient_specific_question(text)
         )
         return mentions_prs and mentions_position and requests_own_value
+
+    @staticmethod
+    def _is_patient_specific_question(question: str) -> bool:
+        """True when the question is about the displayed individual or report.
+
+        Clinicians testing the portal phrase questions as "this patient", while
+        the original detector only recognized "my" and "this individual". Such
+        questions must keep the report context instead of being answered from
+        the generic methodology notes alone.
+        """
+        text = str(question or "")
+        return bool(
+            PATIENT_REFERENCE_EN.search(text) or PATIENT_REFERENCE_KO.search(text)
+        )
+
+    @staticmethod
+    def _is_calculation_question(question: str) -> bool:
+        return bool(CALCULATION_QUESTION.search(str(question or "")))
 
     def _local_prs_position_answer(
         self,
@@ -678,6 +771,76 @@ class ExplanationAgent:
                 f"it does not mean a {percentile:.1f}% probability of developing {disease_name}."
             )
         return f"{summary}\n\n{explanation}"
+
+    def _report_facts_block(
+        self,
+        summary_context: dict[str, Any] | None,
+        language: str,
+        include_genes: bool,
+    ) -> str:
+        """Report values rendered by the server above an LLM answer.
+
+        In K-PREDICT mode the percentile and contribution values are withheld
+        from the hosted model, so its answers said the report lacked them
+        (clinician feedback #8, R01). The values are inserted here instead and
+        never enter a prompt.
+        """
+        report_payload = (summary_context or {}).get("Report Payload") or {}
+        parts: list[str] = []
+
+        risk_overview = report_payload.get("risk_overview") or {}
+        try:
+            percentile = float(risk_overview.get("percentile"))
+        except (TypeError, ValueError):
+            percentile = None
+        if percentile is not None:
+            disease_name = self.primary_phenotype
+            if language == "ko":
+                disease_name = PHENOTYPE_LABELS_KO.get(self.primary_phenotype, self.disease_display_name)
+            parts.append(ui_label(
+                language,
+                "report_percentile_line",
+                disease_name=disease_name,
+                percentile=f"{percentile:.1f}",
+                relative_position=ui_label(language, self._relative_risk_key(percentile)),
+            ))
+
+        # The full report payload stored in the chat session keeps the tables
+        # under top_genes/bottom_genes["rows"]; gene_rankings exists only in the
+        # simple-summary payload, so it is a fallback.
+        rankings = report_payload.get("gene_rankings") or {}
+        if include_genes:
+            for key, title_key in (("top", "simple_top_genes"), ("bottom", "simple_bottom_genes")):
+                section = report_payload.get(f"{key}_genes") or {}
+                source_rows = section.get("rows") if isinstance(section, dict) else None
+                rows = [
+                    row for row in (source_rows or rankings.get(key) or [])
+                    if isinstance(row, dict)
+                ][: self.MAX_SUMMARY_GENES]
+                if not rows:
+                    continue
+                table = [
+                    f"**{ui_label(language, title_key)}**",
+                    "",
+                    f"| {ui_label(language, 'gene')} | {ui_label(language, 'individual_contribution')} "
+                    f"| {ui_label(language, 'population_rank')} |",
+                    "|---|---:|---:|",
+                ]
+                for row in rows:
+                    contribution = row.get("individual_contribution")
+                    rank = row.get("population_rank")
+                    table.append(
+                        f"| {row.get('gene') or '—'} "
+                        f"| {format_contribution(contribution) if contribution is not None else '—'} "
+                        f"| {rank if rank is not None else '—'} |"
+                    )
+                parts.append("\n".join(table))
+
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _is_gene_question(question: str) -> bool:
+        return bool(GENE_QUESTION.search(str(question or "")))
 
     @staticmethod
     def _render_compact_gene_rankings(
@@ -781,7 +944,7 @@ class ExplanationAgent:
                 contribution = float(row.get("individual_contribution") or 0.0)
                 value_label = "기여도" if language == "ko" else "contribution"
                 lines.append(
-                    f"- **{gene}** ({value_label} {contribution:.2f}): {lead}"
+                    f"- **{gene}** ({value_label} {format_contribution(contribution)}): {lead}"
                 )
                 highlight_items.append({
                     "gene": gene,
@@ -1100,7 +1263,7 @@ class ExplanationAgent:
                         "gene": gene,
                         "individual_contribution": (
                             "rank only; exact value withheld"
-                            if self.minimize_sensitive_context else f"{contribution:.2f}"
+                            if self.minimize_sensitive_context else format_contribution(contribution)
                         ),
                         "citation_rules": gene_citation_rules.get(gene, ""),
                         "evidence_context": gene_context_map.get(gene, ""),
@@ -1512,8 +1675,17 @@ class ExplanationAgent:
 
         effective_question = resolution.get("resolved_question") or question
 
-        initial_methodology_query = self.local_reference_agent.is_methodology_query(
+        # Questions about the displayed individual or report ("this patient",
+        # "this report") always keep the report context. Methodology notes may
+        # still be attached as background, but never replace that context.
+        patient_specific = self._is_patient_specific_question(
             f"{question}\n{effective_question}"
+        )
+        initial_methodology_query = (
+            not patient_specific
+            and self.local_reference_agent.is_methodology_query(
+                f"{question}\n{effective_question}"
+            )
         )
         analysis = (
             self.query_agent.analyze(
@@ -1577,7 +1749,8 @@ class ExplanationAgent:
             else []
         )
 
-        if methodology_query and local_reference_hits:
+        methodology_only = bool(methodology_query and local_reference_hits and not patient_specific)
+        if methodology_only:
             # Methodology questions are fully served by the curated local corpus.
             # Avoid regenerating an individual gene summary or querying literature.
             followup_genes = []
@@ -1684,8 +1857,12 @@ class ExplanationAgent:
                 context_label = hit["title"]
                 if hit.get("heading") and hit["heading"] != hit["title"]:
                     context_label = f"{hit['title']} — {hit['heading']}"
+                source_line = (
+                    f"Source study: {hit['source_citation']}\n"
+                    if hit.get("source_citation") else ""
+                )
                 local_methodology_context_lines.append(
-                    f"### {context_label}\n{hit['text']}"
+                    f"### {context_label}\n{source_line}{hit['text']}"
                 )
 
         batch_context = (
@@ -1775,6 +1952,20 @@ class ExplanationAgent:
                 + "\n".join(local_methodology_context_lines)
             )
 
+        report_facts = ""
+        shown_report_values = ""
+        if patient_specific:
+            # Only the clinician's own words decide whether to show the gene
+            # tables: the internal rewrite adds "genes" to summary requests,
+            # which turned a three-line summary (R01) into two tables.
+            include_genes = self._is_gene_question(question)
+            report_facts = self._report_facts_block(summary_context, language, include_genes=include_genes)
+            if report_facts:
+                shown_report_values = (
+                    "PRS percentile and the top/bottom gene table with individual contribution scores and "
+                    "population ranks" if include_genes and "|" in report_facts else "PRS percentile"
+                )
+
         emit_progress(progress_callback, f"Drafting follow-up response with {self.llm.model}")
         answer = self._generate_followup_text(
             background=(
@@ -1787,8 +1978,25 @@ class ExplanationAgent:
             question=question,
             n_max=n_max,
             language=language,
-            methodology_query=methodology_query and bool(local_reference_hits),
+            methodology_query=methodology_only,
+            report_question=patient_specific,
+            shown_report_values=shown_report_values,
         )
+
+        if not answer:
+            # An empty answer means generation failed. Returning it as-is shows
+            # the user a blank reply with references attached, which reads as
+            # "the bot had nothing to say". Keep it out of history so a retry
+            # starts from the same conversation state.
+            return {
+                "Generated Answer": ui_label(language, "followup_failed"),
+                "References": existing_references or [],
+                "Gene Count Used": gene_count,
+                "Threshold Used": None,
+                "Discussed Genes": state.active_genes,
+                "Conversation State": state.to_session(),
+                "Store In History": False,
+            }
 
         # Normalize grouped citations, then remove any invalid ones
         answer = normalize_citations(answer)
@@ -1811,6 +2019,8 @@ class ExplanationAgent:
         # absent from the canonical map are removed instead of leaking a stale
         # local number into the conversation-wide reference list.
         answer = self._remap_citations(answer, ref_number_map)
+        if report_facts:
+            answer = f"{report_facts}\n\n{answer}"
 
         next_state = self.conversation_agent.build_next_state(
             previous_state=state,

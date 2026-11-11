@@ -140,11 +140,39 @@ class LLMAgent:
         ]
 
     @staticmethod
+    def _empty_completion_details(response: Any) -> str:
+        """Summarize why OpenRouter returned no choices, for logs.
+
+        OpenRouter reports upstream failures inside an HTTP 200 body as an
+        ``error`` object. Only the code, a truncated message, and the provider
+        name are kept; ``metadata.raw`` is skipped because it is arbitrary
+        provider output and could echo request content in K-PREDICT mode.
+        """
+        extra = getattr(response, "model_extra", None) or {}
+        error = extra.get("error") or getattr(response, "error", None)
+        provider = extra.get("provider") or getattr(response, "provider", None)
+        details: list[str] = []
+        if isinstance(error, dict):
+            if error.get("code") is not None:
+                details.append(f"code={error['code']}")
+            if error.get("message"):
+                details.append(f"message={str(error['message'])[:200]!r}")
+            metadata = error.get("metadata")
+            if isinstance(metadata, dict) and metadata.get("provider_name"):
+                provider = provider or metadata["provider_name"]
+        if provider:
+            details.append(f"provider={provider}")
+        return f" ({', '.join(details)})" if details else " (no error details in response)"
+
+    @staticmethod
     def _completion_text(response: Any) -> str:
         """Extract one completion with a useful error for malformed providers."""
         choices = getattr(response, "choices", None)
         if not choices:
-            raise RuntimeError("completion response contained no choices")
+            raise RuntimeError(
+                "completion response contained no choices"
+                + LLMAgent._empty_completion_details(response)
+            )
         message = getattr(choices[0], "message", None)
         content = getattr(message, "content", None) if message is not None else None
         if isinstance(content, str) and content.strip():

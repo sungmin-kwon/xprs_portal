@@ -63,6 +63,31 @@ class OpenRouterPrivacyTests(unittest.TestCase):
 
         self.assertEqual(len(completions.requests), 3)
 
+    def test_empty_completion_error_reports_provider_error_without_raw_payload(self):
+        # OpenRouter reports upstream failures as an `error` object inside an
+        # HTTP 200 body; the OpenAI SDK exposes unknown fields via model_extra.
+        empty = SimpleNamespace(
+            choices=None,
+            model_extra={
+                "error": {
+                    "code": 502,
+                    "message": "Upstream provider returned an error",
+                    "metadata": {"provider_name": "ExampleProvider", "raw": "PRIVATE ECHO"},
+                },
+            },
+        )
+        completions = SequenceCompletions([empty, empty, empty])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+        agent = LLMAgent(provider="openrouter", client=client, model="test/model")
+
+        with self.assertRaises(RuntimeError) as raised:
+            agent.chat([{"role": "user", "content": "hello"}])
+
+        message = str(raised.exception)
+        self.assertIn("code=502", message)
+        self.assertIn("provider=ExampleProvider", message)
+        self.assertNotIn("PRIVATE ECHO", message)
+
     def test_every_openrouter_completion_enforces_zdr_and_denies_collection(self):
         completions = RecordingCompletions()
         client = SimpleNamespace(chat=SimpleNamespace(completions=completions))

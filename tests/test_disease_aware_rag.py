@@ -201,6 +201,23 @@ class DiseaseIntentTests(unittest.TestCase):
             available_genes=["GENE1"],
         )
 
+    def test_llm_failure_falls_back_to_deterministic_analysis(self):
+        # An overloaded provider must not turn every follow-up into HTTP 500.
+        class FailingLLM:
+            def chat(self, _messages):
+                raise RuntimeError("completion response contained no choices (code=502)")
+
+        with self.assertLogs("agents.query_analysis", level="WARNING"):
+            result = QueryAnalysisAgent(FailingLLM()).analyze(
+                "Does GENE1 affect breast cancer risk?",
+                available_genes=["GENE1"],
+            )
+
+        self.assertEqual(result["genes"], ["GENE1"])
+        self.assertIn("breast cancer", result["phenotypes"])
+        self.assertEqual(result["scope"], "general")
+        self.assertIn("Does GENE1 affect breast cancer risk?", result["rewritten_query"])
+
     def test_neutral_gene_question_does_not_default_to_breast_cancer(self):
         result = self.analyze(
             "What does GENE1 do?",

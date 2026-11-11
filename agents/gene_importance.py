@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 
 from kpredict_data import gene_contribution_frame
+from text_utils import is_unannotated_region, unannotated_region_label
 
 
 class GeneImportanceAgent:
@@ -100,6 +101,14 @@ class KPredictGeneImportanceAgent:
         # keep row labels unique. Literature retrieval needs canonical symbols,
         # and one symbol should not occupy several summary slots.
         frame["Gene"] = frame["Gene"].str.replace(r"\*+$", "", regex=True)
+        # NA_n rows are real XPRS windows without a gene symbol. Keep them (they
+        # can be strong contributors) but give them a coordinate label so they
+        # are not presented as genes or searched in the literature.
+        placeholder = frame["Gene"].map(is_unannotated_region) & frame[["chr", "start", "end"]].notna().all(axis=1)
+        frame.loc[placeholder, "Gene"] = [
+            unannotated_region_label(row.chr, row.start, row.end)
+            for row in frame.loc[placeholder, ["chr", "start", "end"]].itertuples(index=False)
+        ]
         return frame
 
     def get_top_genes(

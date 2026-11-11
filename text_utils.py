@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import re
 from typing import Any, Callable, Optional
 
@@ -78,6 +79,54 @@ def infer_output_language(text: str | None, fallback: str | None = "en") -> str:
     if re.search(r"\b[a-z]{2,}\b", value, re.I):
         return "en"
     return default
+
+
+UNANNOTATED_REGION_PREFIX = "Unannotated region"
+_PLACEHOLDER_REGION_SYMBOL = re.compile(r"^NA(?:_\d+)?$")
+
+
+def unannotated_region_label(chromosome: Any, start: Any, end: Any) -> str:
+    """Readable label for an XPRS window that has no gene symbol (``NA_n`` rows).
+
+    ``NA_n`` numbering is per disease model, so ``NA_1`` names different
+    windows in different models; coordinates make the label unambiguous.
+
+    The colon-free ``chr12 115.19–115.59 Mb`` form is deliberate: these are
+    model-level 400 kb window bounds shared by every individual, not variant
+    positions, and the ``chrN:position`` form would be stripped by the
+    K-PREDICT variant-coordinate sanitizer in ``llm_utils``.
+    """
+    return (
+        f"{UNANNOTATED_REGION_PREFIX} chr{chromosome} "
+        f"{float(start) / 1e6:.2f}–{float(end) / 1e6:.2f} Mb"
+    )
+
+
+def is_unannotated_region(name: str | None) -> bool:
+    """True for placeholder ``NA_n`` symbols and their relabeled form.
+
+    Such regions have no gene symbol to search for: querying literature
+    providers for ``NA_1`` returned unrelated materials-science papers.
+    """
+    text = str(name or "").strip()
+    return bool(_PLACEHOLDER_REGION_SYMBOL.match(text)) or text.startswith(UNANNOTATED_REGION_PREFIX)
+
+
+def format_contribution(value: float, significant_digits: int = 3) -> str:
+    """Format a gene contribution score without rounding small values to zero.
+
+    Contributions span several orders of magnitude, and fixed two-decimal
+    formatting showed many risk-lowering genes as 0.00 (clinician feedback #11).
+    Values are shown to ``significant_digits`` significant figures, switching to
+    compact scientific notation (e.g. ``3.21e-4``) below 0.001.
+    """
+    value = float(value)
+    if value == 0.0 or not math.isfinite(value):
+        return "0" if value == 0.0 else str(value)
+    if abs(value) < 1e-3:
+        mantissa, exponent = f"{value:.{significant_digits - 1}e}".split("e")
+        return f"{mantissa}e{int(exponent)}"
+    return f"{value:.{significant_digits}g}"
 
 
 def ui_label(language: str | None, key: str, **kwargs: Any) -> str:
