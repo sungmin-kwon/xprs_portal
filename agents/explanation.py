@@ -412,7 +412,8 @@ class ExplanationAgent:
                 "Rare-variant findings (pathogenic variants, alerts, carrier findings) are not available to you. "
                 "Never state or imply that this individual has, or does not have, any rare or pathogenic variant, "
                 "alert or carrier finding. You may explain general concepts, and say that this chat cannot see "
-                "those findings.\n"
+                "those findings. If a Rare-Variant Track Methods Note is provided, use it to explain how findings "
+                "were defined, assigned to diseases and labelled, and what the data do or do not record.\n"
             )
         try:
             raw = self.llm.chat(
@@ -1724,6 +1725,7 @@ class ExplanationAgent:
         patient_specific = self._is_patient_specific_question(
             f"{question}\n{effective_question}"
         )
+        rare_variant_question = self._is_rare_variant_question(question)
         initial_methodology_query = (
             not patient_specific
             and self.local_reference_agent.is_methodology_query(
@@ -1792,6 +1794,13 @@ class ExplanationAgent:
             else []
         )
 
+        if rare_variant_question and self.rare_variant_panel_available:
+            # Method documentation only (labels, panels, versions); never an
+            # individual's findings. Without it the chat explained multi-disease
+            # listings with PRS weights (T08) and said alert/carrier were undefined.
+            local_reference_hits = (
+                self.local_reference_agent.query_rare_variant_methods() + list(local_reference_hits)
+            )
         methodology_only = bool(methodology_query and local_reference_hits and not patient_specific)
         if methodology_only:
             # Methodology questions are fully served by the curated local corpus.
@@ -1997,7 +2006,6 @@ class ExplanationAgent:
 
         report_facts = ""
         shown_report_values = ""
-        rare_variant_question = self._is_rare_variant_question(question)
         if rare_variant_question and self.rare_variant_panel_available:
             report_facts = ui_label(language, "rare_variant_chat_note")
         elif patient_specific:

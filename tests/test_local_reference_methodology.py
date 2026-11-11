@@ -335,6 +335,55 @@ class LocalReferenceMethodologyTests(unittest.TestCase):
         self.assertNotIn("Rare Variant Analysis", result["Generated Answer"])
         self.assertIn("Never state or imply", llm.messages[-1]["content"])
 
+    def test_rare_variant_note_is_served_whole_and_kept_out_of_generic_search(self):
+        hits = self.agent.query_rare_variant_methods()
+        headings = [hit["heading"] for hit in hits]
+
+        for expected in ("Disease Assignment", "Alert and Carrier Labels", "Versions and Updates"):
+            self.assertIn(expected, headings)
+        self.assertNotIn("Citation", headings)
+        self.assertTrue(all("K-PREDICT rare-variant findings" in hit["source_citation"] for hit in hits))
+
+        generic = self.agent.query("panel variant carrier alert ClinVar PanelApp", top_k=10)
+        self.assertFalse(any(hit.get("source_file") == "rare_variant_methods" for hit in generic))
+
+    def test_kpredict_rare_variant_question_receives_methods_note(self):
+        llm = CapturingLLM()
+        explanation = self._explanation_agent(llm)
+        explanation.rare_variant_panel_available = True
+
+        explanation.answer_followup(
+            "KP-ABCDEF123456",
+            "The same variant appears under several diseases. Are these separate findings?",
+            summary_context=self.REPORT_CONTEXT,
+            language="en",
+        )
+
+        prompt = llm.messages[-1]["content"]
+        self.assertIn("Source study: K-PREDICT rare-variant findings", prompt)
+        self.assertIn("interpreted separately per disease panel", prompt)
+        self.assertIn("use it to explain how findings", prompt)
+
+    def test_rare_variant_note_not_sent_for_public_cohort_or_prs_questions(self):
+        llm = CapturingLLM()
+        public = self._explanation_agent(llm)
+        public.answer_followup(
+            "HG00436",
+            "What do 'alert' and 'carrier' mean in this report?",
+            summary_context=self.REPORT_CONTEXT,
+        )
+        self.assertNotIn("Rare-Variant Track Methods Note —", llm.messages[-1]["content"])
+
+        llm = CapturingLLM()
+        kpredict = self._explanation_agent(llm)
+        kpredict.rare_variant_panel_available = True
+        kpredict.answer_followup(
+            "KP-ABCDEF123456",
+            "Which genes matter most for this patient?",
+            summary_context=self.REPORT_CONTEXT,
+        )
+        self.assertNotIn("Rare-Variant Track Methods Note —", llm.messages[-1]["content"])
+
     def test_dashboard_repairs_escaped_xprs_subscripts(self):
         script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
 

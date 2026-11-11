@@ -41,6 +41,11 @@ def _tokenize_reference_text(text: str) -> set[str]:
     }
 
 
+# Served only for rare-variant questions in cohorts with a rare-variant panel;
+# excluded from generic keyword retrieval so PRS method answers never use it.
+RARE_VARIANT_NOTE_STEM = "rare_variant_methods"
+
+
 class LocalReferenceAgent:
     def __init__(self, ref_dir: Path):
         self.ref_dir = Path(ref_dir)
@@ -84,6 +89,7 @@ class LocalReferenceAgent:
                     "heading": heading,
                     "text": section_text,
                     "path": str(path),
+                    "source_file": path.stem,
                     "tokens": _tokenize_reference_text(f"{title} {heading} {section_text}"),
                 })
 
@@ -223,6 +229,19 @@ class LocalReferenceAgent:
             return bool(method_hits or {"rank", "contribution"} & tokens)
         return False
 
+    def query_rare_variant_methods(self) -> list[dict[str, Any]]:
+        """Return every section of the rare-variant methods note except its citation.
+
+        The note is short and each section answers a different clinician
+        question (labels, panels, versions, fields), so it is served whole.
+        """
+        return [
+            entry
+            for entry in self._entries
+            if entry.get("source_file") == RARE_VARIANT_NOTE_STEM
+            and entry["heading"].lower() != "citation"
+        ]
+
     def query(self, question: str, top_k: int = 3) -> list[dict[str, Any]]:
         if not self._entries:
             return []
@@ -232,6 +251,8 @@ class LocalReferenceAgent:
 
         scored: list[tuple[float, dict[str, Any]]] = []
         for entry in self._entries:
+            if entry.get("source_file") == RARE_VARIANT_NOTE_STEM:
+                continue
             overlap = query_tokens & entry["tokens"]
             if not overlap:
                 continue
