@@ -384,6 +384,44 @@ class LocalReferenceMethodologyTests(unittest.TestCase):
         )
         self.assertNotIn("Rare-Variant Track Methods Note —", llm.messages[-1]["content"])
 
+    def test_prompt_states_report_contents_reference_cohort_and_person_wording(self):
+        llm = CapturingLLM()
+        explanation = self._explanation_agent(llm)
+        explanation.rare_variant_panel_available = True
+        explanation.reference_cohort_description = "the 1,789 individuals in the K-PREDICT cohort"
+
+        explanation.answer_followup(
+            "KP-ABCDEF123456",
+            "Why is the confidence interval so wide?",
+            summary_context=self.REPORT_CONTEXT,
+        )
+
+        prompt = llm.messages[-1]["content"]
+        self.assertIn("It does not contain confidence intervals", prompt)
+        self.assertIn("follow-up badges or flags", prompt)
+        self.assertIn("plus a separate Rare Variant Analysis panel", prompt)
+        self.assertIn("Refer to the person as 'this individual'", prompt)
+        self.assertIn("Reference cohort for the percentile: the 1,789 individuals in the K-PREDICT cohort", prompt)
+
+    def test_other_trait_question_gets_no_active_disease_facts(self):
+        llm = CapturingLLM()
+        explanation = self._explanation_agent(llm)
+        explanation.query_agent.analyze.return_value = {
+            "rewritten_query": "LDL cholesterol polygenic score interpretation for this patient",
+            "genes": [],
+            "phenotypes": ["ldl cholesterol"],
+            "scope": "general",
+            "disease_intent": "other_disease",
+        }
+
+        result = explanation.answer_followup(
+            "KP-ABCDEF123456",
+            "Should this patient start a statin because of the LDL PRS?",
+            summary_context=self.REPORT_CONTEXT,
+        )
+
+        self.assertNotIn("From this report", result["Generated Answer"])
+
     def test_dashboard_repairs_escaped_xprs_subscripts(self):
         script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
 

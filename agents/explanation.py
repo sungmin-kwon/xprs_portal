@@ -97,7 +97,7 @@ CALCULATION_QUESTION = re.compile(
 )
 
 
-def user_facing_wording_rules(disease_display_name: str) -> str:
+def user_facing_wording_rules(disease_display_name: str, rare_variant_panel_available: bool = False) -> str:
     """Rules that keep prompt internals out of answers shown to clinicians.
 
     In clinician testing (2026-11-11), models wrote "the XPRS background does
@@ -114,7 +114,16 @@ def user_facing_wording_rules(disease_display_name: str) -> str:
         f"- The model behind this report is the {disease_display_name} XPRS model. A methodology section "
         "whose source study concerns a different disease or model is general background only: never present "
         "that study's model, cohort or results as this report's model, and do not mention it unless it is "
-        "directly useful as an example."
+        "directly useful as an example.\n"
+        "- Refer to the person as 'this individual'. Do not address the reader as if they were the patient "
+        "('you', 'your').\n"
+        "- This report contains the PRS percentile within its reference cohort, a PRS density plot, a gene-based "
+        "Manhattan plot, the top and bottom gene contribution tables, and literature evidence for those genes"
+        + (", plus a separate Rare Variant Analysis panel" if rare_variant_panel_available else "")
+        + ". It does not contain confidence intervals, absolute or lifetime risk, survival curves, follow-up "
+        "badges or flags, model performance metrics, or pharmacogenomic results. If a question assumes one of "
+        "these, say plainly in one sentence that this report does not include it, and do not discuss it as if "
+        "it existed."
     )
 
 
@@ -141,11 +150,14 @@ class ExplanationAgent:
         risk_profile_provider: Optional[Callable[[str], dict[str, Any]]] = None,
         minimize_sensitive_context: bool = False,
         rare_variant_panel_available: bool = False,
+        reference_cohort_description: str = "",
     ):
         self.llm = llm
         # True when the dashboard shows a Rare Variant Analysis panel for this
         # cohort (K-PREDICT). Rare-variant findings are never sent to the LLM.
         self.rare_variant_panel_available = rare_variant_panel_available
+        # Who the percentile compares this individual with (clinician question D02).
+        self.reference_cohort_description = reference_cohort_description.strip()
         self.gene_agent = gene_agent
         self.evidence_agent = evidence_agent
         self.ot_agent = ot_agent
@@ -405,6 +417,10 @@ class ExplanationAgent:
                     "Do not say the report lacks them, and do not state, estimate or round any of those "
                     "numbers yourself.\n"
                 )
+        reference_cohort_line = (
+            f"Reference cohort for the percentile: {self.reference_cohort_description}\n"
+            if self.reference_cohort_description else ""
+        )
         if rare_variant_question:
             # Clinician testing (D15) showed the model stating that no rare
             # variant was found, although it never receives rare-variant data.
@@ -438,8 +454,9 @@ class ExplanationAgent:
                             "Do not use plain square brackets to display equations, and do not leave LaTeX fragments undelimited.\n\n"
                             f"{methodology_instructions}\n"
                             f"{SAFETY_RULES}\n\n"
-                            f"{user_facing_wording_rules(self.disease_display_name)}\n\n"
+                            f"{user_facing_wording_rules(self.disease_display_name, self.rare_variant_panel_available)}\n\n"
                             f"Primary disease context: {self.disease_display_name}\n"
+                            f"{reference_cohort_line}"
                             f"Largest valid reference number: {n_max}\n\n"
                             f"Background:\n{background}\n\n"
                             f"Evidence context:\n{evidence_context}\n\n"
@@ -2006,9 +2023,12 @@ class ExplanationAgent:
 
         report_facts = ""
         shown_report_values = ""
+        asks_about_other_trait = analysis.get("disease_intent") == "other_disease"
         if rare_variant_question and self.rare_variant_panel_available:
             report_facts = ui_label(language, "rare_variant_chat_note")
-        elif patient_specific:
+        elif patient_specific and not asks_about_other_trait:
+            # The percentile/gene facts belong to the active disease; prepending
+            # them to an LDL question (C01/C02) was off-topic.
             # Only the clinician's own words decide whether to show the gene
             # tables: the internal rewrite adds "genes" to summary requests,
             # which turned a three-line summary (R01) into two tables.

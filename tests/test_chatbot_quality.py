@@ -334,6 +334,39 @@ class ChatbotQualityTests(unittest.TestCase):
         self.assertFalse(result["Store In History"])
         self.assertEqual(result["References"], existing_references)
 
+    def test_interpretation_question_is_not_refused_but_personal_action_is(self):
+        allowed = [
+            "The measured value doesn't match the PRS. Which should I trust?",  # C05
+            "Which result should I believe?",
+        ]
+        refused = ["Should I get tested for breast cancer?", "Should I take tamoxifen?"]
+        for question in allowed:
+            with self.subTest(question=question):
+                self.assertEqual(ConversationAgent.classify_turn_fallback(question, []), "biomedical_followup")
+        for question in refused:
+            with self.subTest(question=question):
+                self.assertEqual(ConversationAgent.classify_turn_fallback(question, []), "medical_advice_seeking")
+
+    def test_decline_text_is_not_addressed_to_the_patient(self):
+        from text_utils import ui_label
+
+        english = ui_label("en", "medical_advice_decline")
+        korean = ui_label("ko", "medical_advice_decline")
+        self.assertNotIn("your own", english)
+        self.assertIn("treating clinician", english)
+        self.assertNotIn("본인의", korean)
+        self.assertIn("담당 임상의", korean)
+
+    def test_applicable_count_is_the_percentile_reference_group(self):
+        import kpredict_data
+
+        risk = pd.DataFrame({
+            "applicable": [True, True, False, True],
+            "percentile": [10.0, 90.0, None, None],
+        })
+        with patch.object(kpredict_data, "_risk", return_value=risk):
+            self.assertEqual(kpredict_data.applicable_count("/unused", "breast_cancer"), 2)
+
     def test_small_contributions_are_not_rounded_to_zero(self):
         # Clinician feedback #11: risk-lowering genes displayed as 0.00.
         cases = {

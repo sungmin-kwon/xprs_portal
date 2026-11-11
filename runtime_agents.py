@@ -6,6 +6,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Who a public-cohort percentile is compared with (DATA_ACCESS.md, data/README.md).
+PUBLIC_REFERENCE_COHORT = (
+    "503 East Asian individuals from the 1000 Genomes Project "
+    "(the processed XPRS breast cancer reference distribution)"
+)
+
 # Per-generation-model ExplanationAgent cache. The model set is bounded by the
 # allowlist (config.GENERATION_MODEL_IDS), so we never evict. A lock gives
 # double-checked locking so concurrent first-hits on the same model build once.
@@ -77,7 +83,14 @@ def get_runtime_agents() -> dict[str, Any]:
     from llm_utils import LLM_PROVIDER, build_llm_agent, build_llm_client
 
     client, llm_model = build_llm_client(LLM_PROVIDER)
-    llm_agent = build_llm_agent(LLM_PROVIDER, client=client, model=llm_model)
+    # The startup agent serves public-cohort requests on the default model, so it
+    # needs the same fallback as the per-model generation agents.
+    llm_agent = build_llm_agent(
+        LLM_PROVIDER,
+        client=client,
+        model=llm_model,
+        fallback_model=generation_fallback_model(),
+    )
     metadata_extractor, reference_extractor_llm = (
         _build_reference_metadata_extractor(LLM_PROVIDER)
     )
@@ -122,6 +135,7 @@ def get_runtime_agents() -> dict[str, Any]:
         ot_agent=ot_agent,
         query_agent=query_agent,
         conversation_agent=conversation_agent,
+        reference_cohort_description=PUBLIC_REFERENCE_COHORT,
     )
 
     return {
@@ -192,6 +206,7 @@ def _build_expl_agent_for_model(bundle: dict[str, Any], model: str):
         ot_agent=bundle["ot_agent"],
         query_agent=query_agent,
         conversation_agent=conversation_agent,
+        reference_cohort_description=PUBLIC_REFERENCE_COHORT,
     )
 
 
@@ -205,7 +220,7 @@ def _build_kpredict_expl_agent(
     from agents.explanation import ExplanationAgent
     from agents.gene_importance import KPredictGeneImportanceAgent
     from disease_registry import get_disease_config
-    from kpredict_data import risk_profile
+    from kpredict_data import applicable_count, risk_profile
 
     disease_config = get_disease_config(disease)
     llm, query_agent, conversation_agent = _build_llm_bound_agents(
@@ -237,6 +252,11 @@ def _build_kpredict_expl_agent(
         risk_profile_provider=lambda pid: risk_profile(data_root, disease_config.slug, pid),
         minimize_sensitive_context=True,
         rare_variant_panel_available=True,
+        reference_cohort_description=(
+            f"the {applicable_count(data_root, disease_config.slug):,} individuals in the K-PREDICT cohort "
+            f"to whom the {disease_config.display_name} model applies; the percentile is this individual's "
+            "rank among them, not a comparison with an external population such as KoGES"
+        ),
     )
 
 
