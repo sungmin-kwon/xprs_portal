@@ -18,6 +18,8 @@ STATIC_DIR = _resolve_path(os.getenv("STATIC_DIR"), APP_BASE_DIR / "static")
 REF_DIR = _resolve_path(os.getenv("REF_DIR"), APP_BASE_DIR / "ref")
 
 LOG_DIR = _resolve_path(os.getenv("LOG_DIR"), RUNTIME_DIR / "logs")
+SERVER_LOG_DIR = _resolve_path(os.getenv("SERVER_LOG_DIR"), LOG_DIR / "server")
+SERVER_LOG_FILE_LEVEL = os.getenv("SERVER_LOG_FILE_LEVEL", "WARNING")
 LITERATURE_CACHE_DIR = _resolve_path(
     os.getenv("LITERATURE_CACHE_DIR"),
     RUNTIME_DIR / "cache_literature",

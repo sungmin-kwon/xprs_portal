@@ -275,6 +275,66 @@ class LocalReferenceMethodologyTests(unittest.TestCase):
 
         self.assertNotIn("From this report", result["Generated Answer"])
 
+    def test_rare_variant_detector_covers_question_bank(self):
+        rare_questions = [
+            "Is there a rare variant relevant to breast cancer in this patient?",  # D15
+            "Does the top gene in the Important genes table carry a mutation that causes breast cancer?",  # D11
+            "What do 'alert' and 'carrier' mean in this report?",  # T01
+            "Is this variant really rare in East Asians?",  # T06
+            "Could this be clonal haematopoiesis rather than a germline variant?",  # T07
+            "The same variant appears under several diseases. Are these separate findings?",  # T08
+            "There are no alerts. Can I reassure the patient?",  # T09
+            "Which ClinVar and PanelApp versions were used?",  # T13
+            "Were variants re-classified with ACMG/AMP criteria, or is this ClinVar only?",  # T14
+            "이 환자에게 병원성 희귀 변이가 있나요?",
+        ]
+        prs_questions = [
+            "Which genes are most important for this patient's breast cancer risk?",
+            "Summarise this report in three lines.",
+            "why no BRCA gene appears in the gene list?",
+            "How accurate is the breast cancer PRS?",
+        ]
+        for question in rare_questions:
+            with self.subTest(question=question):
+                self.assertTrue(ExplanationAgent._is_rare_variant_question(question))
+        for question in prs_questions:
+            with self.subTest(question=question):
+                self.assertFalse(ExplanationAgent._is_rare_variant_question(question))
+
+    def test_rare_variant_question_gets_note_and_no_presence_claims(self):
+        llm = CapturingLLM()
+        explanation = self._explanation_agent(llm)
+        explanation.rare_variant_panel_available = True
+
+        result = explanation.answer_followup(
+            "KP-ABCDEF123456",
+            "Is there a rare variant relevant to breast cancer in this patient?",
+            summary_context=self.REPORT_CONTEXT,
+            language="en",
+        )
+
+        answer = result["Generated Answer"]
+        self.assertTrue(answer.startswith("**About rare variants:**"))
+        self.assertIn("Rare Variant Analysis", answer)
+        # The rare-variant note replaces the PRS facts; it is not a PRS question.
+        self.assertNotIn("99.8%", answer)
+        prompt = llm.messages[-1]["content"]
+        self.assertIn("Never state or imply that this individual has, or does not have", prompt)
+
+    def test_public_cohort_gets_instruction_but_no_panel_note(self):
+        llm = CapturingLLM()
+        explanation = self._explanation_agent(llm)  # rare_variant_panel_available defaults to False
+
+        result = explanation.answer_followup(
+            "HG00436",
+            "Is there a rare variant relevant to breast cancer in this patient?",
+            summary_context=self.REPORT_CONTEXT,
+            language="en",
+        )
+
+        self.assertNotIn("Rare Variant Analysis", result["Generated Answer"])
+        self.assertIn("Never state or imply", llm.messages[-1]["content"])
+
     def test_dashboard_repairs_escaped_xprs_subscripts(self):
         script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
 

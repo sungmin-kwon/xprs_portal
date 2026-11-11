@@ -83,6 +83,12 @@ PATIENT_REFERENCE_KO = re.compile(
     r"|(?:제|내)\s*(?:PRS|결과|보고서|리포트|점수|위험)",
     re.I,
 )
+RARE_VARIANT_QUESTION = re.compile(
+    r"\brare[\s-]+variants?\b|\b(?:this|same)\s+variant\b|\bcarr(?:y|ies)\s+(?:a|an)\s+(?:\w+\s+)?mutation|\bvariants?\b.{0,40}\brare\b|pathogenic|clinvar|\bcarriers?\b"
+    r"|\balerts?\b|actionab\w*|germline|clonal|panelapp|\bacmg\b|reclassif\w*"
+    r"|희귀\s*변이|병원성|보인자|주의\s*소견",
+    re.I,
+)
 GENE_QUESTION = re.compile(r"\bgenes?\b|contribut\w*|\bloc(?:us|i)\b|유전자|기여", re.I)
 CALCULATION_QUESTION = re.compile(
     r"\b(?:calculat\w*|comput\w*|formula\w*|equation\w*|deriv\w*|how\s+is\s+\w+\s+(?:made|built|constructed))\b"
@@ -134,8 +140,12 @@ class ExplanationAgent:
         disease_display_name: str = "Breast Cancer",
         risk_profile_provider: Optional[Callable[[str], dict[str, Any]]] = None,
         minimize_sensitive_context: bool = False,
+        rare_variant_panel_available: bool = False,
     ):
         self.llm = llm
+        # True when the dashboard shows a Rare Variant Analysis panel for this
+        # cohort (K-PREDICT). Rare-variant findings are never sent to the LLM.
+        self.rare_variant_panel_available = rare_variant_panel_available
         self.gene_agent = gene_agent
         self.evidence_agent = evidence_agent
         self.ot_agent = ot_agent
@@ -353,6 +363,7 @@ class ExplanationAgent:
         methodology_query: bool = False,
         report_question: bool = False,
         shown_report_values: str = "",
+        rare_variant_question: bool = False,
     ) -> str:
         output_language = "Korean" if normalize_output_language(language) == "ko" else "English"
         evidence_context = compact_ctx if compact_ctx else "(No evidence context available.)"
@@ -394,6 +405,15 @@ class ExplanationAgent:
                     "Do not say the report lacks them, and do not state, estimate or round any of those "
                     "numbers yourself.\n"
                 )
+        if rare_variant_question:
+            # Clinician testing (D15) showed the model stating that no rare
+            # variant was found, although it never receives rare-variant data.
+            methodology_instructions += (
+                "Rare-variant findings (pathogenic variants, alerts, carrier findings) are not available to you. "
+                "Never state or imply that this individual has, or does not have, any rare or pathogenic variant, "
+                "alert or carrier finding. You may explain general concepts, and say that this chat cannot see "
+                "those findings.\n"
+            )
         try:
             raw = self.llm.chat(
                 [
@@ -855,6 +875,10 @@ class ExplanationAgent:
                 parts.append(f"_{note}_")
 
         return "\n\n".join(parts)
+
+    @staticmethod
+    def _is_rare_variant_question(question: str) -> bool:
+        return bool(RARE_VARIANT_QUESTION.search(str(question or "")))
 
     @staticmethod
     def _is_gene_question(question: str) -> bool:
@@ -1973,7 +1997,10 @@ class ExplanationAgent:
 
         report_facts = ""
         shown_report_values = ""
-        if patient_specific:
+        rare_variant_question = self._is_rare_variant_question(question)
+        if rare_variant_question and self.rare_variant_panel_available:
+            report_facts = ui_label(language, "rare_variant_chat_note")
+        elif patient_specific:
             # Only the clinician's own words decide whether to show the gene
             # tables: the internal rewrite adds "genes" to summary requests,
             # which turned a three-line summary (R01) into two tables.
@@ -2000,6 +2027,7 @@ class ExplanationAgent:
             methodology_query=methodology_only,
             report_question=patient_specific,
             shown_report_values=shown_report_values,
+            rare_variant_question=rare_variant_question,
         )
 
         if not answer:

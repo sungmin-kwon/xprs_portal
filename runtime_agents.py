@@ -236,6 +236,7 @@ def _build_kpredict_expl_agent(
         disease_display_name=disease_config.display_name,
         risk_profile_provider=lambda pid: risk_profile(data_root, disease_config.slug, pid),
         minimize_sensitive_context=True,
+        rare_variant_panel_available=True,
     )
 
 
