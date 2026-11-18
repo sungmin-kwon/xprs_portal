@@ -8,7 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/about.css?v=3" />
+  <link rel="stylesheet" href="/static/vendor/katex/katex.min.css?v=0.16.11" />
+  <link rel="stylesheet" href="/static/about.css?v=6" />
 </head>
 <body>
   <header class="about-topbar">
@@ -25,120 +26,248 @@
         <span class="material-symbols-outlined" aria-hidden="true">info</span>
         <span>About XPRS</span>
       </a>
-      <a class="global-nav-link" href="/evaluation" title="User evaluation survey" data-evaluation-link hidden>
+      <span class="global-nav-link global-nav-link--disabled-icon" title="User evaluation survey" aria-label="User evaluation survey" aria-disabled="true">
         <span class="material-symbols-outlined" aria-hidden="true">assignment</span>
-        <span>User Evaluation</span>
-      </a>
+      </span>
     </nav>
   </header>
 
-  <main class="about-shell">
-    <header class="about-header">
-      <div>
-        <h1>XPRS Methodology</h1>
-        <p>
-          XPRS is an explainable polygenic risk score framework that decomposes
-          individual genetic risk into gene-level and variant-level contributions.
+  <div class="about-page">
+    <nav class="contents" aria-label="On this page">
+      <p class="contents__title">On this page</p>
+      <ol>
+        <li><a href="#why">Why break a PRS down</a></li>
+        <li><a href="#scores">The scores</a></li>
+        <li><a href="#method">How XPRS computes them</a></li>
+        <li><a href="#portal">What this portal adds</a></li>
+        <li><a href="#limits">Reading the results</a></li>
+        <li><a href="#cite">Citation</a></li>
+      </ol>
+    </nav>
+
+    <main class="article">
+      <header class="article__header">
+        <h1>About XPRS</h1>
+        <p class="lead">
+          XPRS (eXplainable PRS) explains a polygenic risk score by splitting it into the
+          contributions of individual genes and SNPs. It shows which genes push a person's
+          score up or down, and which genes account for most of the variation in a population.
         </p>
-      </div>
-      <a class="paper-link" href="https://academic.oup.com/bioinformatics/article/41/4/btaf143/8101489" target="_blank" rel="noreferrer">
-        <span class="material-symbols-outlined" aria-hidden="true">article</span>
-        <span>Read Bioinformatics Paper</span>
-      </a>
-    </header>
-
-    <section class="summary-band">
-      <article>
-        <span class="eyebrow">Why XPRS</span>
-        <h2>From a black-box PRS to the genes and variants behind it</h2>
-        <p>
-          Standard polygenic risk scores summarize many genetic effects into a
-          single risk value. XPRS keeps that score but also shows which genes
-          and variants contribute most, for a cohort or an individual.
+        <p class="byline">
+          Kim NY, Lee S. <cite>XPRS: a tool for interpretable and explainable polygenic risk score.</cite>
+          Bioinformatics 2025;41(4):btaf143.
         </p>
-      </article>
-      <article>
-        <span class="eyebrow">Portal Layer</span>
-        <h2>Explanations backed by the literature</h2>
+        <ul class="source-links">
+          <li><a href="https://doi.org/10.1093/bioinformatics/btaf143" target="_blank" rel="noreferrer">
+            <span class="material-symbols-outlined" aria-hidden="true">article</span>Read the paper</a></li>
+          <li><a href="https://github.com/nayeonkim93/XPRS" target="_blank" rel="noreferrer">
+            <span class="material-symbols-outlined" aria-hidden="true">code</span>XPRS source code</a></li>
+          <li><a href="https://xprs.leelabsg.org/" target="_blank" rel="noreferrer">
+            <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>Original XPRS web tool</a></li>
+        </ul>
+      </header>
+
+      <figure class="decomposition">
+        <div class="decomposition__scroll">
+          <svg viewBox="0 50 720 186" role="img" aria-labelledby="decomposition-title decomposition-desc">
+            <title id="decomposition-title">How one person's PRS breaks down by gene</title>
+            <desc id="decomposition-desc">Starting from the cohort average, five genes and the remaining genes each move the
+              score up or down; the steps add up to this person's PRS.</desc>
+            <line class="axis" x1="10" x2="710" y1="170" y2="170" />
+            <g class="connectors">
+              <line x1="70" x2="106" y1="170" y2="170" />
+              <line x1="158" x2="194" y1="116" y2="116" />
+              <line x1="246" x2="282" y1="80" y2="80" />
+              <line x1="334" x2="370" y1="104" y2="104" />
+              <line x1="422" x2="458" y1="74" y2="74" />
+              <line x1="510" x2="546" y1="92" y2="92" />
+              <line x1="598" x2="634" y1="68" y2="68" />
+            </g>
+            <rect class="average" x="18" y="167" width="52" height="6" rx="1" />
+            <rect class="raise" x="106" y="116" width="52" height="54" />
+            <rect class="raise" x="194" y="80" width="52" height="36" />
+            <rect class="lower" x="282" y="80" width="52" height="24" />
+            <rect class="raise" x="370" y="74" width="52" height="30" />
+            <rect class="lower" x="458" y="74" width="52" height="18" />
+            <rect class="raise raise--many" x="546" y="68" width="52" height="24" />
+            <rect class="total" x="634" y="68" width="52" height="102" />
+            <g class="labels">
+              <text x="44" y="194"><tspan x="44">Cohort</tspan><tspan x="44" dy="1.15em">average</tspan></text>
+              <text x="132" y="194">Gene A</text>
+              <text x="220" y="194">Gene B</text>
+              <text x="308" y="194">Gene C</text>
+              <text x="396" y="194">Gene D</text>
+              <text x="484" y="194">Gene E</text>
+              <text x="572" y="194"><tspan x="572">All other</tspan><tspan x="572" dy="1.15em">genes</tspan></text>
+              <text x="660" y="194" class="labels__total"><tspan x="660">This</tspan><tspan x="660" dy="1.15em">person</tspan></text>
+            </g>
+            <g class="values">
+              <text x="132" y="108">+</text>
+              <text x="220" y="72">+</text>
+              <text x="308" y="120">−</text>
+              <text x="396" y="66">+</text>
+              <text x="484" y="108">−</text>
+            </g>
+          </svg>
+        </div>
+        <figcaption>
+          <span class="keys"><span class="key key--raise">Raises the PRS</span>
+          <span class="key key--lower">Lowers the PRS</span></span>
+          Schematic, not real data. Each step is one gene's <em>attributed value</em>: how far that gene's
+          contribution in this person is from the cohort average. Together the steps make up the distance between
+          the cohort average and this person's PRS.
+        </figcaption>
+      </figure>
+
+      <section id="why" aria-labelledby="why-title">
+        <h2 id="why-title">Why break a PRS down</h2>
         <p>
-          For a chosen disease, the portal turns XPRS outputs into an
-          interpretation layer: cohort risk plots, gene-level summaries with
-          cited literature, and a follow-up Q&amp;A.
+          A polygenic risk score adds up the risk alleles a person carries, each weighted by its effect size. Even
+          though the model is a simple weighted sum, it can involve hundreds of thousands or millions of variants,
+          so the final number says little about what drives it. Most of those variants have no known function,
+          which makes explanations at the variant level hard to use.
         </p>
-      </article>
-    </section>
+        <p>
+          XPRS groups variants by the gene or region they map to and reports how much each gene contributes. For a
+          linear PRS, a gene's attributed value is its SHAP value (Shapley additive explanation), a standard way of
+          dividing a prediction among its inputs. Knowing what drives a score makes it easier to trust and to
+          explain to patients.
+        </p>
+      </section>
 
-    <section class="method-card" aria-labelledby="method-title">
-      <div class="section-heading">
-        <h2 id="method-title">How XPRS Is Computed</h2>
-        <p>XPRS aligns the inputs, maps variants to genes, and aggregates their contribution scores into interpretable views.</p>
-      </div>
+      <section id="scores" aria-labelledby="scores-title">
+        <h2 id="scores-title">The scores</h2>
+        <p>
+          All scores use standardised effect sizes from the PRS model,
+          <span class="tex" data-tex="\hat\beta_{\mathrm{std},i}"></span>, and a person's genotype centred on the
+          allele frequency, <span class="tex" data-tex="G'_i = G_i - p_i"></span>.
+        </p>
+        <dl class="scores">
+          <div class="score">
+            <dt>SNP contribution score</dt>
+            <dd class="score__formula tex" data-tex="CS_{\mathrm{SNP},i} = \hat\beta_{\mathrm{std},i}\, G'_i"></dd>
+            <dd>How much one SNP adds to or subtracts from a person's PRS.</dd>
+          </div>
+          <div class="score">
+            <dt>Gene contribution score</dt>
+            <dd class="score__formula tex" data-tex="CS_{\mathrm{gene},j} = \sum_{i \in \mathrm{gene}_j} \hat\beta_{\mathrm{std},i}\, G'_i"></dd>
+            <dd>The sum over the SNPs mapped to a gene: that gene's share of the person's PRS.</dd>
+          </div>
+          <div class="score">
+            <dt>Attributed value</dt>
+            <dd class="score__formula tex" data-tex="A_{\mathrm{gene},j} = CS_{\mathrm{gene},j} - \overline{CS}_{\mathrm{gene},j}"></dd>
+            <dd>The gene's contribution in this person minus its average across the cohort. Positive values mean the
+              gene raises this person's PRS more than it does for a typical member of the cohort.</dd>
+          </div>
+          <div class="score">
+            <dt>Variance of the gene contribution</dt>
+            <dd class="score__formula tex" data-tex="\operatorname{Var}\left(CS_{\mathrm{gene},j}\right)"></dd>
+            <dd>How much a gene's contribution varies across the population; the paper notes this equals the
+              heritability due to that gene. It ranks genes by how much of the PRS variation they explain.</dd>
+          </div>
+        </dl>
+      </section>
 
-      <div class="method-flow">
-        <div class="input-row">
-          <div class="input-tile">
-            <span class="material-symbols-outlined" aria-hidden="true">genetics</span>
-            <strong>Genotype File</strong>
-            <small>bim, fam, bed</small>
-          </div>
-          <div class="input-tile">
-            <span class="material-symbols-outlined" aria-hidden="true">query_stats</span>
-            <strong>PRS Scoring File</strong>
-            <small>variant weights</small>
-          </div>
-          <div class="input-tile">
-            <span class="material-symbols-outlined" aria-hidden="true">groups</span>
-            <strong>GWAS Association File</strong>
-            <small>trait associations</small>
-          </div>
-        </div>
+      <section id="method" aria-labelledby="method-title">
+        <h2 id="method-title">How XPRS computes them</h2>
+        <p>XPRS takes three input files:</p>
+        <ul class="inputs">
+          <li><strong>Genotypes</strong> in binary PLINK format (bed, bim, fam).</li>
+          <li><strong>A PRS scoring file</strong> with SNP IDs, effect alleles and weights, for example from the PGS
+            Catalog. The authors recommend weights from an LD-aware PRS method.</li>
+          <li><strong>A GWAS association file</strong> from the GWAS Catalog, listing genes mapped to significant
+            variants in earlier studies.</li>
+        </ul>
+        <p>
+          Everyone in a cohort file should share the same ancestry, to avoid bias from population stratification.
+          When a single person's genotypes are used, the reference genotype file must match their ancestry.
+        </p>
+        <ol class="steps">
+          <li>
+            <h3>Align and map SNPs to genes</h3>
+            <p>SNPs are aligned across the three files, the PRS is standardised and the weights are adjusted to
+              match. Each SNP is then mapped to genes in turn:</p>
+            <ul>
+              <li>to nearby genes, within a 200 kb window by default;</li>
+              <li>to further genes linked by functional evidence such as eQTL and Hi-C data (combined SNP-to-gene
+                mapping, cS2G);</li>
+              <li>any SNPs still unmapped, by GWAS <i>P</i>-value or SNP heritability.</li>
+            </ul>
+            <p>Because a SNP can map to several genes, genes that share SNPs are then merged into one region.</p>
+          </li>
+          <li>
+            <h3>Calculate the scores</h3>
+            <p>XPRS computes the PRS and, for every gene or region, the contribution score, its variance across the
+              population and the attributed value, plus the contribution score of each SNP.</p>
+          </li>
+          <li>
+            <h3>Plot them</h3>
+            <p>For the population, a Manhattan plot ranks genes by the variance of their contribution, with the top
+              10 in red. For a person, a density plot places their PRS within the population, a Manhattan plot marks
+              the 10 genes that raise it most in red and the 10 that lower it most in blue, and a LocusZoom-like plot
+              shows the SNPs within a gene.</p>
+          </li>
+        </ol>
+      </section>
 
-        <div class="flow-arrow"><span class="material-symbols-outlined" aria-hidden="true">south</span></div>
+      <section id="portal" aria-labelledby="portal-title">
+        <h2 id="portal-title">What this portal adds</h2>
+        <p>
+          The portal reads precomputed XPRS results and builds the views around them. Some views come directly from
+          XPRS; the others are additions and are not part of the published method.
+        </p>
+        <table class="provenance">
+          <thead>
+            <tr><th scope="col">View</th><th scope="col">What it shows</th><th scope="col">Source</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>PRS density plot</td><td>Where a person's PRS falls in the cohort, as a percentile</td><td>XPRS</td></tr>
+            <tr><td>Gene-based Manhattan plot and top genes</td><td>Each gene's contribution score for one person, labelled <q>Gene contribution</q>; the lists give the strongest risk-raising and risk-lowering genes</td><td>XPRS</td></tr>
+            <tr><td>Gene Heatmap</td><td>Attributed values divided by the cohort standard deviation, so genes can be compared across diseases (K-PREDICT only)</td><td>Portal, from XPRS scores</td></tr>
+            <tr><td>Rare-variant findings</td><td>Disease-panel variants with ClinVar annotations, kept separate from the PRS</td><td>Portal, K-PREDICT pipeline</td></tr>
+            <tr><td>Cohort Analysis</td><td>PRS percentiles of people with panel findings</td><td>Portal</td></tr>
+            <tr><td>Explanations and chat</td><td>Plain-language summaries and answers, citing published literature</td><td>Portal, language model</td></tr>
+          </tbody>
+        </table>
+        <p class="cohorts">
+          SNP contribution scores and the population-level ranking by variance are not shown in the portal; the
+          original XPRS tool shows both.
+        </p>
+        <p>
+          The public cohort uses East Asian samples from the 1000 Genomes Project, as in the paper, and covers breast
+          cancer only. The K-PREDICT cohort requires access and covers ten diseases;
+          percentiles there are relative to the K-PREDICT reference group.
+        </p>
+      </section>
 
-        <div class="step-row">
-          <div class="step-block">
-            <div class="step-label">Step 1</div>
-            <h3>Preprocessing and Variant Mapping</h3>
-            <p>Align SNPs across inputs and map variants to genes using positional and association-aware strategies.</p>
-          </div>
-          <div class="step-block">
-            <div class="step-label">Step 2</div>
-            <h3>Contribution Score Calculation</h3>
-            <p>Estimate how much each gene and variant contributes to the individual and cohort-level risk score.</p>
-          </div>
-          <div class="step-block">
-            <div class="step-label">Step 3</div>
-            <h3>Interpretable Visualization</h3>
-            <p>Visualize population distributions, individual PRS position, and gene-level contribution patterns.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+      <section id="limits" aria-labelledby="limits-title">
+        <h2 id="limits-title">Reading the results</h2>
+        <ul class="limits">
+          <li><strong>A percentile is not an absolute risk.</strong> It places a person within the reference cohort
+            and does not give a probability of developing the disease.</li>
+          <li><strong>A large contribution is not a causal finding.</strong> It reflects the PRS weights of SNPs near or
+            linked to a gene, not evidence that the gene itself drives the disease.</li>
+          <li><strong>Gene mapping is a heuristic.</strong> A SNP can be linked to several genes, and the gene named in a
+            merged region is not necessarily the one that matters.</li>
+          <li><strong>XPRS explains an existing linear PRS.</strong> It does not build or improve the risk model, and its
+            output is only as good as the PRS weights and ancestry matching behind it.</li>
+          <li><strong>Rare variants are separate.</strong> Rare-variant findings shown in the portal do not enter the PRS
+            or any XPRS score.</li>
+        </ul>
+      </section>
 
-    <section class="portal-card" aria-labelledby="portal-title">
-      <div class="section-heading">
-        <h2 id="portal-title">How This Portal Uses XPRS</h2>
-        <p>The current software layer turns precomputed XPRS results into a disease-specific interpretation workflow.</p>
-      </div>
-      <div class="portal-grid">
-        <div class="portal-step">
-          <span class="material-symbols-outlined" aria-hidden="true">monitoring</span>
-          <h3>Risk Overview</h3>
-          <p>Compare an individual against cohort PRS distributions across the available diseases.</p>
-        </div>
-        <div class="portal-step">
-          <span class="material-symbols-outlined" aria-hidden="true">account_tree</span>
-          <h3>Gene-Level Explanation</h3>
-          <p>Open a disease portal to inspect density, Manhattan-style gene contribution plots, and top genes.</p>
-        </div>
-        <div class="portal-step">
-          <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
-          <h3>Scientific Evidence</h3>
-          <p>Review references and ask follow-up questions drawn from retrieved biomedical literature.</p>
-        </div>
-      </div>
-    </section>
-  </main>
-  <script src="/static/about.js?v=3"></script>
+      <section id="cite" class="cite" aria-labelledby="cite-title">
+        <h2 id="cite-title">Citation</h2>
+        <p>
+          Kim NY, Lee S. XPRS: a tool for interpretable and explainable polygenic risk score.
+          <i>Bioinformatics</i> 2025;41(4):btaf143.
+          <a href="https://doi.org/10.1093/bioinformatics/btaf143" target="_blank" rel="noreferrer">doi:10.1093/bioinformatics/btaf143</a>
+        </p>
+        <p class="cite__note">Open access under CC BY 4.0. XPRS is available under GPL-3.0, as is this portal.</p>
+      </section>
+    </main>
+  </div>
+  <script src="/static/vendor/katex/katex.min.js?v=0.16.11"></script>
+  <script src="/static/about.js?v=6"></script>
 </body>
 </html>

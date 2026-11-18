@@ -1,22 +1,14 @@
-async function configureEvaluationLink() {
-  const links = document.querySelectorAll("[data-evaluation-link]");
-  try {
-    const response = await fetch("/api/info");
-    if (!response.ok) return;
-    const payload = await response.json();
-    const enabled = payload.evaluation_enabled === true;
-    links.forEach((link) => {
-      link.hidden = !enabled;
-      link.style.display = enabled ? "" : "none";
+// Formulas are written as TeX in data-tex; block formulas sit in .score__formula.
+function renderFormulas() {
+  if (!window.katex) return;
+  document.querySelectorAll("[data-tex]").forEach((element) => {
+    window.katex.render(element.dataset.tex, element, {
+      displayMode: element.classList.contains("score__formula"),
+      throwOnError: false,
     });
-  } catch (_error) {
-    links.forEach((link) => {
-      link.hidden = true;
-      link.style.display = "none";
-    });
-  }
+  });
 }
 
 window.addEventListener("DOMContentLoaded", () => {
-  configureEvaluationLink();
+  renderFormulas();
 });
