@@ -256,9 +256,34 @@ function renderGenes(payload) {
   $("gene-table-body").closest(".table-wrap").hidden = genes.length === 0;
 }
 
+// Sideways offsets (in gene-column units) so that dots with nearly the same
+// percentile in one gene do not hide each other. Dots without a close
+// neighbour stay on the column's centre line, so the offset never looks like
+// it encodes a value. Deterministic: the same data always gives the same plot.
+const OVERLAP_PERCENTILE = 1.5;
+const OFFSET_STEP = 0.12;
+const OFFSET_SLOTS = [0, 1, -1, 2, -2, 3, -3];
+
+function sidewaysOffsets(points) {
+  const offsets = new Map();
+  const placedByGene = new Map();
+  const ordered = [...points].sort((a, b) => a.percentile - b.percentile);
+  for (const point of ordered) {
+    const placed = placedByGene.get(point.gene) || [];
+    const taken = new Set(placed
+      .filter((other) => point.percentile - other.percentile < OVERLAP_PERCENTILE)
+      .map((other) => other.slot));
+    const slot = OFFSET_SLOTS.find((candidate) => !taken.has(candidate)) ?? 0;
+    placed.push({ percentile: point.percentile, slot });
+    placedByGene.set(point.gene, placed);
+    offsets.set(point, slot * OFFSET_STEP);
+  }
+  return offsets;
+}
+
 // Dot plot: one dot per individual and gene with a panel finding. Genes are
-// rows in gene-table order; a small, deterministic vertical offset separates
-// individuals with similar percentiles (no randomness, so reloads match).
+// columns in gene-table order and the PRS percentile runs up the y-axis, so
+// the top 10% is the band across the top.
 function renderDots(payload) {
   const plot = $("distribution-plot");
   const points = payload.points;
@@ -268,22 +293,17 @@ function renderDots(payload) {
   if (empty || !window.Plotly) return;
   const dark = currentTheme === "dark";
   const genes = payload.genes.map((row) => row.gene);
-  const position = new Map(genes.map((gene, index) => [gene, genes.length - 1 - index]));
-  const offsets = new Map();
+  const position = new Map(genes.map((gene, index) => [gene, index]));
+  const offsets = sidewaysOffsets(points);
   const traces = ["alert", "carrier"].map((status) => {
     const selected = points.filter((point) => point.status === status);
-    const y = selected.map((point) => {
-      const count = offsets.get(point.gene) || 0;
-      offsets.set(point.gene, count + 1);
-      return position.get(point.gene) + ((count % 5) - 2) * 0.09;
-    });
     const label = t(status === "alert" ? "panelAlert" : "carrierOnly");
     return {
       type: "scatter",
       mode: "markers",
       name: label,
-      x: selected.map((point) => point.percentile),
-      y,
+      x: selected.map((point) => position.get(point.gene) + offsets.get(point)),
+      y: selected.map((point) => point.percentile),
       text: selected.map((point) => t("pointHover", escapeHtml(point.gene), label, point.percentile.toFixed(1))),
       hovertemplate: "%{text}<extra></extra>",
       marker: {
@@ -295,32 +315,39 @@ function renderDots(payload) {
       },
     };
   });
-  const height = Math.max(240, genes.length * 46 + 90);
+  const gridColor = dark ? "#2b394d" : "#eef1f5";
+  // Faint lines between gene columns, so the columns read as categories.
+  const columnDividers = genes.slice(1).map((_gene, index) => ({
+    type: "line", xref: "x", yref: "paper", x0: index + 0.5, x1: index + 0.5, y0: 0, y1: 1,
+    line: { color: gridColor, width: 1 }, layer: "below",
+  }));
+  const height = 420;
   plot.style.height = `${height}px`;
   window.Plotly.react(plot, traces, {
     height,
     showlegend: false,
-    margin: { l: 130, r: 20, t: 10, b: 52 },
+    margin: { l: 64, r: 20, t: 10, b: 20 },
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
     font: { family: "Inter, sans-serif", color: dark ? "#cbd5e3" : "#4c5b70", size: 12 },
     shapes: [{
-      type: "rect", xref: "x", yref: "paper", x0: 90, x1: 100, y0: 0, y1: 1,
+      type: "rect", xref: "paper", yref: "y", x0: 0, x1: 1, y0: 90, y1: 103,
       fillcolor: dark ? "rgba(213, 75, 89, 0.12)" : "rgba(213, 75, 89, 0.08)", line: { width: 0 }, layer: "below",
     }, {
-      type: "line", xref: "x", yref: "paper", x0: 50, x1: 50, y0: 0, y1: 1,
+      type: "line", xref: "paper", yref: "y", x0: 0, x1: 1, y0: 50, y1: 50,
       line: { color: dark ? "#52627a" : "#c3ccd8", width: 1, dash: "dot" }, layer: "below",
-    }],
-    xaxis: { title: t("percentileAxis"), range: [0, 100], dtick: 10, fixedrange: true, gridcolor: dark ? "#2b394d" : "#eef1f5", zeroline: false },
-    yaxis: {
+    }, ...columnDividers],
+    xaxis: {
       tickvals: genes.map((gene) => position.get(gene)),
-      ticktext: genes,
-      range: [-0.6, genes.length - 0.4],
+      // Multi-gene labels ("PTEN, LOC130004273, MLDHR") wrap instead of colliding.
+      ticktext: genes.map((gene) => escapeHtml(gene).split(/,\s*/).join(",<br>")),
+      range: [-0.5, genes.length - 0.5],
       fixedrange: true,
-      showgrid: true,
-      gridcolor: dark ? "#2b394d" : "#eef1f5",
+      showgrid: false,
       zeroline: false,
+      automargin: true,
     },
+    yaxis: { title: t("percentileAxis"), range: [-3, 103], tickvals: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100], fixedrange: true, gridcolor: gridColor, zeroline: false, automargin: true },
   }, { responsive: true, displaylogo: false, displayModeBar: false, scrollZoom: false });
 }
 
