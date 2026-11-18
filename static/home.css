@@ -794,10 +794,17 @@ body.dark-theme .trait-track {
   min-height: 0;
   padding: 1rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  /* Header + density plot + optional rare-evidence strip + footer require
-     roughly 295px. Keep a small buffer so the footer is never clipped. */
-  grid-auto-rows: minmax(300px, 1fr);
+  /* At most five columns, so the ten disease cards form two rows of five on
+     wide screens instead of one row of tall, narrow cards. */
+  grid-template-columns: repeat(auto-fit, minmax(max(280px, calc((100% - 4rem) / 5)), 1fr));
+  /* Rows follow the card width rather than stretching to the panel height,
+     which made plots very tall on large (e.g. 4K) screens. With five columns
+     a card is about 1/5 of the panel (.disease-panel is the size container),
+     so 15cqw keeps cards near 4:3. Header + density plot + optional
+     rare-evidence strip + footer need roughly 295px, hence the 300px floor;
+     rows may still grow if a card's content needs it. */
+  grid-auto-rows: minmax(clamp(300px, 15cqw, 460px), auto);
+  align-content: start;
   gap: 1rem;
   overflow: auto;
 }
