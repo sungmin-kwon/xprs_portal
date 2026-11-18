@@ -156,8 +156,11 @@ const UI_TEXT = {
     rareOverviewNoFindings: "No curated rare-variant findings are recorded for this individual.",
     rareOverviewSelectIndividual: "Select an individual to view rare-variant findings.",
     rareOverviewGeneCount: (count) => `${count} gene${count === 1 ? "" : "s"}`,
-    rareOverviewAlertGenes: (count) => `${count} with ${count === 1 ? "an alert" : "alerts"}`,
-    rareOverviewCarrierGenes: (count) => `${count} with a carrier finding`,
+    // Counts are genes; the noun follows the number of findings, so one gene
+    // with two alert variants reads "1 gene with alerts".
+    rareOverviewAlertGenes: (genes, findings) => `${genes} gene${genes === 1 ? "" : "s"} with ${findings === 1 ? "an alert" : "alerts"}`,
+    rareOverviewCarrierGenes: (genes, findings) => `${genes} gene${genes === 1 ? "" : "s"} with ${findings === 1 ? "a carrier finding" : "carrier findings"}`,
+    rareOverviewGeneVariants: (count) => `${count} variants`,
     rareOverviewVariantsInGenes: (variants, genes) => `${variants} variants in ${genes} gene${genes === 1 ? "" : "s"}`,
     rareAlert: "Alert",
     rareCarrier: "Carrier",
@@ -307,8 +310,9 @@ const UI_TEXT = {
     rareOverviewNoFindings: "이 개인에게 등록된 희귀 변이 소견이 없습니다.",
     rareOverviewSelectIndividual: "희귀 변이 소견을 보려면 개인을 선택하세요.",
     rareOverviewGeneCount: (count) => `유전자 ${count}개`,
-    rareOverviewAlertGenes: (count) => `주의 소견 포함 ${count}개`,
-    rareOverviewCarrierGenes: (count) => `보인자 소견 포함 ${count}개`,
+    rareOverviewAlertGenes: (genes) => `주의 소견 유전자 ${genes}개`,
+    rareOverviewCarrierGenes: (genes) => `보인자 소견 유전자 ${genes}개`,
+    rareOverviewGeneVariants: (count) => `변이 ${count}개`,
     rareOverviewVariantsInGenes: (variants, genes) => `유전자 ${genes}개의 변이 ${variants}개`,
     rareAlert: "주의",
     rareCarrier: "보인자",
@@ -916,12 +920,12 @@ function renderRareOverview(data) {
   ];
   if (alertGenes.size) {
     summaryMetrics.push(
-      `<span class="rare-summary-metric is-alert">${escapeHtml(t("rareOverviewAlertGenes", alertGenes.size))}</span>`,
+      `<span class="rare-summary-metric is-alert">${escapeHtml(t("rareOverviewAlertGenes", alertGenes.size, variants.filter((item) => item.call === "alert").length))}</span>`,
     );
   }
   if (carrierGenes.size) {
     summaryMetrics.push(
-      `<span class="rare-summary-metric">${escapeHtml(t("rareOverviewCarrierGenes", carrierGenes.size))}</span>`,
+      `<span class="rare-summary-metric">${escapeHtml(t("rareOverviewCarrierGenes", carrierGenes.size, variants.filter((item) => item.call === "carrier").length))}</span>`,
     );
   }
   setText("rare-overview-subtitle", data.individual_id || "");
@@ -934,45 +938,86 @@ function renderRareOverview(data) {
     return;
   }
 
-  content.innerHTML = variants.map((item, index) => {
-    const call = item.call === "alert"
-      ? t("rareAlert")
-      : (item.call === "carrier" ? t("rareCarrier") : t("rareFinding"));
-    const callClass = item.call === "alert" ? " is-alert" : "";
-    const primaryVariant = item.hgvs || item.variant || item.rsid || "—";
-    const primaryVariantMarkup = clinvarVariantLink(item.hgvs, primaryVariant);
-    const metadata = [];
-    if (item.rsid) metadata.push(String(item.rsid));
-    if (item.consequence) metadata.push(String(item.consequence).replaceAll("_", " "));
-    if (item.clnsig) metadata.push(String(item.clnsig));
-    if (Number(item.stars)) metadata.push(`ClinVar ${"★".repeat(Math.min(4, Number(item.stars)))}`);
-    if (item.genotype) metadata.push(`GT ${item.genotype}`);
-    if (Array.isArray(item.diseases) && item.diseases.length > 1) {
-      metadata.push(t("rarePanelAssignments", item.diseases.length));
-    }
-    const diseaseBadges = (Array.isArray(item.diseases) ? item.diseases : [])
-      .map((disease) => `<span class="rare-disease-badge">${escapeHtml(rareOverviewDiseaseName(disease))}</span>`)
-      .join("");
-    const unassignedBadge = item.unassigned
-      ? `<span class="rare-disease-badge is-unassigned">${escapeHtml(t("rareOther"))}</span>`
-      : "";
-    return `
+  // One card per gene. Genes with several different variants (27 individuals)
+  // get one section per variant, so they are visibly in the same gene. Each
+  // variant keeps its index in data.variants, which the detail drawer uses.
+  const geneGroups = new Map();
+  variants.forEach((item, index) => {
+    const key = String(item.gene || `—${index}`);
+    if (!geneGroups.has(key)) geneGroups.set(key, []);
+    geneGroups.get(key).push({ item, index });
+  });
+  content.innerHTML = [...geneGroups.values()].map((entries) => {
+    const gene = entries[0].item.gene || "—";
+    if (entries.length === 1) {
+      const { item, index } = entries[0];
+      return `
       <article class="rare-overview-item">
         <div class="rare-overview-item__header">
-          <span class="rare-overview-item__gene">${escapeHtml(item.gene || "—")}</span>
-          <div class="rare-overview-item__actions">
-            <span class="rare-call-badge${callClass}">${escapeHtml(call)}</span>
-            <button class="rare-detail-trigger" type="button" data-rare-detail-index="${index}" aria-label="${escapeHtml(t("viewRareDetails"))}" title="${escapeHtml(t("viewRareDetails"))}">
-              <span class="material-symbols-outlined" aria-hidden="true">info</span>
-            </button>
-          </div>
+          <span class="rare-overview-item__gene">${escapeHtml(gene)}</span>
+          <div class="rare-overview-item__actions">${rareCallBadge(item)}${rareDetailButton(index)}</div>
         </div>
-        <div class="rare-overview-item__variant">${primaryVariantMarkup}</div>
-        ${metadata.length ? `<div class="rare-overview-item__meta">${metadata.map(escapeHtml).join(" · ")}</div>` : ""}
-        <div class="rare-disease-badges">${diseaseBadges}${unassignedBadge}</div>
+        ${rareVariantLines(item)}
+      </article>
+    `;
+    }
+    const sections = entries.map(({ item, index }) => `
+        <div class="rare-overview-variant">
+          <div class="rare-overview-variant__header">${rareCallBadge(item)}${rareDetailButton(index)}</div>
+          ${rareVariantLines(item)}
+        </div>
+    `).join("");
+    return `
+      <article class="rare-overview-item is-multi">
+        <div class="rare-overview-item__header">
+          <span class="rare-overview-item__gene">${escapeHtml(gene)}</span>
+          <span class="rare-overview-item__count">${escapeHtml(t("rareOverviewGeneVariants", entries.length))}</span>
+        </div>
+        ${sections}
       </article>
     `;
   }).join("");
+}
+
+function rareCallBadge(item) {
+  const call = item.call === "alert"
+    ? t("rareAlert")
+    : (item.call === "carrier" ? t("rareCarrier") : t("rareFinding"));
+  const callClass = item.call === "alert" ? " is-alert" : "";
+  return `<span class="rare-call-badge${callClass}">${escapeHtml(call)}</span>`;
+}
+
+function rareDetailButton(index) {
+  return `<button class="rare-detail-trigger" type="button" data-rare-detail-index="${index}" aria-label="${escapeHtml(t("viewRareDetails"))}" title="${escapeHtml(t("viewRareDetails"))}">
+              <span class="material-symbols-outlined" aria-hidden="true">info</span>
+            </button>`;
+}
+
+function rareVariantLink(item) {
+  const primaryVariant = item.hgvs || item.variant || item.rsid || "—";
+  return clinvarVariantLink(item.hgvs, primaryVariant);
+}
+
+function rareVariantLines(item) {
+  const metadata = [];
+  if (item.rsid) metadata.push(String(item.rsid));
+  if (item.consequence) metadata.push(String(item.consequence).replaceAll("_", " "));
+  if (item.clnsig) metadata.push(String(item.clnsig));
+  if (Number(item.stars)) metadata.push(`ClinVar ${"★".repeat(Math.min(4, Number(item.stars)))}`);
+  if (item.genotype) metadata.push(`GT ${item.genotype}`);
+  if (Array.isArray(item.diseases) && item.diseases.length > 1) {
+    metadata.push(t("rarePanelAssignments", item.diseases.length));
+  }
+  const diseaseBadges = (Array.isArray(item.diseases) ? item.diseases : [])
+    .map((disease) => `<span class="rare-disease-badge">${escapeHtml(rareOverviewDiseaseName(disease))}</span>`)
+    .join("");
+  const unassignedBadge = item.unassigned
+    ? `<span class="rare-disease-badge is-unassigned">${escapeHtml(t("rareOther"))}</span>`
+    : "";
+  return `
+        <div class="rare-overview-item__variant">${rareVariantLink(item)}</div>
+        ${metadata.length ? `<div class="rare-overview-item__meta">${metadata.map(escapeHtml).join(" · ")}</div>` : ""}
+        <div class="rare-disease-badges">${diseaseBadges}${unassignedBadge}</div>`;
 }
 
 async function loadRareOverview(individualId) {

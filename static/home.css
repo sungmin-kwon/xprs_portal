@@ -742,6 +742,26 @@ body.dark-theme .risk-tint-key__bar {
   letter-spacing: 0.01em;
 }
 
+.rare-overview-item__count {
+  color: var(--faint);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+/* Gene with several different variants: one section per variant. */
+.rare-overview-variant {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.rare-overview-variant__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
 .rare-call-badge {
   padding: 0.2rem 0.45rem;
   border-radius: 999px;

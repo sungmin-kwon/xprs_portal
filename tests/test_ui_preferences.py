@@ -349,6 +349,14 @@ class UiContractTests(ContractTestCase):
         self.assertIn("rareOverviewVariantsInGenes", script)
         self.assertIn("variantCount > geneCount", script)
         self.assertNotIn("rareOverviewVariantCount", script)
+        # Same-gene variants share one card with a section per variant; each
+        # keeps its own index for the detail drawer. Alert/carrier counts are genes.
+        self.assertIn("const geneGroups = new Map();", script)
+        self.assertIn('class="rare-overview-variant"', script)
+        self.assertIn("rareDetailButton(index)", script)
+        self.assertIn("rareOverviewGeneVariants", script)
+        self.assertIn('gene${genes === 1 ? "" : "s"} with ${findings === 1 ? "an alert" : "alerts"}', script)
+        self.assertIn(".rare-overview-variant {", css)
 
     def _check_private_cohort_access_uses_an_inline_validation_dialog(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
