@@ -209,7 +209,7 @@ const UI_TEXT = {
     geneHeatmapPlotlyUnavailable: "The gene heatmap could not be displayed.",
     geneHeatmapScale: "Difference from K-PREDICT average (SD)",
     geneHeatmapMissingValue: "No value for this gene in this disease model",
-    geneHeatmapLinkedGenes: "Also covers (shares SNPs)",
+    geneHeatmapLinkedGenes: "Also in this row (+N)",
     geneHeatmapSubtitle: (pid, count) => `${pid} · ${count} disease models included`,
     geneHeatmapMethod: (fraction, minimum, shown, loci, unavailable) => {
       const excluded = unavailable
@@ -359,7 +359,7 @@ const UI_TEXT = {
     geneHeatmapPlotlyUnavailable: "유전자 히트맵을 표시할 수 없습니다.",
     geneHeatmapScale: "K-PREDICT 평균과의 차이 (표준편차)",
     geneHeatmapMissingValue: "이 질환 모델에 해당 유전자 값 없음",
-    geneHeatmapLinkedGenes: "함께 포함된 유전자 (SNP 공유)",
+    geneHeatmapLinkedGenes: "이 행의 다른 유전자 (+N)",
     geneHeatmapSubtitle: (pid, count) => `${pid} · 분석 대상 질환 모델 ${count}개`,
     geneHeatmapMethod: (fraction, minimum, shown, loci, unavailable) => {
       const excluded = unavailable ? ` 이 개인에게 적용되지 않는 질환 모델 ${unavailable}개는 제외했습니다.` : "";
@@ -1307,10 +1307,13 @@ function renderGeneHeatmap(data) {
       : gene;
     return support ? `${label} · ${support}/${diseases.length}` : label;
   });
+  // The label already names the first linked gene; hover lists only the
+  // genes summarised as "+N".
   const linkedText = genes.map((_gene, index) => {
     const linked = (geneMetrics[index] || {}).linked_genes;
-    return Array.isArray(linked) && linked.length
-      ? `<br>${escapeHtml(t("geneHeatmapLinkedGenes"))}: ${linked.map(escapeHtml).join(", ")}`
+    const hidden = Array.isArray(linked) ? linked.slice(1) : [];
+    return hidden.length
+      ? `<br>${escapeHtml(t("geneHeatmapLinkedGenes"))}: ${hidden.map(escapeHtml).join(", ")}`
       : "";
   });
   const darkTheme = currentTheme === "dark";
