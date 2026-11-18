@@ -351,6 +351,18 @@ source identity, and repository hygiene. The deterministic chatbot evaluation
 set is documented in [`tests/README.md`](tests/README.md) and stored under
 `benchmarks/`.
 
+To replay a clinician question bank (a private spreadsheet, not in this
+repository) against a running portal and save the answers in order as JSON:
+
+```bash
+python scripts/run_question_bank.py --questions PATH/TO/question_bank.xlsx \
+    --out PRIVATE/DIR/run.json --markdown PRIVATE/DIR/run.md
+```
+
+Each section runs in its own chat session after a summary, as a clinician
+would use it. The output holds pseudonymous IDs and individual-level answers,
+so it must be written outside the repository.
+
 Retrieval comparison reports are retained under `benchmarks/`. Generated
 corpora, abstracts, embeddings, Chroma/LanceDB indexes, and blinded-review files
 are intentionally excluded from the public repository surface.
