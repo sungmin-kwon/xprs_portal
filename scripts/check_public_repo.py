@@ -12,6 +12,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024
+# Binary files cannot be scanned for secrets or participant data, so they are
+# only allowed where the repository deliberately keeps them: web assets and
+# vendored fonts (static/), PDF fonts (assets/fonts/), and the public
+# 1000 Genomes demo plot cache (data/demo/).
+ALLOWED_BINARY_PREFIXES = ("static/", "assets/fonts/", "data/demo/")
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,14 @@ FORBIDDEN_PATH_PATTERNS = (
     (re.compile(r"_cohort\.rds$", re.IGNORECASE), "private cohort RDS"),
     (re.compile(r"(^|/)xprs_rare_findings_[^/]*\.tsv$", re.IGNORECASE), "rare-variant handoff"),
     (re.compile(r"(^|/)evaluation_responses(/|$)"), "evaluation response"),
+    # Screenshots and document exports can show participant data as pixels or
+    # in binary containers that the text scan cannot read (a portal screenshot
+    # with a pseudonymous ID and rare variants was pushed this way on
+    # 2026-11-18). Only static/ may hold images.
+    (
+        re.compile(r"^(?!static/).*\.(?:png|jpe?g|gif|webp|bmp|tiff?|heic|pdf|pptx?|docx?|xlsx?)$", re.IGNORECASE),
+        "image or document export outside static/",
+    ),
 )
 
 SECRET_PATTERNS = (
@@ -91,10 +104,16 @@ def scan_repository(root: Path = ROOT) -> list[Finding]:
             if pattern.search(relative):
                 findings.append(Finding(relative, rule))
 
-        if not path.is_file() or path.stat().st_size > MAX_TEXT_FILE_BYTES:
+        if not path.is_file():
+            continue
+        if path.stat().st_size > MAX_TEXT_FILE_BYTES:
+            if not relative.startswith(ALLOWED_BINARY_PREFIXES):
+                findings.append(Finding(relative, "file too large to scan outside approved locations"))
             continue
         payload = path.read_bytes()
         if b"\0" in payload:
+            if not relative.startswith(ALLOWED_BINARY_PREFIXES):
+                findings.append(Finding(relative, "binary file outside approved locations (cannot be scanned)"))
             continue
         for pattern, rule in (*SECRET_PATTERNS, *PRIVATE_SOURCE_PATTERNS):
             if pattern.search(payload):
