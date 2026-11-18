@@ -1439,6 +1439,11 @@ body.dark-theme .kpredict-access-status.is-error {
   gap: 0.42rem;
 }
 
+/* Gene names come with alert/carrier counts, so give the field two columns. */
+.risk-filter-gene-field {
+  grid-column: span 2;
+}
+
 .risk-filter-fields select {
   width: 100%;
   min-height: 42px;
@@ -1879,6 +1884,10 @@ body.dark-theme .heatmap-status.is-error {
 
   .risk-filter-fields {
     grid-template-columns: 1fr;
+  }
+
+  .risk-filter-gene-field {
+    grid-column: auto;
   }
 
   .risk-filter-actions > button {

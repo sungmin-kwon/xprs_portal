@@ -11,6 +11,7 @@ from kpredict_data import (
     disease_evidence_summary,
     rare_findings,
     rare_findings_overview,
+    panel_gene_options,
     risk_filtered_individuals,
     trait_overview,
 )
@@ -20,28 +21,19 @@ router = APIRouter()
 
 
 @router.get("/api/kpredict/cohort-analysis", include_in_schema=False)
-def get_cohort_analysis(
-    request: Request,
-    disease: str,
-    rare_status: str = Query(default="all", pattern="^(all|alert|carrier|none)$"),
-    percentile_min: float = Query(default=0.0, ge=0.0, le=100.0),
-    percentile_max: float = Query(default=100.0, ge=0.0, le=100.0),
-    gene: str = Query(default="", max_length=120),
-    consequence: str = Query(default="", max_length=120),
-    individual_limit: int = Query(default=200, ge=1, le=200),
-):
+def get_cohort_analysis(request: Request, disease: str):
     root = require_kpredict_access(request)
     try:
-        return cohort_analysis(
-            root,
-            disease,
-            rare_status=rare_status,
-            percentile_min=percentile_min,
-            percentile_max=percentile_max,
-            gene=gene,
-            consequence=consequence,
-            individual_limit=individual_limit,
-        )
+        return cohort_analysis(root, disease)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@router.get("/api/kpredict/panel-genes", include_in_schema=False)
+def get_panel_genes(request: Request, disease: str):
+    root = require_kpredict_access(request)
+    try:
+        return {"disease": disease, "genes": panel_gene_options(root, disease)}
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -135,6 +127,8 @@ def get_individual_risk_filter(
     percentile_max: float = Query(default=100.0, ge=0.0, le=100.0),
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
     limit: int = Query(default=5000, ge=1, le=5000),
+    rare_status: str = Query(default="all", pattern="^(all|alert|carrier|finding|none)$"),
+    gene: str = Query(default="", max_length=120),
 ):
     root = require_kpredict_access(request)
     try:
@@ -145,6 +139,8 @@ def get_individual_risk_filter(
             percentile_max=percentile_max,
             order=order,
             limit=limit,
+            rare_status=rare_status,
+            gene=gene,
         )
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

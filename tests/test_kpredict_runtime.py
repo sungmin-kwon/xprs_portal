@@ -17,6 +17,7 @@ from kpredict_data import (
     rare_findings,
     rare_findings_overview,
     risk_profile,
+    panel_gene_options,
     risk_filtered_individuals,
 )
 
@@ -203,46 +204,45 @@ class KPredictRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["results"], [{
             "individual_id": "KP-ABCDEF123456",
             "percentile": 84.1,
+            "rare_status": "carrier",
         }])
         self.assertNotIn("raw_prs", payload["results"][0])
         self.assertNotIn("sex", payload["results"][0])
 
-    def test_cohort_analysis_separates_alert_carrier_and_no_finding_groups(self):
+    def test_cohort_analysis_summarises_panel_findings_without_ids(self):
         payload = cohort_analysis(self.root, "breast_cancer")
 
-        self.assertEqual(payload["summary"], {
-            "applicable_count": 1,
-            "alert_individual_count": 1,
-            "carrier_individual_count": 0,
-            "no_panel_finding_count": 0,
-            "top_10_percent_count": 0,
-            "top_10_alert_overlap_count": 0,
-        })
-        alert = next(
-            group for group in payload["distribution"]["groups"]
-            if group["status"] == "alert"
-        )
-        self.assertEqual(alert["count"], 1)
-        self.assertEqual(sum(alert["bin_counts"]), 1)
-        self.assertEqual(alert["median"], 69.1)
-        self.assertEqual(payload["filtered"]["matching_count"], 1)
-        self.assertEqual(payload["filtered"]["individuals"][0]["rare_status"], "alert")
-        self.assertEqual(payload["filtered"]["genes"][0]["gene"], "BRCA1")
-        self.assertNotIn("raw_prs", payload["filtered"]["individuals"][0])
-        self.assertNotIn("sex", payload["filtered"]["individuals"][0])
+        self.assertEqual(payload["summary"]["alert_individual_count"], 1)
+        self.assertEqual(payload["summary"]["carrier_individual_count"], 0)
+        self.assertEqual(payload["summary"]["no_panel_finding_count"], 0)
+        self.assertEqual(payload["summary"]["top_10_alert_overlap_count"], 0)
+        # One alert carrier, nobody in the top 10%: none expected there by chance.
+        self.assertEqual(payload["summary"]["top_10_alert_expected_count"], 0.0)
+        self.assertEqual(payload["points"], [{"gene": "BRCA1", "status": "alert", "percentile": 69.1}])
+        self.assertEqual(payload["genes"][0]["gene"], "BRCA1")
+        self.assertNotIn("KP-ABCDEF123456", str(payload))
 
-    def test_cohort_analysis_filters_by_carrier_status_and_gene(self):
-        payload = cohort_analysis(
-            self.root,
-            "type2_diabetes",
-            rare_status="carrier",
-            gene="GENE-T2D",
-        )
+    def test_risk_filter_selects_by_rare_variant_status_and_gene(self):
+        def matches(disease, **filters):
+            return risk_filtered_individuals(self.root, disease, **filters)["matching_count"]
 
-        self.assertEqual(payload["summary"]["carrier_individual_count"], 1)
-        self.assertEqual(payload["filtered"]["matching_count"], 1)
-        self.assertEqual(payload["filtered"]["individuals"][0]["rare_status"], "carrier")
-        self.assertEqual(payload["filtered"]["genes"][0]["gene"], "GENE-T2D")
+        self.assertEqual(matches("type2_diabetes", rare_status="carrier"), 1)
+        self.assertEqual(matches("type2_diabetes", rare_status="alert"), 0)
+        self.assertEqual(matches("type2_diabetes", rare_status="finding", gene="GENE-T2D"), 1)
+        self.assertEqual(matches("type2_diabetes", rare_status="all", gene="OTHER"), 0)
+        self.assertEqual(matches("breast_cancer", rare_status="none"), 0)
+        payload = risk_filtered_individuals(self.root, "breast_cancer", rare_status="alert", gene="BRCA1")
+        self.assertEqual(payload["results"][0]["rare_status"], "alert")
+        self.assertEqual(payload["applicable_count"], 1)
+        with self.assertRaises(ValueError):
+            risk_filtered_individuals(self.root, "breast_cancer", rare_status="none", gene="BRCA1")
+        with self.assertRaises(ValueError):
+            risk_filtered_individuals(self.root, "breast_cancer", rare_status="unknown")
+
+    def test_panel_gene_options_count_alerts_and_carriers(self):
+        self.assertEqual(panel_gene_options(self.root, "type2_diabetes"), [
+            {"gene": "GENE-T2D", "individual_count": 1, "alert_count": 0, "carrier_count": 1},
+        ])
 
     def test_panel_finding_counts_are_grouped_by_validated_disease_assignment(self):
         payload = panel_finding_counts_by_disease(self.root, "KP-ABCDEF123456")
