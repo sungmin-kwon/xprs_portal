@@ -536,6 +536,51 @@ def manhattan_data(root: Path, disease: str, individual_id: str) -> dict:
     }
 
 
+@lru_cache(maxsize=16)
+def _cohort_gene_stats(root_string: str, disease: str) -> tuple[np.ndarray, np.ndarray]:
+    """Per-gene mean and SD of contributions over the applicable K-PREDICT individuals.
+
+    Indexed by matrix_row. The gene tables' ``mean`` column is not the cohort
+    mean: in release 2026-11-19 it is offset by a median 1.75 (type 2 diabetes)
+    to 2.74 (breast cancer) cohort SDs, while ``variance`` matches the cohort.
+    The supplied PRS z-scores are standardised against the applicable cohort,
+    so gene deviations use the same reference. Computed once per disease by
+    streaming person columns (~0.5 GB matrix per disease).
+    """
+    _require_known_disease(root_string, disease)
+    folder = Path(root_string) / "diseases" / disease
+    matrix_meta = json.loads((folder / "matrix.json").read_text(encoding="utf-8"))
+    gene_count, individual_count = [int(value) for value in matrix_meta["shape"]]
+    matrix = np.memmap(folder / matrix_meta["data_file"], dtype="<f4", mode="r",
+                       shape=(gene_count, individual_count), order="F")
+    risk = _risk(root_string, disease)
+    columns = np.sort(risk.loc[risk["applicable"].astype(bool), "matrix_column"].to_numpy(dtype=np.int64))
+    if columns.size < 2:
+        raise ValueError("Too few applicable individuals to standardise gene contributions")
+    total = np.zeros(gene_count)
+    squares = np.zeros(gene_count)
+    for start in range(0, columns.size, 256):
+        block = np.asarray(matrix[:, columns[start:start + 256]], dtype=np.float64)
+        total += block.sum(axis=1)
+        squares += np.square(block).sum(axis=1)
+    mean = total / columns.size
+    sd = np.sqrt(np.maximum(squares / columns.size - np.square(mean), 0.0))
+    return mean, sd
+
+
+def _add_snp_sharing_links(links: dict[str, set[str]], genes: pd.DataFrame) -> None:
+    """Record, in both directions, which genes share SNPs (from ``snps_sharing_genes``)."""
+    if "snps_sharing_genes" not in genes:
+        return
+    symbols = genes["symbol"].astype(str).str.replace(r"\*+$", "", regex=True).str.strip()
+    for symbol, shared in zip(symbols, genes["snps_sharing_genes"].fillna("").astype(str)):
+        for other in shared.split(";"):
+            other = other.strip().rstrip("*").strip()
+            if other and other != symbol:
+                links.setdefault(symbol, set()).add(other)
+                links.setdefault(other, set()).add(symbol)
+
+
 def cross_disease_gene_heatmap(
     root: Path,
     individual_id: str,
@@ -544,14 +589,19 @@ def cross_disease_gene_heatmap(
     min_diseases: int = 3,
     max_genes: int = 20,
 ) -> dict:
-    """Build a compact, variance-standardized gene-by-disease matrix.
+    """Genes where one individual differs most from the cohort, across disease models.
 
-    Genes qualify when they fall in the strongest absolute within-disease
-    fraction in multiple applicable models. This recurrence-aware selection
-    favors shared cross-disease patterns rather than a union of disconnected
-    disease-specific extremes. Raw gene contribution scales are not compared
-    directly: each value is divided by the square root of the supplied
-    population variance for that gene row.
+    Each cell is the individual's gene contribution relative to the applicable
+    K-PREDICT cohort: (contribution - cohort mean) / cohort SD, the same
+    reference as the PRS z-score. Gene contributions are not centred on zero,
+    and the gene tables' ``mean`` column is not the cohort mean (see
+    _cohort_gene_stats), so neither the raw contribution nor that column can
+    be used as the reference.
+
+    A gene qualifies when its absolute deviation is in the individual's top
+    ``top_fraction`` of genes in at least ``min_diseases`` applicable models.
+    Genes that share SNPs (``snps_sharing_genes``) carry the same genotype
+    signal, so they are merged into one row, represented by the strongest gene.
     """
     top_fraction = max(0.0005, min(float(top_fraction), 0.05))
     min_diseases = max(2, min(int(min_diseases), 6))
@@ -559,6 +609,7 @@ def cross_disease_gene_heatmap(
     configured = available_diseases(root)
     disease_values: dict[str, pd.Series] = {}
     disease_rows: list[dict] = []
+    snp_links: dict[str, set[str]] = {}
 
     for disease in PORTAL_DISEASE_ORDER:
         if disease not in configured:
@@ -585,18 +636,21 @@ def cross_disease_gene_heatmap(
             .str.replace(r"\*+$", "", regex=True)
             .str.strip()
         )
-        variance = pd.to_numeric(frame["population_variance"], errors="coerce")
+        cohort_mean, cohort_sd = _cohort_gene_stats(str(root), disease)
+        rows = pd.to_numeric(frame["matrix_row"], errors="coerce").astype(int).to_numpy()
+        mean = pd.Series(cohort_mean[rows], index=frame.index)
+        sd = pd.Series(cohort_sd[rows], index=frame.index)
         contribution = pd.to_numeric(frame["contribution"], errors="coerce")
         valid = (
             frame["Gene"].ne("")
             & ~frame["Gene"].str.match(r"^NA(?:_|$)", na=False)
-            & variance.gt(0)
+            & sd.gt(0)
             & np.isfinite(contribution)
-            & np.isfinite(variance)
+            & np.isfinite(mean)
         )
         frame = frame.loc[valid, ["Gene"]].copy()
         frame["standardized_contribution"] = (
-            contribution.loc[valid] / np.sqrt(variance.loc[valid])
+            (contribution.loc[valid] - mean.loc[valid]) / sd.loc[valid]
         )
         frame = frame.loc[np.isfinite(frame["standardized_contribution"])].copy()
         frame["absolute_standardized_contribution"] = frame[
@@ -612,6 +666,7 @@ def cross_disease_gene_heatmap(
         )
         values = frame.set_index("Gene")["standardized_contribution"]
         disease_values[disease] = values
+        _add_snp_sharing_links(snp_links, _genes(str(root), disease))
         disease_rows.append({
             "slug": disease,
             "display_name": display_name,
@@ -653,8 +708,20 @@ def cross_disease_gene_heatmap(
         ["support", "qualifying_magnitude"],
         ascending=False,
         kind="stable",
-    ).head(max_genes)
-    selected_genes = candidate_metrics.index.astype(str).tolist()
+    )
+    # Walk candidates from strongest to weakest; a gene that shares SNPs with
+    # an earlier gene joins that gene's row instead of getting its own.
+    groups: dict[str, list[str]] = {}
+    for gene in candidate_metrics.index.astype(str):
+        linked = snp_links.get(gene, set())
+        representative = next((rep for rep in groups if rep in linked or gene in snp_links.get(rep, set())), None)
+        if representative is not None:
+            groups[representative].append(gene)
+        else:
+            groups[gene] = []
+    locus_count = len(groups)
+    selected_genes = list(groups)[:max_genes]
+    candidate_metrics = candidate_metrics.loc[selected_genes]
 
     matrix: list[list[float | None]] = []
     finite_values: list[float] = []
@@ -679,6 +746,7 @@ def cross_disease_gene_heatmap(
             "mean_absolute_qualifying_contribution": float(
                 candidate_metrics.loc[gene, "qualifying_magnitude"]
             ),
+            "linked_genes": groups[gene],
         }
         for gene in selected_genes
     ]
@@ -698,158 +766,11 @@ def cross_disease_gene_heatmap(
                     support.ge(effective_min_diseases)
                 ).sum()
             ),
+            "locus_count": locus_count,
         },
         "color_limit": color_limit,
         "color_limit_absolute_quantile": 0.95,
-        "normalization": "contribution / sqrt(population variance)",
-    }
-
-
-@lru_cache(maxsize=16)
-def population_gene_architecture(
-    root: Path,
-    *,
-    percentile_threshold: float = 99.0,
-    min_diseases: int = 3,
-    max_genes: int = 24,
-) -> dict:
-    """Compare population gene-contribution variance across disease models.
-
-    Raw contribution variances are model-specific and therefore should not be
-    compared directly between diseases. Each gene is instead assigned its
-    within-model variance percentile. Genes shown in the prototype must reach
-    the requested percentile in several diseases, which favors shared
-    population-level architecture rather than one disease's largest signals.
-    """
-    percentile_threshold = max(50.0, min(float(percentile_threshold), 99.9))
-    min_diseases = max(2, min(int(min_diseases), 6))
-    max_genes = max(8, min(int(max_genes), 40))
-    configured = available_diseases(root)
-    percentile_values: dict[str, pd.Series] = {}
-    raw_variances: dict[str, pd.Series] = {}
-    disease_rows: list[dict] = []
-
-    for disease in PORTAL_DISEASE_ORDER:
-        if disease not in configured:
-            continue
-        config = DISEASE_REGISTRY.get(disease)
-        display_name = (
-            config.display_name
-            if config is not None
-            else disease.replace("_", " ").title()
-        )
-        genes = _genes(str(root), disease).copy()
-        representative_rank = pd.to_numeric(
-            genes.get("within_region_rank_by_variance"),
-            errors="coerce",
-        )
-        if representative_rank.notna().any():
-            genes = genes.loc[representative_rank.eq(1)].copy()
-        genes["gene"] = (
-            genes["symbol"]
-            .astype(str)
-            .str.replace(r"\*+$", "", regex=True)
-            .str.strip()
-        )
-        genes["population_variance"] = pd.to_numeric(
-            genes["variance"],
-            errors="coerce",
-        )
-        genes = genes.loc[
-            genes["gene"].ne("")
-            & ~genes["gene"].str.match(r"^NA(?:_|$)", na=False)
-            & genes["population_variance"].gt(0)
-            & np.isfinite(genes["population_variance"])
-        ].copy()
-        genes = (
-            genes.sort_values("population_variance", ascending=False, kind="stable")
-            .drop_duplicates("gene", keep="first")
-        )
-        if genes.empty:
-            continue
-        genes["variance_percentile"] = (
-            genes["population_variance"].rank(method="max", pct=True) * 100.0
-        )
-        percentile_values[disease] = genes.set_index("gene")["variance_percentile"]
-        raw_variances[disease] = genes.set_index("gene")["population_variance"]
-        risk = _risk(str(root), disease)
-        disease_rows.append({
-            "slug": disease,
-            "display_name": display_name,
-            "applicable_count": int(risk["applicable"].fillna(False).sum()),
-            "gene_count": int(len(genes)),
-        })
-
-    if not percentile_values:
-        raise ValueError("No population gene-variance data are available")
-    effective_min_diseases = min(min_diseases, len(disease_rows))
-    percentile_matrix = pd.DataFrame(percentile_values)
-    qualifying = percentile_matrix.ge(percentile_threshold)
-    support = qualifying.sum(axis=1).astype(int)
-    qualifying_mean = percentile_matrix.where(qualifying).mean(axis=1)
-    peak = percentile_matrix.max(axis=1)
-    candidate_metrics = pd.DataFrame({
-        "support": support,
-        "qualifying_mean": qualifying_mean,
-        "peak": peak,
-    })
-    candidate_metrics = candidate_metrics.loc[
-        candidate_metrics["support"].ge(effective_min_diseases)
-    ].sort_values(
-        ["support", "qualifying_mean", "peak"],
-        ascending=False,
-        kind="stable",
-    )
-    if candidate_metrics.empty:
-        raise ValueError(
-            "No genes meet the shared population-architecture threshold"
-        )
-    candidate_count = int(len(candidate_metrics))
-    selected_genes = candidate_metrics.head(max_genes).index.astype(str).tolist()
-
-    percentile_rows: list[list[float | None]] = []
-    variance_rows: list[list[float | None]] = []
-    for gene in selected_genes:
-        percentile_row: list[float | None] = []
-        variance_row: list[float | None] = []
-        for disease in disease_rows:
-            slug = disease["slug"]
-            percentile = percentile_values[slug].get(gene)
-            variance = raw_variances[slug].get(gene)
-            percentile_row.append(
-                float(percentile) if percentile is not None and np.isfinite(percentile) else None
-            )
-            variance_row.append(
-                float(variance) if variance is not None and np.isfinite(variance) else None
-            )
-        percentile_rows.append(percentile_row)
-        variance_rows.append(variance_row)
-
-    return {
-        "genes": selected_genes,
-        "gene_metrics": [
-            {
-                "gene": gene,
-                "qualifying_disease_count": int(candidate_metrics.loc[gene, "support"]),
-                "disease_count": len(disease_rows),
-                "mean_qualifying_percentile": float(
-                    candidate_metrics.loc[gene, "qualifying_mean"]
-                ),
-                "peak_percentile": float(candidate_metrics.loc[gene, "peak"]),
-            }
-            for gene in selected_genes
-        ],
-        "diseases": disease_rows,
-        "values": percentile_rows,
-        "raw_variances": variance_rows,
-        "selection": {
-            "percentile_threshold": percentile_threshold,
-            "minimum_qualifying_diseases": effective_min_diseases,
-            "maximum_genes": max_genes,
-            "candidate_count": candidate_count,
-        },
-        "metric": "within-disease percentile of population gene-contribution variance",
-        "prototype": True,
+        "normalization": "(contribution - cohort mean) / cohort SD, over applicable K-PREDICT individuals",
     }
 
 
