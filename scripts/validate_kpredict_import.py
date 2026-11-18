@@ -106,6 +106,19 @@ def validate_release(root: Path) -> list[str]:
         errors.append("rare finding index does not reproduce the finding count")
     if int(finding_index["alert_count"].sum()) != int(findings["moi_call"].eq("alert").sum()):
         errors.append("rare finding index does not reproduce the alert count")
+    # Content checks: the 2026-09-17 release passed every structural check while
+    # gnomad_af_eas was NaN in all rows (percent strings coerced to NaN).
+    for column in ("gnomad_af", "gnomad_af_eas", "cohort_af"):
+        if column not in findings:
+            continue
+        values = pd.to_numeric(findings[column], errors="coerce")
+        if values.notna().sum() == 0:
+            errors.append(f"rare findings: {column} has no values (all missing)")
+        elif ((values < 0) | (values > 1)).any():
+            errors.append(f"rare findings: {column} has values outside 0–1 (expected allele fractions)")
+    for entry in manifest.get("diseases") or []:
+        if not str(entry.get("reference_cohort") or "").strip():
+            errors.append(f"{entry.get('portal_disease_slug')}: reference_cohort is not recorded in the manifest")
     for filename, details in (rare_manifest.get("files") or {}).items():
         path = root / filename
         if not path.is_file() or path.stat().st_size != int(details.get("bytes") or -1):
