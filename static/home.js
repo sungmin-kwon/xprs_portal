@@ -25,6 +25,17 @@ let riskFilterRequestId = 0;
 let rareOverviewData = null;
 let rareOverviewRequestId = 0;
 let diseaseOverviewRequestId = 0;
+let traitOverviewData = null;
+let traitOverviewRequestId = 0;
+let activeOverviewView = "diseases";
+let traitsAvailable = false;
+// All trait groups start open; a group the user collapses shows its most
+// extreme trait in the header. (If startup proves too long, collapse by
+// default here instead.)
+const collapsedTraitGroups = new Set();
+const OVERVIEW_VIEW_PREFERENCE_KEY = "xprs.overview_view";
+// Neutral flag for the tails; not a clinical threshold.
+const TRAIT_TAIL_PERCENT = 5;
 
 const LANGUAGE_PREFERENCE_KEY = "xprs.language";
 const THEME_PREFERENCE_KEY = "xprs.theme";
@@ -75,6 +86,23 @@ const UI_TEXT = {
     searchIndividualId: "Search individual ID",
     availableIndividualIds: "Individual ID list",
     riskOverview: "Overall Individual Risk Overview",
+    traitOverviewTitle: "Overall Individual Trait Overview",
+    overviewViewDiseases: (count) => `Diseases (${count})`,
+    overviewViewTraits: (count) => `Traits (${count})`,
+    traitOverviewNote: "Genetically predicted trait level relative to the K-PREDICT cohort (percentile 0–100). A higher percentile is not necessarily unfavourable (e.g. HDL cholesterol, eGFR). Measured values are not available.",
+    traitColumnTrait: "Trait",
+    traitColumnPercentile: "Percentile",
+    traitTop5: "top 5%",
+    traitBottom5: "bottom 5%",
+    traitMostExtreme: (label, value) => `most extreme: ${label} ${value}`,
+    traitNotApplicable: "n/a",
+    loadingTraits: "Loading trait PRS...",
+    selectIndividualForTraits: "Select an individual to view trait PRS.",
+    traitGroups: {
+      lipids: "Lipids", glucose: "Glucose", blood_pressure: "Blood pressure", body_size: "Body size",
+      kidney: "Kidney", liver: "Liver", blood_count: "Blood count",
+      minerals_inflammation: "Minerals & inflammation", other: "Other",
+    },
     singleDiseaseRiskOverview: "Breast Cancer Risk Overview",
     refreshRiskCards: "Refresh risk cards",
     switchToKorean: "Switch to Korean",
@@ -229,6 +257,23 @@ const UI_TEXT = {
     searchIndividualId: "개인 ID 검색",
     availableIndividualIds: "개인 ID 목록",
     riskOverview: "개인별 질환 위험 개요",
+    traitOverviewTitle: "개인별 연속형 형질 개요",
+    overviewViewDiseases: (count) => `질환 (${count})`,
+    overviewViewTraits: (count) => `형질 (${count})`,
+    traitOverviewNote: "K-PREDICT 코호트 내에서 유전적으로 예측된 형질 수준의 백분위(0–100)입니다. 백분위가 높다고 반드시 불리한 것은 아닙니다(예: HDL 콜레스테롤, eGFR). 실제 측정값은 제공되지 않습니다.",
+    traitColumnTrait: "형질",
+    traitColumnPercentile: "백분위",
+    traitTop5: "상위 5%",
+    traitBottom5: "하위 5%",
+    traitMostExtreme: (label, value) => `가장 치우친 형질: ${label} ${value}`,
+    traitNotApplicable: "해당 없음",
+    loadingTraits: "형질 PRS를 불러오는 중...",
+    selectIndividualForTraits: "형질 PRS를 보려면 개인을 선택하세요.",
+    traitGroups: {
+      lipids: "지질", glucose: "혈당", blood_pressure: "혈압", body_size: "체격",
+      kidney: "신장", liver: "간", blood_count: "혈구",
+      minerals_inflammation: "무기질·염증", other: "기타",
+    },
     singleDiseaseRiskOverview: "유방암 위험 개요",
     refreshRiskCards: "위험 카드 새로고침",
     switchToKorean: "한국어로 전환",
@@ -511,6 +556,7 @@ function updateOverviewPresentation() {
     "is-single-disease-overview",
     isPublicSingleDisease,
   );
+  syncOverviewViewTabs();
 }
 
 function applyLanguage(language) {
@@ -546,6 +592,7 @@ function applyLanguage(language) {
   populateRiskFilterDiseases();
   renderActiveRiskFilter();
   if (rareOverviewData) renderRareOverview(rareOverviewData);
+  if (traitOverviewData) renderTraitOverview(traitOverviewData);
   if (isGeneHeatmapOpen() && geneHeatmapData) renderGeneHeatmap(geneHeatmapData);
   if (isGeneHeatmapOpen() && populationGeneArchitectureData) {
     renderPopulationGeneArchitecture(populationGeneArchitectureData);
@@ -1264,6 +1311,7 @@ function isGeneHeatmapOpen() {
 function syncCrossDiseaseHeatmapButton() {
   const button = $("cross-disease-heatmap-btn");
   if (!button) return;
+  // Top-bar action: shown in both overview views so the bar does not shift.
   button.hidden = selectedCohortSlug !== "kpredict" || !selectedIndividualId;
 }
 
@@ -1794,12 +1842,161 @@ async function submitPrivateCohortAccess(event) {
   }
 }
 
+function traitGroupLabel(key) {
+  const groups = t("traitGroups");
+  return (groups && groups[key]) || key;
+}
+
+function formatTraitPercentile(value) {
+  return Number.isFinite(value) ? value.toFixed(1) : t("traitNotApplicable");
+}
+
+function formatTraitZ(value) {
+  if (!Number.isFinite(value)) return "";
+  return `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(2)}`;
+}
+
+function traitTailTag(percentile) {
+  if (!Number.isFinite(percentile)) return "";
+  if (percentile >= 100 - TRAIT_TAIL_PERCENT) return `<span class="trait-tail-tag">${escapeHtml(t("traitTop5"))}</span>`;
+  if (percentile <= TRAIT_TAIL_PERCENT) return `<span class="trait-tail-tag">${escapeHtml(t("traitBottom5"))}</span>`;
+  return "";
+}
+
+function traitRowHtml(trait) {
+  const percentile = Number.isFinite(trait.percentile) ? trait.percentile : null;
+  const isTail = percentile !== null && (percentile >= 100 - TRAIT_TAIL_PERCENT || percentile <= TRAIT_TAIL_PERCENT);
+  const label = escapeHtml(trait.label);
+  const dot = percentile === null
+    ? ""
+    : `<span class="trait-dot" style="left: ${Math.min(100, Math.max(0, percentile)).toFixed(2)}%"></span>`;
+  return `
+    <div class="trait-row" role="listitem">
+      <span class="trait-label">${label}${traitTailTag(percentile)}</span>
+      <span class="trait-track" role="img" aria-label="${label}: ${escapeHtml(t("traitColumnPercentile"))} ${escapeHtml(formatTraitPercentile(percentile))}">
+        <span class="trait-track-mid"></span>${dot}
+      </span>
+      <span class="trait-num trait-percentile${isTail ? " is-tail" : ""}">${escapeHtml(formatTraitPercentile(percentile))}</span>
+      <span class="trait-num trait-z">${escapeHtml(formatTraitZ(trait.z))}</span>
+    </div>`;
+}
+
+function traitGroupPreview(traits) {
+  const applicable = traits.filter((trait) => Number.isFinite(trait.z));
+  if (!applicable.length) return "";
+  const extreme = applicable.reduce((a, b) => (Math.abs(b.z) > Math.abs(a.z) ? b : a));
+  return `<span class="trait-group-preview">${escapeHtml(t("traitMostExtreme", extreme.label, formatTraitPercentile(extreme.percentile)))}${traitTailTag(extreme.percentile)}</span>`;
+}
+
+function renderTraitOverview(data) {
+  const container = $("trait-overview");
+  if (!container) return;
+  if (!data || !Array.isArray(data.groups) || !data.groups.length) {
+    container.innerHTML = `<div class="empty-state"><p>${escapeHtml(t("selectIndividualForTraits"))}</p></div>`;
+    return;
+  }
+  const groups = data.groups.map((group) => {
+    const open = !collapsedTraitGroups.has(group.key);
+    const rows = open
+      ? `<div class="trait-rows" role="list">${group.traits.map(traitRowHtml).join("")}</div>`
+      : "";
+    return `
+      <section class="trait-group${open ? " is-open" : ""}">
+        <button class="trait-group-toggle" type="button" aria-expanded="${open}" data-trait-group="${escapeHtml(group.key)}">
+          <span class="trait-group-chevron" aria-hidden="true">${open ? "▾" : "▸"}</span>
+          <span class="trait-group-name">${escapeHtml(traitGroupLabel(group.key))}</span>
+          <span class="trait-group-count">(${group.traits.length})</span>
+          ${open ? "" : traitGroupPreview(group.traits)}
+        </button>
+        ${rows}
+      </section>`;
+  }).join("");
+  container.innerHTML = `
+    <p class="trait-overview-note">${escapeHtml(t("traitOverviewNote"))}</p>
+    <div class="trait-axis" aria-hidden="true">
+      <span>${escapeHtml(t("traitColumnTrait"))}</span>
+      <span class="trait-axis-ticks"><span>0</span><span>25</span><span>50</span><span>75</span><span>100</span></span>
+      <span class="trait-num">${escapeHtml(t("traitColumnPercentile"))}</span>
+      <span class="trait-num">z</span>
+    </div>
+    ${groups}`;
+}
+
+function syncOverviewViewTabs() {
+  const tabs = $("overview-view-tabs");
+  const showTraits = selectedCohortSlug === "kpredict" && traitsAvailable;
+  const view = showTraits ? activeOverviewView : "diseases";
+  if (tabs) tabs.hidden = !showTraits;
+  const diseaseTab = $("overview-view-diseases");
+  const traitTab = $("overview-view-traits");
+  if (diseaseTab) diseaseTab.textContent = t("overviewViewDiseases", diseases.length);
+  if (traitTab) traitTab.textContent = t("overviewViewTraits", traitOverviewData?.trait_count || 0);
+  [[diseaseTab, "diseases"], [traitTab, "traits"]].forEach(([tab, name]) => {
+    if (!tab) return;
+    tab.classList.toggle("is-active", view === name);
+    tab.setAttribute("aria-selected", String(view === name));
+  });
+  const grid = $("disease-grid");
+  const traitPanel = $("trait-overview");
+  if (grid) grid.hidden = view === "traits";
+  if (traitPanel) traitPanel.hidden = view !== "traits";
+  // Keep the colour key's space in the Traits view (invisible, not removed) so
+  // the header wraps the same way and the switch stays in place.
+  const tintKey = document.querySelector(".risk-tint-key");
+  if (tintKey) {
+    tintKey.classList.toggle("is-placeholder", view === "traits");
+    tintKey.setAttribute("aria-hidden", String(view === "traits"));
+  }
+  if (view === "traits") setText("disease-grid-title", t("traitOverviewTitle"));
+  syncCrossDiseaseHeatmapButton();
+}
+
+function setOverviewView(view) {
+  activeOverviewView = view === "traits" ? "traits" : "diseases";
+  savePreference(OVERVIEW_VIEW_PREFERENCE_KEY, activeOverviewView);
+  updateOverviewPresentation();
+}
+
+async function loadTraitOverview(individualId) {
+  const container = $("trait-overview");
+  const requestId = ++traitOverviewRequestId;
+  if (selectedCohortSlug !== "kpredict" || !individualId) {
+    traitOverviewData = null;
+    renderTraitOverview(null);
+    syncOverviewViewTabs();
+    return;
+  }
+  if (container) {
+    container.innerHTML = `<div class="empty-state"><p>${escapeHtml(t("loadingTraits"))}</p></div>`;
+  }
+  const params = new URLSearchParams({ individual_id: individualId });
+  try {
+    const data = await fetchJSONWithNetworkRetry(
+      `/api/kpredict/trait-overview?${params.toString()}`,
+      {},
+      OVERVIEW_NETWORK_RETRY_DELAYS_MS,
+    );
+    if (requestId !== traitOverviewRequestId || individualId !== selectedIndividualId) return;
+    traitOverviewData = data;
+    // Releases before 2026-11-19 have no traits; the tab then stays hidden.
+    traitsAvailable = (data?.trait_count || 0) > 0;
+    renderTraitOverview(data);
+  } catch (error) {
+    if (requestId !== traitOverviewRequestId) return;
+    traitOverviewData = null;
+    const message = error instanceof TypeError ? t("overviewConnectionFailed") : error.message;
+    if (container) container.innerHTML = `<div class="empty-state"><p>${escapeHtml(message)}</p></div>`;
+  }
+  syncOverviewViewTabs();
+}
+
 async function loadDiseaseOverview() {
   const requestId = ++diseaseOverviewRequestId;
   const pid = selectedIndividualId || $("individual-id")?.value || "";
   if (!pid) {
     syncCrossDiseaseHeatmapButton();
     loadRareOverview("");
+    loadTraitOverview("");
     renderDiseaseCards(diseases);
     updateGridSubtitle();
     return;
@@ -1809,6 +2006,7 @@ async function loadDiseaseOverview() {
   syncCrossDiseaseHeatmapButton();
   updateGridSubtitle();
   loadRareOverview(pid);
+  loadTraitOverview(pid);
   const grid = $("disease-grid");
   if (grid) {
     grid.innerHTML = `
@@ -1859,6 +2057,7 @@ function openDashboardForDisease(slug) {
 
 window.addEventListener("DOMContentLoaded", async () => {
   applyTheme(readPreference(THEME_PREFERENCE_KEY, "light"));
+  activeOverviewView = readPreference(OVERVIEW_VIEW_PREFERENCE_KEY, "diseases") === "traits" ? "traits" : "diseases";
   applyLanguage(readPreference(LANGUAGE_PREFERENCE_KEY, "en"));
   selectedIndividualId = new URLSearchParams(window.location.search).get("individual_id") || "";
 
@@ -1905,6 +2104,9 @@ window.addEventListener("DOMContentLoaded", async () => {
     clearRiskFilter({ refreshOverview: false, render: false });
     rareOverviewRequestId += 1;
     rareOverviewData = null;
+    traitOverviewRequestId += 1;
+    traitOverviewData = null;
+    traitsAvailable = false;
     geneHeatmapData = null;
     populationGeneArchitectureData = null;
     closeGeneHeatmap();
@@ -1927,6 +2129,17 @@ window.addEventListener("DOMContentLoaded", async () => {
       savePreference(INDIVIDUAL_PREFERENCE_KEY, selectedIndividualId);
     }
     loadDiseaseOverview();
+  });
+
+  $("overview-view-diseases")?.addEventListener("click", () => setOverviewView("diseases"));
+  $("overview-view-traits")?.addEventListener("click", () => setOverviewView("traits"));
+  $("trait-overview")?.addEventListener("click", (event) => {
+    const toggle = event.target.closest(".trait-group-toggle");
+    if (!toggle) return;
+    const key = toggle.dataset.traitGroup;
+    if (collapsedTraitGroups.has(key)) collapsedTraitGroups.delete(key);
+    else collapsedTraitGroups.add(key);
+    renderTraitOverview(traitOverviewData);
   });
 
   $("refresh-grid-btn")?.addEventListener("click", () => {

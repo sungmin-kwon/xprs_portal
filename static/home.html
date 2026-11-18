@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/home.css?v=40" />
+  <link rel="stylesheet" href="/static/home.css?v=43" />
   <link rel="stylesheet" href="/static/rare_variant_detail.css?v=1" />
 </head>
 <body>
@@ -29,6 +29,10 @@
           </select>
           <span class="material-symbols-outlined select-caret" aria-hidden="true">expand_more</span>
         </div>
+        <button id="cross-disease-heatmap-btn" class="topbar-link topbar-button" type="button" aria-label="Gene Heatmap" data-i18n-aria="geneHeatmap" hidden>
+          <span class="material-symbols-outlined" aria-hidden="true">grid_on</span>
+          <span data-i18n="geneHeatmap">Gene Heatmap</span>
+        </button>
         <a id="cohort-analysis-link" class="topbar-link" href="/cohort-analysis" hidden>
           <span class="material-symbols-outlined" aria-hidden="true">analytics</span>
           <span data-i18n="cohortAnalysis">Cohort Analysis</span>
@@ -92,15 +96,17 @@
               <span class="risk-tint-key__bar" aria-hidden="true"></span>
               <span data-i18n="higherPrsPercentile">Higher PRS percentile</span>
             </div>
-            <button id="cross-disease-heatmap-btn" class="analysis-btn" type="button" aria-label="Gene Heatmap" data-i18n-aria="geneHeatmap" hidden>
-              <span class="material-symbols-outlined" aria-hidden="true">grid_on</span>
-              <span data-i18n="geneHeatmap">Gene Heatmap</span>
-            </button>
+            <div id="overview-view-tabs" class="overview-view-tabs" role="tablist" aria-label="Overview view" hidden>
+              <button id="overview-view-diseases" class="overview-view-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="disease-grid" data-view="diseases"></button>
+              <button id="overview-view-traits" class="overview-view-tab" type="button" role="tab" aria-selected="false" aria-controls="trait-overview" data-view="traits"></button>
+            </div>
             <button id="refresh-grid-btn" class="icon-btn" type="button" title="Refresh risk cards" aria-label="Refresh risk cards" data-i18n-title="refreshRiskCards" data-i18n-aria="refreshRiskCards">
               <span class="material-symbols-outlined" aria-hidden="true">refresh</span>
             </button>
           </div>
         </div>
+
+        <div id="trait-overview" class="trait-overview" role="tabpanel" aria-live="polite" hidden></div>
 
         <div id="disease-grid" class="disease-grid" aria-live="polite">
           <div class="empty-state">
@@ -252,6 +258,6 @@
 
 
   <script src="/static/rare_variant_detail.js?v=2"></script>
-  <script src="/static/home.js?v=47"></script>
+  <script src="/static/home.js?v=51"></script>
 </body>
 </html>

@@ -34,3 +34,19 @@ PORTAL_DISEASE_ORDER: tuple[str, ...] = (
 def normalize_kpredict_disease(value: object) -> str:
     disease = str(value or "").strip()
     return SOURCE_DISEASE_TO_PORTAL.get(disease, disease)
+
+
+# Overview grouping for the continuous-trait PRS. The order follows Dr. Kim's
+# cohort_summary.tsv, which already lists the traits by clinical panel; the
+# group names are ours (draft, to be confirmed). Unknown trait IDs fall into
+# "other" so a new trait still appears.
+TRAIT_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("lipids", ("TC", "TG", "HDLC", "LDLC")),
+    ("glucose", ("Glucose", "HbA1c")),
+    ("blood_pressure", ("SBP", "DBP", "MAP", "PP")),
+    ("body_size", ("BMI", "Height", "BW")),
+    ("kidney", ("sCr", "eGFR", "BUN", "UA")),
+    ("liver", ("ALT", "AST", "ALP", "GGT", "TBil", "Alb", "TP", "AG", "NAP")),
+    ("blood_count", ("WBC", "Neutro", "Lym", "Mono", "Eosino", "Baso", "Plt", "RBC", "Hb", "Ht", "MCV", "MCH", "MCHC")),
+    ("minerals_inflammation", ("Ca", "P", "CRP")),
+)
