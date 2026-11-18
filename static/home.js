@@ -1922,6 +1922,19 @@ function renderTraitOverview(data) {
     ${groups}`;
 }
 
+// Disease cards can be re-rendered while the Diseases view is hidden (refresh,
+// language or theme change on the Traits view). Plotly then falls back to its
+// default 700x450 size, and its responsive mode only reacts to window resizes,
+// so resize the plots once the grid is visible again.
+function resizeDiseaseCardPlots() {
+  if (!window.Plotly) return;
+  window.requestAnimationFrame(() => {
+    document.querySelectorAll("#disease-grid .js-plotly-plot").forEach((plot) => {
+      window.Plotly.Plots.resize(plot);
+    });
+  });
+}
+
 function syncOverviewViewTabs() {
   const tabs = $("overview-view-tabs");
   const showTraits = selectedCohortSlug === "kpredict" && traitsAvailable;
@@ -1938,7 +1951,9 @@ function syncOverviewViewTabs() {
   });
   const grid = $("disease-grid");
   const traitPanel = $("trait-overview");
+  const gridWasHidden = Boolean(grid?.hidden);
   if (grid) grid.hidden = view === "traits";
+  if (grid && gridWasHidden && !grid.hidden) resizeDiseaseCardPlots();
   if (traitPanel) traitPanel.hidden = view !== "traits";
   // Keep the colour key's space in the Traits view (invisible, not removed) so
   // the header wraps the same way and the switch stays in place.
