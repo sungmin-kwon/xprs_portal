@@ -11,7 +11,6 @@ import pandas as pd
 from agents.gene_importance import KPredictGeneImportanceAgent
 from kpredict_data import (
     cohort_analysis,
-    disease_evidence_summary,
     manhattan_data,
     panel_finding_counts_by_disease,
     rare_findings,
@@ -266,65 +265,6 @@ class KPredictRuntimeTests(unittest.TestCase):
         })
         self.assertEqual(payload["gastric_cancer"]["alert_count"], 1)
         self.assertNotIn("", payload)
-
-    def test_disease_evidence_keeps_common_and_active_panel_evidence_separate(self):
-        payload = disease_evidence_summary(
-            self.root,
-            "KP-ABCDEF123456",
-            "breast_cancer",
-            gene_limit=2,
-        )
-
-        self.assertEqual(payload["common_variant"]["percentile"], 69.1)
-        self.assertEqual(
-            [item["gene"] for item in payload["common_variant"]["increasing_genes"]],
-            ["GENE1", "GENE3"],
-        )
-        self.assertEqual(
-            [item["gene"] for item in payload["common_variant"]["lowering_genes"]],
-            ["GENE2"],
-        )
-        self.assertAlmostEqual(
-            payload["common_variant"]["increasing_genes"][0]["standardized_contribution"],
-            0.7 / np.sqrt(0.5),
-        )
-        self.assertAlmostEqual(
-            payload["common_variant"]["increasing_genes"][0]["contribution"],
-            0.7,
-        )
-        self.assertEqual(payload["common_variant"]["scale"], "raw gene contribution")
-        self.assertEqual(payload["rare_variant"]["finding_count"], 1)
-        self.assertEqual(payload["rare_variant"]["findings"][0]["gene"], "BRCA1")
-        self.assertEqual(payload["rare_variant"]["disease"], "breast_cancer")
-        self.assertIsNone(payload["combined_score"])
-
-    def test_disease_evidence_gene_rankings_match_manhattan_outliers(self):
-        evidence = disease_evidence_summary(
-            self.root,
-            "KP-ABCDEF123456",
-            "breast_cancer",
-            gene_limit=2,
-        )["common_variant"]
-        points = pd.DataFrame(
-            manhattan_data(
-                self.root,
-                "breast_cancer",
-                "KP-ABCDEF123456",
-            )["points"]
-        )
-
-        self.assertEqual(
-            [item["gene"] for item in evidence["increasing_genes"]],
-            points.loc[points["contribution"].gt(0)]
-            .nlargest(2, "contribution")["gene"]
-            .tolist(),
-        )
-        self.assertEqual(
-            [item["gene"] for item in evidence["lowering_genes"]],
-            points.loc[points["contribution"].lt(0)]
-            .nsmallest(2, "contribution")["gene"]
-            .tolist(),
-        )
 
     def test_rare_findings_separate_active_other_panel_and_unassigned_groups(self):
         payload = rare_findings(self.root, "KP-ABCDEF123456", "breast_cancer")

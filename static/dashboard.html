@@ -12,7 +12,7 @@
 
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/static/vendor/katex/katex.min.css?v=0.16.11" />
-  <link rel="stylesheet" href="/static/dashboard.css?v=93" />
+  <link rel="stylesheet" href="/static/dashboard.css?v=94" />
   <link rel="stylesheet" href="/static/rare_variant_detail.css?v=2" />
 </head>
 
@@ -91,18 +91,6 @@
             <div class="viz-card">
               <div class="viz-title viz-title--with-action">
                 <span data-i18n="densityTitle">PRS Density</span>
-                <button
-                  id="evidence-summary-btn"
-                  class="viz-action-btn evidence-summary-btn"
-                  type="button"
-                  aria-label="Open integrated evidence view"
-                  title="Open integrated evidence view"
-                  hidden
-                  disabled
-                >
-                  <span class="material-symbols-outlined" aria-hidden="true">join_inner</span>
-                  <span class="evidence-summary-btn__label" data-i18n="evidenceButtonLabel">Evidence</span>
-                </button>
               </div>
               <div class="viz-content">
                 <div id="density-plot-placeholder" class="viz-empty-state visualization-prompt">
@@ -236,30 +224,6 @@
     </div>
   </div>
 
-  <div id="evidence-overlay" class="plot-overlay evidence-overlay" aria-hidden="true">
-    <div id="evidence-overlay-backdrop" class="plot-overlay__backdrop"></div>
-    <div class="plot-overlay__dialog evidence-overlay__dialog" role="dialog" aria-modal="true" aria-labelledby="evidence-overlay-title">
-      <div class="plot-overlay__header evidence-overlay__header">
-        <div>
-          <div class="evidence-overlay__eyebrow" data-i18n="integratedEvidenceEyebrow">COMMON + RARE VARIANT EVIDENCE</div>
-          <h2 id="evidence-overlay-title" data-i18n="integratedEvidenceTitle">Disease Evidence Summary</h2>
-        </div>
-        <button
-          id="close-evidence-overlay-btn"
-          class="plot-overlay__close"
-          type="button"
-          aria-label="Close integrated evidence view"
-          title="Close integrated evidence view"
-        >
-          <span class="material-symbols-outlined" aria-hidden="true">close</span>
-        </button>
-      </div>
-      <div id="evidence-overlay-body" class="evidence-overlay__body">
-        <div class="viz-empty-state"><span class="loading-spinner"></span></div>
-      </div>
-    </div>
-  </div>
-
   <div id="landing-overlay" class="landing-overlay is-open" aria-hidden="false">
     <div id="landing-backdrop" class="landing-backdrop"></div>
     <div class="landing-modal" role="dialog" aria-modal="true" aria-labelledby="landing-title">
@@ -318,7 +282,7 @@
   <script src="/static/vendor/katex/katex.min.js?v=0.16.11"></script>
   <script src="/static/vendor/katex/contrib/auto-render.min.js?v=0.16.11"></script>
   <script src="/static/rare_variant_detail.js?v=3"></script>
-  <script src="/static/dashboard.js?v=116"></script>
+  <script src="/static/dashboard.js?v=117"></script>
 
 </body>
 </html>

@@ -43,29 +43,37 @@ when papers for the selected genes are available.
 
 ## Portal workflow
 
-- The **XPRS Overview** compares an individual's available disease-specific PRS
-  percentiles. K-PREDICT cards also show disease-linked rare-variant alerts and
-  carrier findings without combining common- and rare-variant evidence into an
-  unsupported score.
-- The protected **Cohort Analysis** page filters K-PREDICT individuals by
-  disease, PRS percentile, rare-variant status, gene, and molecular consequence.
-  A finding drawer provides the underlying ClinVar, consequence, confidence,
-  allele-frequency, and disease-panel context.
+- The **Disease Overview** compares an individual's available disease-specific
+  PRS percentiles. K-PREDICT cards also show disease-linked rare-variant alerts
+  and carrier findings without combining common- and rare-variant evidence into
+  an unsupported score. A **Traits** view shows the individual's continuous-trait
+  PRS (42 traits in the current K-PREDICT release), grouped by trait category and
+  coloured neutrally, since a high trait score is not a risk in itself.
+- **Find individuals** (Overview, K-PREDICT) filters the cohort by disease, PRS
+  percentile band, rare-variant status and panel gene. A finding drawer gives
+  the underlying ClinVar, consequence, confidence, allele-frequency and
+  disease-panel context, and, when configured, matching ClinGen Actionability
+  reports as references.
 - The **dashboard** generates the PRS density and gene-based Manhattan plots on
-  demand. It presents the five strongest risk-increasing and five strongest
-  risk-lowering gene contributions, a concise plain-language interpretation,
-  literature-backed follow-up chat, and a downloadable detailed PDF report.
-- K-PREDICT-only exploratory views include an individual cross-disease gene
-  heatmap and a clearly labeled population gene-architecture prototype.
-
-The public 1000 Genomes profile remains a single-disease demonstration, so its
-overview uses one full-width breast-cancer density plot rather than empty cards
-for unsupported diseases.
+  demand, lists the individual's rare-variant findings (K-PREDICT), and offers a
+  plain-language summary of the five strongest risk-increasing and five
+  strongest risk-lowering gene contributions, literature-backed follow-up chat,
+  and a downloadable detailed PDF report.
+- The K-PREDICT **Gene Heatmap** compares an individual's gene contributions
+  across diseases, as the difference from the cohort mean in cohort standard
+  deviations. Genes that share SNPs are merged into one row.
+- The protected **Cohort Analysis** page shows, for one disease, which genes carry
+  panel findings and where those individuals fall on the PRS distribution,
+  with the number in the top 10% next to the number expected by chance.
+- **About XPRS** summarises the published method and separates the views that
+  come from XPRS from those the portal adds.
 
 ## Stack
 
 - FastAPI and Pydantic backend
-- Vanilla HTML, CSS, JavaScript, and Plotly frontend
+- Vanilla HTML, CSS and JavaScript frontend; Plotly (pinned CDN version) for
+  plots; vendored KaTeX, marked and DOMPurify (chat answers are sanitised before
+  display)
 - OpenRouter for generation and GPT-5 mini reference extraction
 - Europe PMC REST API with Semantic Scholar as an emergency literature fallback
 - ChromaDB dense retrieval with BGE-M3 embeddings
@@ -264,10 +272,9 @@ are written as mode-0600 JSON files under the ignored
 participant/session codes supplied in the form, but deliberately omit IP
 address and browser metadata.
 
-The overview and dashboard retain a disabled survey icon as a reminder that the
-study UI is deferred. The methodology page exposes its survey link only when
-`XPRS_EVALUATION_TOKEN` is configured; otherwise the evaluation route returns
-404.
+The overview, dashboard and About pages show a disabled survey icon as a
+reminder that the study UI is deferred. Without `XPRS_EVALUATION_TOKEN`, the
+evaluation route returns 404.
 
 Export the collected records to an analysis-ready CSV, including the
 prespecified rating-group means, task indicators, and comprehension scores:
@@ -285,13 +292,18 @@ intended for publication.
 
 The complete key-free template is in `.env.example`. The principal settings are:
 
-- `OPENROUTER_API_KEY`, `LLM_MODEL`
+- `OPENROUTER_API_KEY`, `LLM_MODEL`, `LLM_FALLBACK_MODEL`
+- `OPENROUTER_ZDR_REQUIRED=true`, `OPENROUTER_DATA_COLLECTION=deny` (required)
 - `REFERENCE_EXTRACTION_PROVIDER=openrouter`
 - `REFERENCE_EXTRACTION_MODEL=openai/gpt-5-mini`
 - `LITERATURE_CACHE_DIR`, `EUROPE_PMC_CACHE_DIR`, `S2_CACHE_DIR`, `S2_API_KEY`
 - `S2_API_KEY_MIN_INTERVAL_SECONDS`, `S2_PUBLIC_MIN_INTERVAL_SECONDS`,
   `S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS`
 - `KPREDICT_ENABLED`, `KPREDICT_DATA_ROOT`, `XPRS_KPREDICT_TOKEN`
+- `ACTIONABILITY_REFERENCE_PATH` for optional ClinGen Actionability references,
+  built by `scripts/build_actionability_reference.py` and kept outside the
+  repository
+- `SERVER_LOG_FILE_LEVEL` for the redacted server log file
 - `LITERATURE_MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS`
 - `RERANKER_ENABLED`, `RERANKER_MODEL`, `RERANKER_CANDIDATE_K`
 - `RERANKER_BATCH_SIZE`, `RERANKER_MAX_LENGTH`
@@ -346,6 +358,7 @@ are intentionally excluded from the public repository surface.
 ## API highlights
 
 - `GET /` — landing page
+- `GET /about` — XPRS method summary
 - `GET /dashboard` — disease-specific visualizations and chatbot
 - `GET /cohort-analysis` — protected K-PREDICT cohort analysis
 - `GET /evaluation` — internal pilot survey; response submission is token-protected
@@ -386,7 +399,10 @@ They must live outside the repository data root, remain behind server-side
 authentication, and never be written to public static plot files. Individual
 IDs, genotypes, variants, HGVS values, and individual contribution data must
 not be sent to Semantic Scholar or an externally hosted language model without
-an approved data-governance policy.
+an approved data-governance policy. The chatbot sends rare-variant findings at
+gene level only (gene, alert or carrier, consequence, ClinVar class and
+conditions) through the zero-data-retention route; exact variants, genotypes and
+positions stay on the server, which renders them for the reader.
 
 ## License and attribution
 

@@ -18,7 +18,6 @@ let activeLoadingAnimationTimer = null;
 let activeLoadingAnimatedBaseText = "";
 let currentManhattanData = null;
 let currentDensityData = null;
-let currentDiseaseEvidence = null;
 let visualizationLoadPromise = null;
 let visualizationRequestKey = "";
 let visualizationLoadedKey = "";
@@ -117,29 +116,7 @@ const UI_TEXT = {
     rareNoFindings: "No curated rare-variant findings are recorded for this individual.",
     rareFindingSummary: (total, alerts, carriers) => `${total} findings · ${alerts} alerts · ${carriers} carriers`,
     viewRareDetails: "View rare-variant details",
-    integratedEvidenceEyebrow: "COMMON + RARE VARIANT EVIDENCE",
-    integratedEvidenceTitle: "Disease Evidence Summary",
-    evidenceButtonLabel: "Evidence",
-    openIntegratedEvidence: "Open integrated evidence view",
-    closeIntegratedEvidence: "Close integrated evidence view",
-    evidenceContext: (disease, individual) => `${disease} · ${individual}`,
-    commonVariantEvidence: "Common-variant evidence",
-    commonVariantDescription: "PRS and gene contributions from the disease-specific XPRS model",
-    cohortPercentile: "Within-cohort percentile",
-    rawPrs: "Raw PRS",
-    riskIncreasingGenes: "Strongest risk-increasing contributions",
-    riskLoweringGenes: "Strongest risk-lowering contributions",
-    geneContribution: "Gene contribution",
-    manhattanContributionScale: "Same contribution scale as the Individual Manhattan Plot",
-    noIncreasingGenes: "No positive gene contributions are available.",
-    noLoweringGenes: "No negative gene contributions are available.",
-    rareVariantEvidence: "Rare-variant evidence",
-    rareVariantDescription: "Curated findings linked to the active disease panel",
-    rareNoDiseasePanelFindings: "No rare findings are linked to this disease panel.",
-    evidenceAlert: "Alert",
-    evidenceCarrier: "Carrier",
-    evidenceBoundary: "Common- and rare-variant results are separate evidence layers. They are not combined into one risk score, and neither confirms the other.",
-    evidenceLoadFailed: "The integrated evidence view is unavailable.",
+    rareSeparateFromPrs: "Rare-variant findings are separate from the PRS. They are not combined into one risk score, and neither confirms the other.",
   },
   ko: {
     portalTitle: "XPRS 정보 포털 – 유방암",
@@ -213,29 +190,7 @@ const UI_TEXT = {
     rareNoFindings: "이 개인에게 등록된 희귀 변이 소견이 없습니다.",
     rareFindingSummary: (total, alerts, carriers) => `총 ${total}건 · 주의 ${alerts}건 · 보인자 ${carriers}건`,
     viewRareDetails: "희귀 변이 상세 보기",
-    integratedEvidenceEyebrow: "일반 변이 + 희귀 변이 근거",
-    integratedEvidenceTitle: "질환별 통합 근거 요약",
-    evidenceButtonLabel: "통합 보기",
-    openIntegratedEvidence: "통합 근거 보기",
-    closeIntegratedEvidence: "통합 근거 닫기",
-    evidenceContext: (disease, individual) => `${disease} · ${individual}`,
-    commonVariantEvidence: "일반 변이 근거",
-    commonVariantDescription: "질환별 XPRS 모델의 PRS와 유전자 기여도",
-    cohortPercentile: "코호트 내 백분위",
-    rawPrs: "원시 PRS",
-    riskIncreasingGenes: "위험을 높이는 주요 유전자 기여",
-    riskLoweringGenes: "위험을 낮추는 주요 유전자 기여",
-    geneContribution: "유전자 기여도",
-    manhattanContributionScale: "개인별 맨해튼 플롯과 동일한 기여도 척도",
-    noIncreasingGenes: "양의 유전자 기여도가 없습니다.",
-    noLoweringGenes: "음의 유전자 기여도가 없습니다.",
-    rareVariantEvidence: "희귀 변이 근거",
-    rareVariantDescription: "현재 질환 패널과 연결된 선별 소견",
-    rareNoDiseasePanelFindings: "이 질환 패널과 연결된 희귀 변이 소견이 없습니다.",
-    evidenceAlert: "주의",
-    evidenceCarrier: "보인자",
-    evidenceBoundary: "일반 변이와 희귀 변이 결과는 서로 다른 근거입니다. 하나의 위험 점수로 합산하지 않으며, 어느 한쪽이 다른 쪽을 확증하지 않습니다.",
-    evidenceLoadFailed: "통합 근거 보기를 불러올 수 없습니다.",
+    rareSeparateFromPrs: "희귀 변이 소견은 PRS와 별개의 근거입니다. 하나의 위험 점수로 합산하지 않으며, 어느 한쪽이 다른 쪽을 확증하지 않습니다.",
   }
 };
 
@@ -586,8 +541,7 @@ function hideLandingDisclaimer() {
 function syncModalActivityState() {
   const hasOpenModal =
     $("landing-overlay")?.classList.contains("is-open") ||
-    $("plot-overlay")?.classList.contains("is-open") ||
-    $("evidence-overlay")?.classList.contains("is-open");
+    $("plot-overlay")?.classList.contains("is-open");
   document.body.classList.toggle("modal-active", Boolean(hasOpenModal));
 }
 
@@ -601,16 +555,6 @@ function syncPlotOverlayUI() {
   if (closeBtn) {
     closeBtn.setAttribute("aria-label", t("closeExpandedPlot"));
     closeBtn.setAttribute("title", t("closeExpandedPlot"));
-  }
-  const evidenceBtn = $("evidence-summary-btn");
-  if (evidenceBtn) {
-    evidenceBtn.setAttribute("aria-label", t("openIntegratedEvidence"));
-    evidenceBtn.setAttribute("title", t("openIntegratedEvidence"));
-  }
-  const evidenceCloseBtn = $("close-evidence-overlay-btn");
-  if (evidenceCloseBtn) {
-    evidenceCloseBtn.setAttribute("aria-label", t("closeIntegratedEvidence"));
-    evidenceCloseBtn.setAttribute("title", t("closeIntegratedEvidence"));
   }
 }
 
@@ -690,38 +634,6 @@ function closePlotOverlay() {
   syncModalActivityState();
 }
 
-function syncEvidenceSummaryButton() {
-  const btn = $("evidence-summary-btn");
-  if (!btn) return;
-  btn.hidden = !isPrivatePreview();
-  btn.disabled = !isPrivatePreview() || !currentDiseaseEvidence;
-}
-
-// Mirrors text_utils.format_contribution: 3 significant figures, scientific
-// notation below 0.001, so small risk-lowering contributions never show as 0.00.
-function formatContribution(value) {
-  if (value === 0) return "0";
-  if (Math.abs(value) < 1e-3) return value.toExponential(2);
-  return String(Number(value.toPrecision(3)));
-}
-
-function evidenceGeneRows(items, emptyKey) {
-  if (!Array.isArray(items) || !items.length) {
-    return `<p class="evidence-empty">${escapeHtml(t(emptyKey))}</p>`;
-  }
-  return `<div class="evidence-gene-list">${items.map((item) => {
-    const score = Number(item.contribution);
-    const scoreText = Number.isFinite(score)
-      ? `${score >= 0 ? "+" : ""}${formatContribution(score)}`
-      : "—";
-    const direction = score >= 0 ? "is-increasing" : "is-lowering";
-    return `<div class="evidence-gene-row">
-      <strong>${escapeHtml(String(item.gene || "—"))}</strong>
-      <span class="evidence-score ${direction}" title="${escapeHtml(t("geneContribution"))}">${escapeHtml(scoreText)}</span>
-    </div>`;
-  }).join("")}</div>`;
-}
-
 function rareDetailDiseaseName(slug, fallback = "") {
   if (currentLanguage === "ko") {
     return DISEASE_NAMES_KO[slug] || fallback || slug;
@@ -750,124 +662,6 @@ function openRareDetail(key) {
     language: currentLanguage,
     diseaseLabel: rareDetailDiseaseName,
   });
-}
-
-function evidenceRareRows(items) {
-  if (!Array.isArray(items) || !items.length) {
-    return `<p class="evidence-empty">${escapeHtml(t("rareNoDiseasePanelFindings"))}</p>`;
-  }
-  return `<div class="evidence-rare-list">${items.map((item) => {
-    const call = item.moi_call === "carrier" ? t("evidenceCarrier") : t("evidenceAlert");
-    const callClass = item.moi_call === "carrier" ? "is-carrier" : "is-alert";
-    const variant = item.hgvs || item.variant || item.rsid || "—";
-    const details = [item.clnsig, item.consequence].filter(Boolean).join(" · ");
-    return `<article class="evidence-rare-row">
-      <div class="evidence-rare-row__heading">
-        <strong>${escapeHtml(String(item.gene || "—"))}</strong>
-        <div class="rare-finding-item__actions">
-          <span class="evidence-call ${callClass}">${escapeHtml(call)}</span>
-          ${rareDetailTrigger(item)}
-        </div>
-      </div>
-      <div class="evidence-rare-row__variant">${clinvarVariantLink(item.hgvs, variant)}</div>
-      ${details ? `<small>${escapeHtml(details)}</small>` : ""}
-    </article>`;
-  }).join("")}</div>`;
-}
-
-function renderDiseaseEvidence(data) {
-  const container = $("evidence-overlay-body");
-  if (!container || !data) return;
-  const common = data.common_variant || {};
-  const rare = data.rare_variant || {};
-  const percentile = Number(common.percentile);
-  const prs = Number(common.prs_value);
-  const disease = currentLanguage === "ko"
-    ? (DISEASE_NAMES_KO[data.disease] || data.disease_label || activeDiseaseDisplayName())
-    : (data.disease_label || activeDiseaseDisplayName());
-  const findings = Array.isArray(rare.findings) ? rare.findings : [];
-  const alertCount = Number(rare.alert_count || 0);
-  const carrierCount = Number(rare.carrier_count || 0);
-
-  container.innerHTML = `<div class="evidence-summary">
-    <div class="evidence-context">${escapeHtml(t("evidenceContext")(disease, data.individual_id || ""))}</div>
-    <div class="evidence-layer-grid">
-      <section class="evidence-layer evidence-layer--common">
-        <div class="evidence-layer__heading">
-          <span class="material-symbols-outlined" aria-hidden="true">query_stats</span>
-          <div><h3>${escapeHtml(t("commonVariantEvidence"))}</h3><p>${escapeHtml(t("commonVariantDescription"))}</p></div>
-        </div>
-        <div class="evidence-metrics">
-          <div class="evidence-metric">
-            <span>${escapeHtml(t("cohortPercentile"))}</span>
-            <strong>${Number.isFinite(percentile) ? `${percentile.toFixed(1)}%` : "—"}</strong>
-          </div>
-          <div class="evidence-metric">
-            <span>${escapeHtml(t("rawPrs"))}</span>
-            <strong>${Number.isFinite(prs) ? prs.toFixed(3) : "—"}</strong>
-          </div>
-        </div>
-        <div class="evidence-gene-groups">
-          <div>
-            <h4>${escapeHtml(t("riskIncreasingGenes"))}</h4>
-            ${evidenceGeneRows(common.increasing_genes, "noIncreasingGenes")}
-          </div>
-          <div>
-            <h4>${escapeHtml(t("riskLoweringGenes"))}</h4>
-            ${evidenceGeneRows(common.lowering_genes, "noLoweringGenes")}
-          </div>
-        </div>
-        <div class="evidence-normalization">${escapeHtml(t("manhattanContributionScale"))}</div>
-      </section>
-      <section class="evidence-layer evidence-layer--rare">
-        <div class="evidence-layer__heading">
-          <span class="material-symbols-outlined" aria-hidden="true">genetics</span>
-          <div><h3>${escapeHtml(t("rareVariantEvidence"))}</h3><p>${escapeHtml(t("rareVariantDescription"))}</p></div>
-        </div>
-        <div class="evidence-rare-counts">
-          <span class="evidence-call is-alert">${escapeHtml(t("evidenceAlert"))} ${alertCount}</span>
-          <span class="evidence-call is-carrier">${escapeHtml(t("evidenceCarrier"))} ${carrierCount}</span>
-        </div>
-        ${evidenceRareRows(findings)}
-      </section>
-    </div>
-    <div class="evidence-boundary"><span class="material-symbols-outlined" aria-hidden="true">info</span><p>${escapeHtml(t("evidenceBoundary"))}</p></div>
-  </div>`;
-}
-
-async function loadDiseaseEvidence(pid) {
-  currentDiseaseEvidence = null;
-  syncEvidenceSummaryButton();
-  if (!isPrivatePreview()) return null;
-  const params = new URLSearchParams({
-    individual_id: pid,
-    disease: getActiveDiseaseSlug(),
-    gene_limit: "2",
-  });
-  const response = await fetch(`/api/kpredict/disease-evidence?${params.toString()}`);
-  if (!response.ok) throw new Error(`Integrated evidence unavailable: HTTP ${response.status}`);
-  currentDiseaseEvidence = await response.json();
-  renderDiseaseEvidence(currentDiseaseEvidence);
-  syncEvidenceSummaryButton();
-  return currentDiseaseEvidence;
-}
-
-function openEvidenceOverlay() {
-  if (!currentDiseaseEvidence) return;
-  renderDiseaseEvidence(currentDiseaseEvidence);
-  const overlay = $("evidence-overlay");
-  if (!overlay) return;
-  overlay.classList.add("is-open");
-  overlay.setAttribute("aria-hidden", "false");
-  syncModalActivityState();
-  $("close-evidence-overlay-btn")?.focus();
-}
-
-function closeEvidenceOverlay() {
-  const overlay = $("evidence-overlay");
-  overlay?.classList.remove("is-open");
-  overlay?.setAttribute("aria-hidden", "true");
-  syncModalActivityState();
 }
 
 function isLandingDisclaimerOpen() {
@@ -913,7 +707,6 @@ function applyLanguage(language) {
     clearChat();
   }
   renderReferencesList(currentReferences);
-  if (currentDiseaseEvidence) renderDiseaseEvidence(currentDiseaseEvidence);
   window.XPRSRareVariantDrawer?.refresh({
     language: currentLanguage,
     diseaseLabel: rareDetailDiseaseName,
@@ -1333,15 +1126,12 @@ function resetVisualizations() {
   const densityPlot = $("density-plot");
   currentManhattanData = null;
   currentDensityData = null;
-  currentDiseaseEvidence = null;
   visualizationRequestId += 1;
   visualizationLoadPromise = null;
   visualizationRequestKey = "";
   visualizationLoadedKey = "";
   visualizationLoading = false;
   closePlotOverlay();
-  closeEvidenceOverlay();
-  syncEvidenceSummaryButton();
 
   if (window.Plotly) {
     if (manhattanPlot) {
@@ -2573,7 +2363,8 @@ async function loadRareFindings(pid) {
   container.innerHTML = `<div class="rare-finding-summary">${escapeHtml(t("rareFindingSummary")(data.finding_count, data.alert_count, data.carrier_count))}</div>
     ${activeSection}
     ${otherPanelSections}
-    ${unassignedSection}`;
+    ${unassignedSection}
+    <p class="rare-finding-note">${escapeHtml(t("rareSeparateFromPrs"))}</p>`;
 }
 
 function renderIndividualOptions(
@@ -2652,21 +2443,12 @@ function scheduleIndividualFilter() {
 // Plot loading
 // ----------------------------
 async function loadIndividualEvidence(pid) {
-  const [rareResult, evidenceResult] = await Promise.allSettled([
-    loadRareFindings(pid),
-    loadDiseaseEvidence(pid),
-  ]);
-  if (rareResult.status === "rejected") {
-    console.warn(rareResult.reason);
+  try {
+    await loadRareFindings(pid);
+  } catch (error) {
+    console.warn(error);
     const container = $("rare-variant-content");
-    if (container) container.innerHTML = `<div class="viz-empty-state"><p>${escapeHtml(rareResult.reason?.message || String(rareResult.reason))}</p></div>`;
-  }
-  if (evidenceResult.status === "rejected") {
-    console.warn(evidenceResult.reason);
-    currentDiseaseEvidence = null;
-    syncEvidenceSummaryButton();
-    const container = $("evidence-overlay-body");
-    if (container) container.innerHTML = `<div class="viz-empty-state"><p>${escapeHtml(t("evidenceLoadFailed"))}</p></div>`;
+    if (container) container.innerHTML = `<div class="viz-empty-state"><p>${escapeHtml(error?.message || String(error))}</p></div>`;
   }
 }
 
@@ -3144,24 +2926,11 @@ window.addEventListener("DOMContentLoaded", async () => {
     closePlotOverlay();
   });
 
-  $("evidence-summary-btn")?.addEventListener("click", () => {
-    openEvidenceOverlay();
-  });
-
-  $("close-evidence-overlay-btn")?.addEventListener("click", () => {
-    closeEvidenceOverlay();
-  });
-
-  $("evidence-overlay-backdrop")?.addEventListener("click", () => {
-    closeEvidenceOverlay();
-  });
-
   const rareDetailClickHandler = (event) => {
     const trigger = event.target?.closest?.("[data-rare-detail-key]");
     if (trigger) openRareDetail(trigger.dataset.rareDetailKey);
   };
   $("rare-variant-content")?.addEventListener("click", rareDetailClickHandler);
-  $("evidence-overlay-body")?.addEventListener("click", rareDetailClickHandler);
 
   document.addEventListener("click", (e) => {
     const wrap = document.querySelector(".export-menu-wrap");
@@ -3183,10 +2952,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     const rareDetailOverlay = $("rare-detail-overlay");
     if (rareDetailOverlay && !rareDetailOverlay.hidden) {
       window.XPRSRareVariantDrawer?.close();
-      return;
-    }
-    if ($("evidence-overlay")?.classList.contains("is-open")) {
-      closeEvidenceOverlay();
       return;
     }
     if ($("plot-overlay")?.classList.contains("is-open")) {
@@ -3212,6 +2977,5 @@ window.addEventListener("DOMContentLoaded", async () => {
   });
 
   syncManhattanPopoutButton();
-  syncEvidenceSummaryButton();
   syncPlotOverlayUI();
 });

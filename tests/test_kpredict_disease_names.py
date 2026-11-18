@@ -40,18 +40,18 @@ class DiseaseNameValidationTests(unittest.TestCase):
             with self.subTest(disease=disease), self.assertRaisesRegex(ValueError, "Unknown disease"):
                 risk_profile(self.root, disease, "person-1")
 
-    def test_unknown_disease_returns_404_not_500(self):
+    def test_unknown_disease_is_rejected_not_500(self):
         environment = {"KPREDICT_ENABLED": "true", "KPREDICT_DATA_ROOT": str(self.root),
                        "XPRS_KPREDICT_TOKEN": "cohort-secret", "XPRS_ADMIN_TOKEN": "admin-secret"}
         with patch.dict(os.environ, environment):
             app = FastAPI()
             app.include_router(kpredict.router)
             response = TestClient(app, raise_server_exceptions=False).get(
-                "/api/kpredict/disease-evidence",
+                "/api/kpredict/cohort-analysis",
                 params={"individual_id": "person-1", "disease": "not_a_disease"},
                 headers={"X-XPRS-KPREDICT-Token": "cohort-secret"},
             )
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 400)
 
 
 if __name__ == "__main__":
