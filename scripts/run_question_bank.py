@@ -64,11 +64,11 @@ import httpx
 from dotenv import dotenv_values
 
 try:  # run as a script (python scripts/run_question_bank.py) or imported as scripts.run_question_bank
-    from question_bank_checks import (DEFAULT_EXPECTATIONS, expectation_checks, general_checks,
+    from question_bank_checks import (DEFAULT_EXPECTATIONS, expectation_checks, failure_texts, general_checks,
                                       load_expectations, refusal_texts)
 except ImportError:
-    from scripts.question_bank_checks import (DEFAULT_EXPECTATIONS, expectation_checks, general_checks,
-                                              load_expectations, refusal_texts)
+    from scripts.question_bank_checks import (DEFAULT_EXPECTATIONS, expectation_checks, failure_texts,
+                                              general_checks, load_expectations, refusal_texts)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RARE_SECTION = "Track 2"
@@ -300,20 +300,23 @@ def write_markdown(path: Path, payload: dict) -> None:
 def score(payload: dict, expectations: dict[str, dict]) -> None:
     """(Re)compute the checks for every result and the run summary, in place."""
     refusals = refusal_texts()
+    failures = failure_texts()
     percentiles = payload["run"].get("percentiles", {})
     for result in payload["results"]:
         if result["status"] != "ok":
             result["checks"] = [{"check": "answered", "passed": False, "detail": result["error"] or result["status"]}]
         else:
             expectation = expectations.get(result["id"], {})
-            result["checks"] = (general_checks(result["answer"], percentile=percentiles.get(result["individual_role"]))
+            result["checks"] = (general_checks(result["answer"], percentile=percentiles.get(result["individual_role"]),
+                                               failures=failures)
                                 + expectation_checks(result["answer"], expectation, refusals))
             result["expectation_reason"] = expectation.get("reason", "")
         result["passed"] = all(check["passed"] for check in result["checks"])
     results = payload["results"]
     payload["summary"] = {
         "questions": len(results),
-        "answered": sum(r["status"] == "ok" for r in results),
+        # A portal failure message is returned as a normal answer; count it as unanswered.
+        "answered": sum(r["status"] == "ok" and r["checks"][0]["passed"] for r in results),
         "questions_passed": sum(r["passed"] for r in results),
         "questions_with_expectations": sum(r["id"] in expectations for r in results),
         "failed": [r["id"] for r in results if not r["passed"]],

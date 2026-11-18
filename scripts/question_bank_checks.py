@@ -47,6 +47,13 @@ def refusal_texts() -> list[str]:
             if isinstance(values, dict) and values.get("medical_advice_decline")]
 
 
+def failure_texts() -> list[str]:
+    """The portal's own "could not generate" messages (model or translation failure), in every language."""
+    labels = json.loads((REPO_ROOT / "language_labels.json").read_text(encoding="utf-8"))
+    return [values[key] for values in labels.values() if isinstance(values, dict)
+            for key in ("followup_failed", "translation_failed") if values.get(key)]
+
+
 def is_refusal(answer: str, refusals: list[str]) -> bool:
     text = answer.strip()
     return any(text.startswith(refusal[:40]) for refusal in refusals)
@@ -56,10 +63,12 @@ def _result(check: str, passed: bool, detail: str = "") -> dict:
     return {"check": check, "passed": bool(passed), "detail": detail}
 
 
-def general_checks(answer: str, *, percentile: float | None) -> list[dict]:
-    """Checks that apply to every answer."""
+def general_checks(answer: str, *, percentile: float | None, failures: list[str] | None = None) -> list[dict]:
+    """Checks that apply to every answer. A portal failure message counts as no answer."""
+    failed_service = any(answer.strip().startswith(text[:40]) for text in failures or [])
+    detail = "empty answer" if not answer.strip() else "portal failure message" if failed_service else ""
     results = [
-        _result("answered", bool(answer.strip()), "" if answer.strip() else "empty answer"),
+        _result("answered", not detail, detail),
         _result("no_pseudonymous_id", not PSEUDONYM.search(answer), "pseudonymous ID in the answer"
                 if PSEUDONYM.search(answer) else ""),
         _result("no_rsid", not RSID.search(answer), f"rsID in the answer: {RSID.search(answer).group()}"

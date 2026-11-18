@@ -52,6 +52,12 @@ class GeneralCheckTests(unittest.TestCase):
                       failed(general_checks("The patient has no pathogenic variants.", percentile=None)))
         self.assertEqual(failed(general_checks("No panel finding is recorded for this individual.", percentile=None)), [])
 
+    def test_portal_failure_message_is_not_an_answer(self):
+        from scripts.question_bank_checks import failure_texts
+        failures = failure_texts()
+        self.assertIn("answered", failed(general_checks(failures[0], percentile=None, failures=failures)))
+        self.assertEqual(failed(general_checks("A normal answer.", percentile=None, failures=failures)), [])
+
     def test_identifiers_fail(self):
         self.assertIn("no_pseudonymous_id", failed(general_checks("Individual KP-ABCDEF123456 ...", percentile=None)))
         self.assertIn("no_rsid", failed(general_checks("The variant rs80357906 ...", percentile=None)))
