@@ -418,6 +418,11 @@ class UiContractTests(ContractTestCase):
         self.assertIn('aria-modal="true"', drawer_script)
         self.assertIn("panel_assignments", drawer_script)
         self.assertIn("moi_why", drawer_script)
+        # Missing gnomAD frequencies say why instead of hiding the row.
+        self.assertIn('formatGnomadFrequency(item.gnomad_af, item)', drawer_script)
+        self.assertIn('formatGnomadFrequency(item.gnomad_af_eas, item)', drawer_script)
+        for label in ('"— (absent in gnomAD)"', '"— (no gnomAD data)"', '"— (gnomAD에 없음)"', '"— (gnomAD 자료 없음)"'):
+            self.assertIn(label, drawer_script)
         self.assertIn("panelapp_moi", drawer_script)
         self.assertIn("clingen_moi", drawer_script)
         self.assertIn("cohort_af", drawer_script)

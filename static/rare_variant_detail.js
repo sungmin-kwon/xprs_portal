@@ -38,6 +38,8 @@
       gnomadAf: "gnomAD allele frequency",
       gnomadEasAf: "gnomAD East Asian frequency",
       easContext: "East Asian frequency context",
+      absentInGnomad: "— (absent in gnomAD)",
+      noGnomadData: "— (no gnomAD data)",
       openClinvar: "Open in ClinVar",
       noPanelDetails: "No disease-panel assignment is recorded for this finding.",
       boundary: "These are supplied research annotations. They do not establish a diagnosis, prognosis, or causal relationship with the selected disease.",
@@ -79,6 +81,8 @@
       gnomadAf: "gnomAD 대립유전자 빈도",
       gnomadEasAf: "gnomAD 동아시아 빈도",
       easContext: "동아시아 빈도 정보",
+      absentInGnomad: "— (gnomAD에 없음)",
+      noGnomadData: "— (gnomAD 자료 없음)",
       openClinvar: "ClinVar에서 열기",
       noPanelDetails: "이 소견에는 질환 패널 배정이 없습니다.",
       boundary: "이 정보는 제공받은 연구용 주석입니다. 진단, 예후 또는 선택한 질환과의 인과관계를 확정하지 않습니다.",
@@ -127,6 +131,17 @@
       : (Math.abs(numeric) < 0.0001 ? numeric.toExponential(2) : numeric.toLocaleString(undefined, { maximumSignificantDigits: 5 }));
     const percent = (numeric * 100).toLocaleString(undefined, { maximumSignificantDigits: 4 });
     return `${proportion} (${percent}%)`;
+  }
+
+  // A missing gnomAD frequency used to hide the whole row, so "not in gnomAD"
+  // and "no data supplied" looked the same as a field that does not exist.
+  // The supplied eas_specific context says which case applies.
+  function formatGnomadFrequency(value, item) {
+    if (present(value)) return formatFrequency(value);
+    const context = String(item?.eas_specific || "").trim().toUpperCase();
+    if (context === "ABSENT_IN_GNOMAD") return tr("absentInGnomad");
+    if (context === "NO_DATA") return tr("noGnomadData");
+    return "";
   }
 
   function detailField(label, value, className = "") {
@@ -247,8 +262,8 @@
     ]);
     const frequencySection = section(tr("frequencySection"), [
       detailField(tr("cohortAf"), formatFrequency(item.cohort_af)),
-      detailField(tr("gnomadAf"), formatFrequency(item.gnomad_af)),
-      detailField(tr("gnomadEasAf"), formatFrequency(item.gnomad_af_eas)),
+      detailField(tr("gnomadAf"), formatGnomadFrequency(item.gnomad_af, item)),
+      detailField(tr("gnomadEasAf"), formatGnomadFrequency(item.gnomad_af_eas, item)),
       detailField(tr("easContext"), item.eas_specific),
     ]);
     const panelSection = `<section class="rare-detail-section">
