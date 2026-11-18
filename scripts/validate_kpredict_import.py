@@ -31,6 +31,36 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def check_score_folder(parent: Path, entry: dict, slug_key: str, pseudonyms: set[str], errors: list[str]) -> None:
+    """Check one diseases/<slug> or traits/<slug> folder against its manifest entry."""
+    slug = str(entry.get(slug_key) or "")
+    folder = parent / slug
+    risk = pd.read_parquet(folder / "individual_risk.parquet")
+    genes = pd.read_parquet(folder / "genes.parquet")
+    matrix = json.loads((folder / "matrix.json").read_text(encoding="utf-8"))
+    if set(risk["individual_id"].astype(str)) != pseudonyms:
+        errors.append(f"{slug}: pseudonymous individual set differs from the cohort mapping")
+    if len(risk) != int(entry.get("individual_count") or -1):
+        errors.append(f"{slug}: individual count differs from the manifest")
+    if len(genes) != int(entry.get("gene_count") or -1):
+        errors.append(f"{slug}: gene count differs from the manifest")
+    shape = [int(value) for value in matrix.get("shape", [])]
+    if shape != [len(genes), len(risk)]:
+        errors.append(f"{slug}: contribution matrix shape metadata is invalid")
+    binary_path = folder / str(matrix.get("data_file"))
+    if binary_path.stat().st_size != len(genes) * len(risk) * 4:
+        errors.append(f"{slug}: contribution matrix byte size is invalid")
+    if int(risk["applicable"].sum()) != int(entry.get("applicable_count") or -1):
+        errors.append(f"{slug}: applicable count differs from the manifest")
+    for filename, details in (entry.get("files") or {}).items():
+        path = folder / filename
+        if not path.is_file() or path.stat().st_size != int(details.get("bytes") or -1):
+            errors.append(f"{slug}: {filename} is missing or has the wrong size")
+            continue
+        if sha256_file(path) != details.get("sha256"):
+            errors.append(f"{slug}: {filename} checksum mismatch")
+
+
 def validate_release(root: Path) -> list[str]:
     errors: list[str] = []
     root = root.expanduser().resolve()
@@ -66,32 +96,17 @@ def validate_release(root: Path) -> list[str]:
         errors.append("manifest individual count differs from the restricted mapping")
 
     for disease in manifest.get("diseases", []):
-        slug = str(disease.get("portal_disease_slug") or "")
-        disease_dir = root / "diseases" / slug
-        risk = pd.read_parquet(disease_dir / "individual_risk.parquet")
-        genes = pd.read_parquet(disease_dir / "genes.parquet")
-        matrix = json.loads((disease_dir / "matrix.json").read_text(encoding="utf-8"))
-        if set(risk["individual_id"].astype(str)) != pseudonyms:
-            errors.append(f"{slug}: pseudonymous individual set differs from the cohort mapping")
-        if len(risk) != int(disease.get("individual_count") or -1):
-            errors.append(f"{slug}: individual count differs from the manifest")
-        if len(genes) != int(disease.get("gene_count") or -1):
-            errors.append(f"{slug}: gene count differs from the manifest")
-        shape = [int(value) for value in matrix.get("shape", [])]
-        if shape != [len(genes), len(risk)]:
-            errors.append(f"{slug}: contribution matrix shape metadata is invalid")
-        binary_path = disease_dir / str(matrix.get("data_file"))
-        if binary_path.stat().st_size != len(genes) * len(risk) * 4:
-            errors.append(f"{slug}: contribution matrix byte size is invalid")
-        if int(risk["applicable"].sum()) != int(disease.get("applicable_count") or -1):
-            errors.append(f"{slug}: applicable count differs from the manifest")
-        for filename, details in (disease.get("files") or {}).items():
-            path = disease_dir / filename
-            if not path.is_file() or path.stat().st_size != int(details.get("bytes") or -1):
-                errors.append(f"{slug}: {filename} is missing or has the wrong size")
-                continue
-            if sha256_file(path) != details.get("sha256"):
-                errors.append(f"{slug}: {filename} checksum mismatch")
+        check_score_folder(root / "diseases", disease, "portal_disease_slug", pseudonyms, errors)
+    # Continuous traits (from 2026-11-19) use the same per-folder layout.
+    for trait in manifest.get("traits") or []:
+        check_score_folder(root / "traits", trait, "portal_trait_slug", pseudonyms, errors)
+        slug = trait.get("portal_trait_slug")
+        if not str(trait.get("reference_cohort") or "").strip():
+            errors.append(f"{slug}: reference_cohort is not recorded in the manifest")
+        risk = pd.read_parquet(root / "traits" / str(slug) / "individual_risk.parquet")
+        percentiles = risk["percentile"].dropna()
+        if percentiles.empty or percentiles.min() < 0 or percentiles.max() > 100:
+            errors.append(f"{slug}: percentiles are missing or outside 0–100")
 
     findings = pd.read_parquet(root / "rare_findings.parquet")
     finding_index = pd.read_parquet(root / "rare_finding_index.parquet")
