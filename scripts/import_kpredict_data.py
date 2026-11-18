@@ -101,11 +101,23 @@ write.table(
   sep = "\t", row.names = FALSE, quote = TRUE, na = ""
 )
 
+annotated <- as.data.frame(d$annotated_info, stringsAsFactors = FALSE)
+# snps_sharing_genes is an R list column (genes sharing SNPs with this gene);
+# store it as a ';'-separated string. snps_included (per-gene rsID lists) is
+# deliberately not exported: snps_count already gives the count.
+if ("snps_sharing_genes" %in% names(annotated) && is.list(annotated$snps_sharing_genes)) {
+  annotated$snps_sharing_genes <- vapply(
+    annotated$snps_sharing_genes,
+    function(value) paste(as.character(unlist(value)), collapse = ";"),
+    character(1)
+  )
+}
 gene_columns <- intersect(
-  c("chr", "symbol", "start", "end", "snps_count", "region", "mean", "variance", "within_region_rank_by_variance"),
-  names(d$annotated_info)
+  c("chr", "symbol", "start", "end", "snps_count", "region", "mean", "variance",
+    "within_region_rank_by_variance", "snps_sharing_genes"),
+  names(annotated)
 )
-genes <- as.data.frame(d$annotated_info, stringsAsFactors = FALSE)[, gene_columns, drop = FALSE]
+genes <- annotated[, gene_columns, drop = FALSE]
 genes <- cbind(data.frame(matrix_row = seq_len(nrow(genes)) - 1L), genes)
 write.table(
   genes, file.path(output_dir, "genes.tsv"),
@@ -120,6 +132,8 @@ metadata <- data.frame(
   ref_mean = as.numeric(d$ref_mean[[1]]),
   ref_sd = as.numeric(d$ref_sd[[1]]),
   reference_cohort = if (!is.null(d$reference_cohort)) as.character(d$reference_cohort[[1]]) else "",
+  window_size = if (!is.null(d$window_size)) as.numeric(d$window_size[[1]]) else NA_real_,
+  built = if (!is.null(d$built)) as.character(d$built[[1]]) else "",
   stringsAsFactors = FALSE
 )
 write.table(
@@ -188,6 +202,14 @@ def parse_args() -> argparse.Namespace:
         "--audit-manifest",
         type=Path,
         help="Previously generated passing aggregate audit manifest; avoids re-reading every RDS.",
+    )
+    parser.add_argument(
+        "--reuse-pseudonyms-from",
+        type=Path,
+        help=(
+            "Earlier release directory whose pseudonym key and ID map are reused, so KP-… and "
+            "RF-… identifiers stay the same. The import stops if any individual's ID would change."
+        ),
     )
     parser.add_argument(
         "--skip-source-hashes",
@@ -326,7 +348,9 @@ def import_disease(
     metadata_tsv = output_dir / "metadata.tsv"
     precision_tsv = output_dir / "precision_validation.tsv"
     risk = normalize_risk_table(pd.read_csv(risk_tsv, sep="\t", dtype={"individual_id": str, "sex": str}))
-    genes = normalize_gene_table(pd.read_csv(genes_tsv, sep="\t", dtype={"chr": str, "symbol": str, "region": str}))
+    genes = normalize_gene_table(pd.read_csv(
+        genes_tsv, sep="\t", dtype={"chr": str, "symbol": str, "region": str, "snps_sharing_genes": str}
+    ))
     metadata = pd.read_csv(metadata_tsv, sep="\t").iloc[0].to_dict()
     precision = pd.read_csv(precision_tsv, sep="\t").iloc[0].to_dict()
 
@@ -397,6 +421,11 @@ def import_disease(
         "applicable_count": int(risk["applicable"].sum()),
         "ref_mean": float(metadata["ref_mean"]),
         "ref_sd": float(metadata["ref_sd"]),
+        # What the supplied percentile is relative to (e.g. 'kfda_hg38', the
+        # cohort itself), plus pipeline metadata that explains NA_n windows.
+        "reference_cohort": str(metadata.get("reference_cohort") or ""),
+        "window_size": None if pd.isna(metadata.get("window_size")) else int(metadata["window_size"]),
+        "source_built": str(metadata.get("built") or ""),
         "percentile_scale": "percent_0_100",
         "float32_validation": {
             "probe_columns": int(precision["probe_columns"]),
@@ -409,6 +438,53 @@ def import_disease(
         "source": source,
         "files": files,
     }
+
+
+MISSING_TEXT = {"", "—", "–", "-", "NA", "N/A", "NaN", "nan", "None", "null"}
+
+
+def parse_numeric_text(values: pd.Series, column: str) -> pd.Series:
+    """Parse supplied numeric text strictly; percentages become fractions.
+
+    The handoff writes gnomad_af_eas as percentages ('0.01%', '2.2e-03%') and
+    uses '—' for missing values. The previous pd.to_numeric(errors='coerce')
+    turned every value into NaN without any error. Missing markers become NaN;
+    any other unparseable value raises, so a format change cannot silently
+    blank a column again.
+    """
+    text = values.astype("string").str.strip()
+    missing = text.isna() | text.isin(MISSING_TEXT)
+    is_percent = text.str.endswith("%", na=False)
+    numbers = pd.to_numeric(text.str.rstrip("%").where(~missing), errors="coerce")
+    failed = numbers.isna() & ~missing
+    if failed.any():
+        examples = sorted(set(text[failed].head(3).tolist()))
+        raise ValueError(f"{column}: {int(failed.sum())} value(s) could not be parsed as numbers, e.g. {examples}")
+    return numbers.where(~is_percent, numbers / 100.0).astype("float64")
+
+
+def load_previous_pseudonyms(previous_release: Path) -> tuple[bytes, pd.DataFrame]:
+    """Read the HMAC key and ID map of an earlier release so pseudonyms stay stable."""
+    restricted = previous_release.expanduser().resolve() / "_restricted"
+    key = (restricted / "pseudonym_hmac.key").read_bytes()
+    if len(key) != 32:
+        raise ValueError("Previous release pseudonym key has an unexpected length")
+    previous_map = pd.read_parquet(restricted / "id_map.parquet")
+    return key, previous_map
+
+
+def check_pseudonym_continuity(mapping: pd.DataFrame, previous_map: pd.DataFrame) -> None:
+    """Fail unless every source IID keeps exactly the pseudonym it had before."""
+    merged = mapping.merge(previous_map, on="source_iid", how="outer",
+                           suffixes=("", "_previous"), indicator=True)
+    if not merged["_merge"].eq("both").all():
+        raise ValueError(
+            "Cohort membership changed since the previous release: "
+            f"{int(merged['_merge'].eq('left_only').sum())} new and "
+            f"{int(merged['_merge'].eq('right_only').sum())} missing individuals"
+        )
+    if not merged["pseudonym"].eq(merged["pseudonym_previous"]).all():
+        raise ValueError("Pseudonyms differ from the previous release; refusing to continue")
 
 
 def import_rare_findings(
@@ -454,10 +530,10 @@ def import_rare_findings(
 
     for column in ("panelapp_n_panels", "stars"):
         if column in data:
-            data[column] = pd.to_numeric(data[column], errors="coerce").astype("Int64")
+            data[column] = parse_numeric_text(data[column], column).astype("Int64")
     for column in ("gnomad_af", "gnomad_af_eas", "cohort_af"):
         if column in data:
-            data[column] = pd.to_numeric(data[column], errors="coerce")
+            data[column] = parse_numeric_text(data[column], column)
     if "qc_pass" in data:
         data["qc_pass"] = data["qc_pass"].astype(str).str.lower().eq("true")
 
@@ -548,8 +624,14 @@ def run_import(args: argparse.Namespace) -> Path:
             run_r_script(R_EXTRACT_IIDS, [first_rds, source_iids_path], temporary_dir)
             source_iids = pd.read_csv(source_iids_path, sep="\t", dtype=str)["source_iid"].tolist()
 
-            pseudonym_key = secrets.token_bytes(32)
-            mapping = build_id_map(source_iids, pseudonym_key)
+            if args.reuse_pseudonyms_from:
+                pseudonym_key, previous_map = load_previous_pseudonyms(args.reuse_pseudonyms_from)
+                mapping = build_id_map(source_iids, pseudonym_key)
+                check_pseudonym_continuity(mapping, previous_map)
+                print("Pseudonyms reused from the previous release; all IDs unchanged.", flush=True)
+            else:
+                pseudonym_key = secrets.token_bytes(32)
+                mapping = build_id_map(source_iids, pseudonym_key)
             restricted = staging / "_restricted"
             restricted.mkdir(mode=0o700)
             key_path = restricted / "pseudonym_hmac.key"
@@ -596,6 +678,9 @@ def run_import(args: argparse.Namespace) -> Path:
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "private_data": True,
                 "browser_ids_pseudonymous": True,
+                "pseudonyms_reused_from": (
+                    args.reuse_pseudonyms_from.expanduser().resolve().name if args.reuse_pseudonyms_from else None
+                ),
                 "source_paths_recorded": False,
                 "individual_count": int(len(mapping)),
                 "percentile_scale": "percent_0_100",
