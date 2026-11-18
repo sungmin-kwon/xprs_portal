@@ -202,7 +202,7 @@ const UI_TEXT = {
     rareEvidenceWithoutPrsHelp: "This supplied disease-panel finding is separate from the unavailable PRS model and does not provide a PRS percentile.",
     geneHeatmap: "Gene Heatmap",
     exploratoryAnalysis: "Cross-Disease Comparison",
-    geneHeatmapTitle: "Genes Where This Individual Stands Out Across Diseases",
+    geneHeatmapTitle: "Standout Genes Across Diseases",
     closeGeneHeatmap: "Close gene comparison",
     geneHeatmapLoading: "Comparing gene contributions across diseases...",
     geneHeatmapFailed: "The gene contribution comparison could not be loaded.",
@@ -215,7 +215,7 @@ const UI_TEXT = {
       const excluded = unavailable
         ? ` ${unavailable} disease model${unavailable === 1 ? " does" : "s do"} not apply to this individual.`
         : "";
-      return `Each row is a gene that is among this individual's most unusual (top ${fraction}% of genes) in at least ${minimum} disease models; ${shown} of ${loci} such regions are shown. Colour is the difference from the K-PREDICT average in SD: red raises that disease's PRS, blue lowers it. Genes sharing SNPs are merged into one row (+N). Why it matters: one region standing out in several models means a single part of this individual's genome is shifting several disease scores at once. Grey cells have no value. This is not a combined risk score or evidence of a biological mechanism.${excluded}`;
+      return `Each row is a gene that is among this individual's most unusual (top ${fraction}% of genes) in at least ${minimum} disease models; ${shown} of ${loci} such regions are shown. Colour is the difference from the K-PREDICT average in SD: red raises that disease's PRS, blue lowers it. Genes that share SNPs are shown together on one row (e.g. GENE1 / GENE2). Why it matters: one region standing out in several models means a single part of this individual's genome is shifting several disease scores at once. Grey cells have no value. This is not a combined risk score or evidence of a biological mechanism.${excluded}`;
     },
   },
   ko: {
@@ -352,7 +352,7 @@ const UI_TEXT = {
     rareEvidenceWithoutPrsHelp: "원자료의 질환 패널 소견은 적용할 수 없는 PRS 모델과 별개의 근거이며 PRS 백분위를 제공하지 않습니다.",
     geneHeatmap: "유전자 히트맵",
     exploratoryAnalysis: "질환 간 비교",
-    geneHeatmapTitle: "여러 질환에서 이 개인이 두드러지는 유전자",
+    geneHeatmapTitle: "질환 간 두드러진 유전자",
     closeGeneHeatmap: "유전자 기여도 비교 닫기",
     geneHeatmapLoading: "질환별 유전자 기여도를 비교하는 중...",
     geneHeatmapFailed: "유전자 기여도 비교 결과를 불러오지 못했습니다.",
@@ -363,7 +363,7 @@ const UI_TEXT = {
     geneHeatmapSubtitle: (pid, count) => `${pid} · 분석 대상 질환 모델 ${count}개`,
     geneHeatmapMethod: (fraction, minimum, shown, loci, unavailable) => {
       const excluded = unavailable ? ` 이 개인에게 적용되지 않는 질환 모델 ${unavailable}개는 제외했습니다.` : "";
-      return `각 행은 최소 ${minimum}개 질환 모델에서 이 개인의 값이 가장 특이한 유전자(상위 ${fraction}%)이며, 해당 영역 ${loci}개 중 ${shown}개를 표시합니다. 색은 K-PREDICT 평균과의 차이(표준편차)로, 빨간색은 해당 질환의 PRS를 높이고 파란색은 낮춥니다. SNP를 공유하는 유전자는 한 행으로 합쳤습니다(+N). 의미: 한 영역이 여러 모델에서 두드러진다면, 이 개인 유전체의 한 부분이 여러 질환 점수를 동시에 움직이고 있다는 뜻입니다. 회색 칸은 값이 없음을 뜻합니다. 여러 질환을 합친 위험 점수나 생물학적 기전의 근거는 아닙니다.${excluded}`;
+      return `각 행은 최소 ${minimum}개 질환 모델에서 이 개인의 값이 가장 특이한 유전자(상위 ${fraction}%)이며, 해당 영역 ${loci}개 중 ${shown}개를 표시합니다. 색은 K-PREDICT 평균과의 차이(표준편차)로, 빨간색은 해당 질환의 PRS를 높이고 파란색은 낮춥니다. SNP를 공유하는 유전자는 한 행에 함께 표시합니다(예: GENE1 / GENE2). 의미: 한 영역이 여러 모델에서 두드러진다면, 이 개인 유전체의 한 부분이 여러 질환 점수를 동시에 움직이고 있다는 뜻입니다. 회색 칸은 값이 없음을 뜻합니다. 여러 질환을 합친 위험 점수나 생물학적 기전의 근거는 아닙니다.${excluded}`;
     },
   },
 };
@@ -1300,8 +1300,11 @@ function renderGeneHeatmap(data) {
   const geneLabels = genes.map((gene, index) => {
     const metric = geneMetrics[index] || {};
     const support = Number(metric.qualifying_disease_count) || 0;
-    const linked = Array.isArray(metric.linked_genes) ? metric.linked_genes.length : 0;
-    const label = linked ? `${gene} (+${linked})` : gene;
+    const linked = Array.isArray(metric.linked_genes) ? metric.linked_genes : [];
+    // Genes sharing SNPs share a row: "GENE1 / GENE2", plus "+N" for any further genes.
+    const label = linked.length
+      ? `${gene} / ${linked[0]}${linked.length > 1 ? ` +${linked.length - 1}` : ""}`
+      : gene;
     return support ? `${label} · ${support}/${diseases.length}` : label;
   });
   const linkedText = genes.map((_gene, index) => {
@@ -1375,7 +1378,12 @@ function renderGeneHeatmap(data) {
   const layout = {
     height,
     autosize: true,
-    margin: { l: 125, r: 105, t: 18, b: 120 },
+    margin: {
+      l: Math.max(125, Math.ceil(Math.max(0, ...geneLabels.map((label) => label.length)) * 6.5) + 20),
+      r: 105,
+      t: 18,
+      b: 120,
+    },
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
     font: { family: "Inter, sans-serif", color: darkTheme ? "#dee4ea" : "#1f2933" },
