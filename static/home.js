@@ -210,12 +210,14 @@ const UI_TEXT = {
     geneHeatmapScale: "Difference from K-PREDICT average (SD)",
     geneHeatmapMissingValue: "No value for this gene in this disease model",
     geneHeatmapLinkedGenes: "Also in this row (+N)",
+    geneHeatmapLowers: "Lowers this disease's PRS",
+    geneHeatmapRaises: "Raises this disease's PRS",
     geneHeatmapSubtitle: (pid, count) => `${pid} · ${count} disease models included`,
     geneHeatmapMethod: (fraction, minimum, shown, loci, unavailable) => {
       const excluded = unavailable
         ? ` ${unavailable} disease model${unavailable === 1 ? " does" : "s do"} not apply to this individual.`
         : "";
-      return `Each row is a gene that is among this individual's most unusual (top ${fraction}% of genes) in at least ${minimum} disease models; ${shown} of ${loci} such regions are shown. Colour is the difference from the K-PREDICT average in SD: red raises that disease's PRS, blue lowers it. Genes that share SNPs are shown together on one row (e.g. GENE1 / GENE2). Why it matters: one region standing out in several models means a single part of this individual's genome is shifting several disease scores at once. Grey cells have no value. This is not a combined risk score or evidence of a biological mechanism.${excluded}`;
+      return `Each row is a gene that is among this individual's most unusual (top ${fraction}% of genes) in at least ${minimum} disease models; ${shown} of ${loci} such regions are shown. Colour shows how far this individual is from the K-PREDICT average, in SD (see the key above the chart). Genes that share SNPs are shown together on one row (e.g. GENE1 / GENE2). Why it matters: one region standing out in several models means a single part of this individual's genome is shifting several disease scores at once. Grey cells have no value. This is not a combined risk score or evidence of a biological mechanism.${excluded}`;
     },
   },
   ko: {
@@ -360,10 +362,12 @@ const UI_TEXT = {
     geneHeatmapScale: "K-PREDICT 평균과의 차이 (표준편차)",
     geneHeatmapMissingValue: "이 질환 모델에 해당 유전자 값 없음",
     geneHeatmapLinkedGenes: "이 행의 다른 유전자 (+N)",
+    geneHeatmapLowers: "해당 질환 PRS를 낮춤",
+    geneHeatmapRaises: "해당 질환 PRS를 높임",
     geneHeatmapSubtitle: (pid, count) => `${pid} · 분석 대상 질환 모델 ${count}개`,
     geneHeatmapMethod: (fraction, minimum, shown, loci, unavailable) => {
       const excluded = unavailable ? ` 이 개인에게 적용되지 않는 질환 모델 ${unavailable}개는 제외했습니다.` : "";
-      return `각 행은 최소 ${minimum}개 질환 모델에서 이 개인의 값이 가장 특이한 유전자(상위 ${fraction}%)이며, 해당 영역 ${loci}개 중 ${shown}개를 표시합니다. 색은 K-PREDICT 평균과의 차이(표준편차)로, 빨간색은 해당 질환의 PRS를 높이고 파란색은 낮춥니다. SNP를 공유하는 유전자는 한 행에 함께 표시합니다(예: GENE1 / GENE2). 의미: 한 영역이 여러 모델에서 두드러진다면, 이 개인 유전체의 한 부분이 여러 질환 점수를 동시에 움직이고 있다는 뜻입니다. 회색 칸은 값이 없음을 뜻합니다. 여러 질환을 합친 위험 점수나 생물학적 기전의 근거는 아닙니다.${excluded}`;
+      return `각 행은 최소 ${minimum}개 질환 모델에서 이 개인의 값이 가장 특이한 유전자(상위 ${fraction}%)이며, 해당 영역 ${loci}개 중 ${shown}개를 표시합니다. 색은 K-PREDICT 평균과의 차이(표준편차)를 나타냅니다(그래프 위 범례 참고). SNP를 공유하는 유전자는 한 행에 함께 표시합니다(예: GENE1 / GENE2). 의미: 한 영역이 여러 모델에서 두드러진다면, 이 개인 유전체의 한 부분이 여러 질환 점수를 동시에 움직이고 있다는 뜻입니다. 회색 칸은 값이 없음을 뜻합니다. 여러 질환을 합친 위험 점수나 생물학적 기전의 근거는 아닙니다.${excluded}`;
     },
   },
 };

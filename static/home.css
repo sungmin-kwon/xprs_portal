@@ -1486,6 +1486,51 @@ body.dark-theme .kpredict-access-status.is-error {
   background: var(--panel-soft);
 }
 
+/* Colour key above the gene heatmap: which direction each colour pushes the
+   disease's PRS. Same colours as the heatmap scale. Hidden until the plot is
+   drawn (loading and error states keep the plot hidden). */
+.heatmap-direction-key {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.heatmap-panel:has(#gene-heatmap-plot[hidden]) .heatmap-direction-key {
+  display: none;
+}
+
+.heatmap-direction-key__end--lower {
+  color: #2166ac;
+}
+
+.heatmap-direction-key__end--higher {
+  color: #b2182b;
+}
+
+.heatmap-direction-key__bar {
+  width: 140px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2166ac 0%, #edf0f3 50%, #b2182b 100%);
+  border: 1px solid rgba(111, 127, 141, 0.28);
+}
+
+body.dark-theme .heatmap-direction-key__end--lower {
+  color: #6fa8dc;
+}
+
+body.dark-theme .heatmap-direction-key__end--higher {
+  color: #ef6a6a;
+}
+
+body.dark-theme .heatmap-direction-key__bar {
+  background: linear-gradient(90deg, #4f92d1 0%, #2b333b 50%, #ef6a6a 100%);
+}
+
 .heatmap-status {
   min-height: 420px;
   display: flex;
