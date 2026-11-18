@@ -220,7 +220,7 @@ def _build_kpredict_expl_agent(
     from agents.explanation import ExplanationAgent
     from agents.gene_importance import KPredictGeneImportanceAgent
     from disease_registry import get_disease_config
-    from kpredict_data import applicable_count, risk_profile
+    from kpredict_data import applicable_count, rare_findings, risk_profile
 
     disease_config = get_disease_config(disease)
     llm, query_agent, conversation_agent = _build_llm_bound_agents(
@@ -252,6 +252,7 @@ def _build_kpredict_expl_agent(
         risk_profile_provider=lambda pid: risk_profile(data_root, disease_config.slug, pid),
         minimize_sensitive_context=True,
         rare_variant_panel_available=True,
+        rare_findings_provider=lambda pid: rare_findings(data_root, disease_config.slug, pid),
         reference_cohort_description=(
             f"the {applicable_count(data_root, disease_config.slug):,} individuals in the K-PREDICT cohort "
             f"to whom the {disease_config.display_name} model applies; the percentile is this individual's "
