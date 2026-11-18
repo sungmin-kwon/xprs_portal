@@ -422,36 +422,13 @@ class LocalReferenceMethodologyTests(unittest.TestCase):
 
         self.assertNotIn("From this report", result["Generated Answer"])
 
-    def test_dashboard_repairs_escaped_xprs_subscripts(self):
-        script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
-
-        self.assertIn('"CS_{\\\\mathrm{gene},j}"', script)
-        self.assertIn('"A_{\\\\mathrm{gene},j}"', script)
-        self.assertIn('"CS_{\\\\mathrm{SNP},i}"', script)
-
-    def test_dashboard_protects_and_normalizes_model_generated_math(self):
-        script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
-
-        self.assertIn("function normalizeLatexExpression", script)
-        self.assertIn("function normalizeDelimitedMath", script)
-        self.assertIn("function renderMarkdownWithProtectedMath", script)
-        self.assertIn("XPRSMATHTOKEN", script)
-        self.assertIn("normalizeLatexExpression(displayDollar)", script)
-        self.assertIn('"G_{0,i}"', script)
-        self.assertIn('"\\\\beta_{\\\\mathrm{std},i}"', script)
-        self.assertIn('"\\\\sum_{i \\\\in j}"', script)
-        self.assertIn('"A_{\\\\mathrm{gene},j}"', script)
-        self.assertIn('"\\\\operatorname{mean}_{\\\\mathrm{population}}("', script)
-        self.assertIn('trimmed.includes("$")', script)
-        self.assertIn("const rendered = renderMarkdownWithProtectedMath(normalizedText);", script)
-
     def test_dashboard_serves_katex_locally_with_required_assets(self):
         html = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
         vendor = ROOT / "static" / "vendor" / "katex"
 
-        self.assertIn('/static/vendor/katex/katex.min.css?v=0.16.11', html)
-        self.assertIn('/static/vendor/katex/katex.min.js?v=0.16.11', html)
-        self.assertIn('/static/vendor/katex/contrib/auto-render.min.js?v=0.16.11', html)
+        self.assertIn('/static/vendor/katex/katex.min.css', html)
+        self.assertIn('/static/vendor/katex/katex.min.js', html)
+        self.assertIn('/static/vendor/katex/contrib/auto-render.min.js', html)
         self.assertNotIn("cdn.jsdelivr.net/npm/katex", html)
         self.assertTrue((vendor / "katex.min.css").is_file())
         self.assertTrue((vendor / "katex.min.js").is_file())

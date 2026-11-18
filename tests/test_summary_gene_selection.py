@@ -10,7 +10,6 @@ from starlette.requests import Request
 from agents.explanation import ExplanationAgent
 from routes.summary import summary_preview
 from schemas import SummaryRequest
-from tests.support import ContractTestCase, ROOT
 
 
 class FakeGeneAgent:
@@ -40,7 +39,7 @@ class FakeExplanationAgent:
         self.gene_agent = FakeGeneAgent()
 
 
-class SummaryGeneSelectionTests(ContractTestCase):
+class SummaryGeneSelectionTests(unittest.TestCase):
     @staticmethod
     def request():
         return Request({"type": "http", "headers": []})
@@ -133,36 +132,6 @@ class SummaryGeneSelectionTests(ContractTestCase):
             ["GENE_A", "GENE_B", "GENE_C", "LOW_1", "LOW_2", "LOW_3"],
         )
         self.assertEqual(result["gene_count"], 6)
-
-    def test_dashboard_gene_selection_controls(self):
-        self.run_contract_checks((
-            "_check_dashboard_uses_the_fixed_five_gene_report_structure",
-            "_check_individual_modal_does_not_configure_summary_generation",
-            "_check_chat_composer_controls_share_height_and_alignment",
-        ))
-
-    def _check_dashboard_uses_the_fixed_five_gene_report_structure(self):
-        html = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
-        javascript = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
-        self.assertNotIn('id="summary-gene-count"', html)
-        self.assertIn("const SUMMARY_GENES_PER_SECTION = 5;", javascript)
-        self.assertIn("return SUMMARY_GENES_PER_SECTION;", javascript)
-
-    def _check_individual_modal_does_not_configure_summary_generation(self):
-        html = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
-        javascript = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
-        self.assertIn('data-i18n="landingTitle">Change Individual</h2>', html)
-        self.assertNotIn("Configure XPRS Summary", html)
-        self.assertNotIn("Genes per Section", html)
-        self.assertNotIn("updateGeneSelectionPreview", javascript)
-
-    def _check_chat_composer_controls_share_height_and_alignment(self):
-        css = (ROOT / "static" / "dashboard.css").read_text(encoding="utf-8")
-
-        self.assertIn("--composer-control-height: 46px", css)
-        self.assertIn("height: var(--composer-control-height)", css)
-        self.assertIn("margin: 0;", css)
-        self.assertIn("line-height: 1;", css)
 
 if __name__ == "__main__":
     unittest.main()

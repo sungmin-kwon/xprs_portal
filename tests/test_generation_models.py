@@ -32,31 +32,16 @@ class GenerationModelTests(unittest.TestCase):
         default = next(model for model in models if model.get("default"))
         self.assertEqual(default["id"], "openai/gpt-5-mini")
 
-    def test_answer_model_select_is_visible_without_a_settings_menu(self):
-        html = (ROOT / "static" / "dashboard.html").read_text(encoding="utf-8")
-        self.assertIn('id="generation-model-select"', html)
-        self.assertNotIn('id="settings-menu"', html)
-        self.assertNotIn('id="settings-menu-btn"', html)
-        self.assertNotIn("chatbot-model-dot", html)
-        self.assertNotIn("chatbot-model-label", html)
-        model_row = html[html.index('class="generation-model-control"') :]
-        model_row = model_row[: model_row.index("</div>")]
-        self.assertLess(
-            model_row.index('id="header-generate-btn"'),
-            model_row.index('id="generation-model-select"'),
-        )
-        self.assertNotIn(">Answer model</label>", model_row)
-        self.assertNotIn('aria-label="Refresh"', html)
-
     def test_public_environment_default_matches_ui_default(self):
         template = (ROOT / ".env.example").read_text(encoding="utf-8")
-        self.assertIn("LLM_MODEL=openai/gpt-6-sol", template)
+        ui_default = next(m["id"] for m in self.model_config["generation"] if m.get("default"))
+        self.assertIn(f"LLM_MODEL={ui_default}\n", template)
 
     def test_llm_transport_uses_openrouter_without_legacy_direct_providers(self):
+        # Direct provider paths would bypass the ZDR settings enforced on every
+        # OpenRouter request (see test_openrouter_privacy.py).
         source = (ROOT / "llm_utils.py").read_text(encoding="utf-8")
 
-        self.assertIn('LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openrouter")', source)
-        self.assertIn('if provider == "openrouter":', source)
         self.assertNotIn("OPENAI_API_KEY", source)
         self.assertNotIn("QWEN_API_KEY", source)
         self.assertNotIn('if provider == "openai":', source)

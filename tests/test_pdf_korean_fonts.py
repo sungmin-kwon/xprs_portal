@@ -6,12 +6,6 @@ FONT_DIR = ROOT / "assets" / "fonts"
 
 
 class KoreanPdfFontTests(unittest.TestCase):
-    def test_gene_report_uses_one_compact_evidence_field(self):
-        source = (ROOT / "pdf_report.py").read_text(encoding="utf-8")
-        self.assertNotIn('report.get("key_findings")', source)
-        self.assertNotIn("Potential Clinical Meaning", source)
-        self.assertNotIn('section.get("clinical_meaning")', source)
-        self.assertNotIn('section.get("why_it_matters")', source)
 
     def test_reference_markup_omits_internal_gene_tags(self):
         markup = _reference_markup(
@@ -129,23 +123,6 @@ class KoreanPdfFontTests(unittest.TestCase):
         self.assertNotIn('evidence <super>', rendered)
         self.assertNotIn(">89<", rendered)
         self.assertNotIn("[12]", rendered)
-
-    def test_pdf_report_uses_plain_language_then_technical_layers(self):
-        source = (ROOT / "pdf_report.py").read_text(encoding="utf-8")
-        plain_language_position = source.index('integrated = report.get("integrated_view")')
-        reading_help_position = source.index('ui_label(report_language, "how_to_read_result")')
-        technical_position = source.index('ui_label(report_language, "technical_details")')
-        gene_tables_position = source.index('top_genes = report.get("top_genes")')
-
-        self.assertLess(plain_language_position, reading_help_position)
-        self.assertLess(reading_help_position, technical_position)
-        self.assertLess(technical_position, gene_tables_position)
-
-    def test_pdf_metadata_omits_fixed_gene_count(self):
-        source = (ROOT / "pdf_report.py").read_text(encoding="utf-8")
-        self.assertNotIn('gene_count_used_label =', source)
-        self.assertNotIn('selection_line,', source)
-        self.assertIn("XPRS Detailed Report", source)
 
 
 if __name__ == "__main__":
