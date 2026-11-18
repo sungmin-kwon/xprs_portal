@@ -442,6 +442,10 @@ class ExplanationAgent:
                 "variants, because only supplied ClinVar pathogenic or likely pathogenic findings are recorded. "
                 "Keep rare findings and the PRS as separate lines of evidence and do not combine them into one risk "
                 "estimate. A carrier finding in a recessive gene is not by itself expected to cause disease. "
+                "If a finding lists a ClinGen Actionability report, you may say that such a report exists for that "
+                "gene and condition and name the interventions it covers, as a reference. Never recommend, suggest or "
+                "imply any of those interventions for this individual; say that such decisions belong to the treating "
+                "clinician and, where appropriate, genetic counselling. "
                 "If a Rare-Variant Track Methods Note is provided, use it to explain how findings were defined, "
                 "assigned to diseases and labelled.\n"
             )
@@ -990,6 +994,12 @@ class ExplanationAgent:
                 parts.append(f"{prefix} the {' and '.join(panels)} panel{'s' if len(panels) > 1 else ''}")
             if conditions:
                 parts.append(f"ClinVar conditions: {conditions}")
+            for report in finding.get("actionability") or []:
+                interventions = ", ".join(report.get("interventions") or []) or "not listed"
+                parts.append(
+                    f"ClinGen Actionability report {report.get('doc_id')}: {report.get('condition')} "
+                    f"({str(report.get('context') or '').lower()} context; interventions covered: {interventions})"
+                )
             return "- " + "; ".join(parts)
 
         active, others = self._rare_finding_groups(data)
@@ -1047,6 +1057,18 @@ class ExplanationAgent:
                     "| " + " | ".join(other_header) + " |", "|" + "---|" * len(other_header),
                     *[row(finding, panels) for finding, panels in listed],
                 ]))
+        reports = [
+            (finding.get("gene"), report)
+            for finding, _panels in active + others
+            for report in finding.get("actionability") or []
+        ]
+        if reports:
+            lines = [f"**{ui_label(language, 'actionability_heading')}**", ""]
+            for gene, report in reports:
+                interventions = ", ".join(report.get("interventions") or [])
+                link = f"[{report.get('condition')} ({report.get('doc_id')})]({report.get('url')})" if report.get("url") else str(report.get("condition"))
+                lines.append(f"- {gene}: {link}" + (f" — {interventions}" if interventions else ""))
+            parts.append("\n".join(lines))
         parts.append(f"_{ui_label(language, 'rare_findings_scope')}_")
         return "\n\n".join(parts)
 
