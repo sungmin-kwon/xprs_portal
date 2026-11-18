@@ -13,6 +13,7 @@ from kpredict_data import (
     rare_findings,
     rare_findings_overview,
     risk_filtered_individuals,
+    trait_overview,
 )
 
 
@@ -95,6 +96,15 @@ def get_disease_evidence(
 def get_rare_findings_overview(request: Request, individual_id: str):
     root = require_kpredict_access(request)
     return rare_findings_overview(root, individual_id)
+
+
+@router.get("/api/kpredict/trait-overview", include_in_schema=False)
+def get_trait_overview(request: Request, individual_id: str = Query(min_length=1, max_length=64)):
+    root = require_kpredict_access(request)
+    try:
+        return trait_overview(root, individual_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/api/kpredict/cross-disease-gene-heatmap", include_in_schema=False)

@@ -9,7 +9,7 @@ import pandas as pd
 from scipy.stats import gaussian_kde
 
 from disease_registry import DISEASE_REGISTRY
-from kpredict_schema import PORTAL_DISEASE_ORDER, normalize_kpredict_disease
+from kpredict_schema import PORTAL_DISEASE_ORDER, TRAIT_GROUPS, normalize_kpredict_disease
 
 
 @lru_cache(maxsize=1)
@@ -1056,6 +1056,65 @@ def disease_evidence_summary(
         },
         "rare_variant": active_rare_group,
         "combined_score": None,
+    }
+
+
+def available_traits(root: Path) -> list[dict]:
+    """Continuous-trait entries of the release manifest whose folder exists (empty before 2026-11-19)."""
+    return [
+        item for item in _manifest(str(root)).get("traits") or []
+        if (root / "traits" / str(item.get("portal_trait_slug") or "")).is_dir()
+    ]
+
+
+@lru_cache(maxsize=64)
+def _trait_risk(root_string: str, slug: str) -> pd.DataFrame:
+    return pd.read_parquet(Path(root_string) / "traits" / slug / "individual_risk.parquet")
+
+
+def trait_overview(root: Path, individual_id: str) -> dict:
+    """One individual's percentile and z for every continuous trait, grouped for the overview.
+
+    Percentiles are within K-PREDICT (0-100). A higher value means a higher
+    genetically predicted trait level, which is not necessarily unfavourable.
+    Raises ValueError if the individual is not in the release.
+    """
+    traits = available_traits(root)
+    if not traits:
+        return {"individual_id": individual_id, "trait_count": 0, "groups": []}
+    by_source = {str(item["source_trait_id"]): item for item in traits}
+    order = [(group, ids) for group, ids in TRAIT_GROUPS]
+    grouped_ids = {trait_id for _group, ids in TRAIT_GROUPS for trait_id in ids}
+    order.append(("other", tuple(sorted(set(by_source) - grouped_ids))))
+
+    groups = []
+    for group, ids in order:
+        rows = []
+        for trait_id in ids:
+            item = by_source.get(trait_id)
+            if item is None:
+                continue
+            risk = _trait_risk(str(root), str(item["portal_trait_slug"]))
+            row = risk.loc[risk["individual_id"] == individual_id]
+            if row.empty:
+                raise ValueError("Individual is not present in the trait data")
+            record = row.iloc[0]
+            applicable = bool(record["applicable"]) and pd.notna(record["percentile"])
+            rows.append({
+                "slug": str(item["portal_trait_slug"]),
+                "source_trait_id": trait_id,
+                "label": str(item.get("trait_label") or trait_id),
+                "applicable": applicable,
+                "percentile": float(record["percentile"]) if applicable else None,
+                "z": float(record["z"]) if applicable and pd.notna(record["z"]) else None,
+            })
+        if rows:
+            groups.append({"key": group, "traits": rows})
+    return {
+        "individual_id": individual_id,
+        "trait_count": sum(len(group["traits"]) for group in groups),
+        "reference_cohort": str(traits[0].get("reference_cohort") or ""),
+        "groups": groups,
     }
 
 
