@@ -153,8 +153,8 @@ const UI_TEXT = {
     closeKpredictAccess: "Close K-PREDICT access dialog",
     findIndividualsByRisk: "Find individuals",
     clearRiskFilter: "Clear disease-risk filter",
-    cohortFinder: "Cohort finder",
-    riskFilterTitle: "Find Individuals",
+    cohortFinder: "K-PREDICT cohort",
+    riskFilterTitle: "Find individuals",
     riskFilterSubtitle: "Filter the K-PREDICT cohort by disease PRS percentile and disease-panel rare-variant findings.",
     rareVariantStatus: "Rare-variant status",
     rareStatusAll: "Any",
@@ -316,7 +316,7 @@ const UI_TEXT = {
     closeKpredictAccess: "K-PREDICT 접근 창 닫기",
     findIndividualsByRisk: "개인 검색",
     clearRiskFilter: "위험도 검색 조건 지우기",
-    cohortFinder: "코호트 검색",
+    cohortFinder: "K-PREDICT 코호트",
     riskFilterTitle: "개인 검색",
     riskFilterSubtitle: "질환별 PRS 백분위와 질환 패널 희귀변이 소견으로 K-PREDICT 코호트에서 개인을 검색합니다.",
     rareVariantStatus: "희귀변이 상태",
@@ -868,11 +868,11 @@ async function applyRiskFilter(event) {
   event?.preventDefault();
   if (selectedCohortSlug !== "kpredict") return;
   const disease = $("risk-filter-disease")?.value || "breast_cancer";
-  const band = $("risk-filter-band")?.value || "top_10";
+  const band = $("risk-filter-band")?.value || "all";
   const order = $("risk-filter-order")?.value || "desc";
   const rareStatus = $("risk-filter-rare-status")?.value || "all";
   const gene = $("risk-filter-gene")?.value || "";
-  const bounds = RISK_BANDS[band] || RISK_BANDS.top_10;
+  const bounds = RISK_BANDS[band] || RISK_BANDS.all;
   const status = $("risk-filter-status");
   const applyButton = $("risk-filter-apply-btn");
   if (status) {
@@ -2076,7 +2076,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("risk-filter-disease")?.addEventListener("change", (event) => loadPanelGenes(event.target.value));
   $("risk-filter-gene")?.addEventListener("change", syncRareStatusOptions);
   $("risk-filter-band")?.addEventListener("change", () => {
-    const band = $("risk-filter-band")?.value || "top_10";
+    const band = $("risk-filter-band")?.value || "all";
     const order = $("risk-filter-order");
     if (order) order.value = band.startsWith("bottom_") ? "asc" : "desc";
   });
