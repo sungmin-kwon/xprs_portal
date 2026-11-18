@@ -1605,6 +1605,43 @@ function normalizeDelimitedMath(text) {
   );
 }
 
+// Chatbot answers are model output, and the model's input includes third-party
+// text (e.g. paper abstracts), so the Markdown-rendered HTML is sanitised with
+// an allowlist before it reaches the page. The allowlist keeps Markdown output
+// and the portal's own summary tables; scripts, event handlers, images, styles
+// and non-http(s) links are removed. Images are excluded because an image URL
+// would be fetched automatically and could carry data out of the page.
+const ANSWER_SANITIZE_CONFIG = {
+  ALLOWED_TAGS: [
+    "p", "br", "hr", "h1", "h2", "h3", "h4", "h5", "h6",
+    "strong", "em", "b", "i", "del", "sup", "sub", "code", "pre", "blockquote",
+    "ul", "ol", "li", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+    "span", "div", "a",
+  ],
+  ALLOWED_ATTR: ["class", "colspan", "rowspan", "align", "start", "href", "title"],
+  // Same shape as DOMPurify's default: values without a URL scheme (e.g.
+  // colspan="2", relative links) pass; of the schemes, only http(s) and mailto.
+  // DOMPurify also checks some non-link attribute values against this pattern.
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto):|[^a-z]|[a-z+.-]+(?:[^a-z+.\-:]|$))/i,
+};
+let answerSanitizerConfigured = false;
+
+function sanitizeAnswerHtml(html) {
+  const purifier = window.DOMPurify;
+  if (!answerSanitizerConfigured) {
+    // Links in answers open in a new tab without sending the page address
+    // (which can contain a pseudonymous individual ID) as a referrer.
+    purifier.addHook("afterSanitizeAttributes", (node) => {
+      if (node.tagName === "A" && node.hasAttribute("href")) {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noopener noreferrer");
+      }
+    });
+    answerSanitizerConfigured = true;
+  }
+  return purifier.sanitize(html, ANSWER_SANITIZE_CONFIG);
+}
+
 function renderMarkdownWithProtectedMath(text) {
   const mathExpressions = [];
   const protectedText = String(text || "").replace(
@@ -1615,8 +1652,9 @@ function renderMarkdownWithProtectedMath(text) {
       return token;
     },
   );
-  const rendered = window.marked
-    ? window.marked.parse(protectedText)
+  // Without both libraries, fall back to plain escaped text (fail closed).
+  const rendered = window.marked && window.DOMPurify
+    ? sanitizeAnswerHtml(window.marked.parse(protectedText))
     : escapeHtml(protectedText).replace(/\n/g, "<br>");
   return rendered.replace(/XPRSMATHTOKEN(\d+)END/g, (_match, index) => {
     return escapeHtml(mathExpressions[Number(index)] || "");
