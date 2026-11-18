@@ -239,6 +239,13 @@ class KPredictRuntimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             risk_filtered_individuals(self.root, "breast_cancer", rare_status="unknown")
 
+    def test_chat_rare_findings_provider_looks_up_the_individual(self):
+        from runtime_agents import rare_findings_provider
+
+        findings = rare_findings_provider(self.root, "breast_cancer")("KP-ABCDEF123456")
+        self.assertEqual(findings["individual_id"], "KP-ABCDEF123456")
+        self.assertEqual([f["gene"] for f in findings["active_disease_group"]["findings"]], ["BRCA1"])
+
     def test_panel_gene_options_count_alerts_and_carriers(self):
         self.assertEqual(panel_gene_options(self.root, "type2_diabetes"), [
             {"gene": "GENE-T2D", "individual_count": 1, "alert_count": 0, "carrier_count": 1},

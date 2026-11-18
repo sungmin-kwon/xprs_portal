@@ -210,6 +210,13 @@ def _build_expl_agent_for_model(bundle: dict[str, Any], model: str):
     )
 
 
+def rare_findings_provider(data_root, disease: str):
+    """Return a function giving one individual's rare findings for the chat (K-PREDICT)."""
+    from kpredict_data import rare_findings
+
+    return lambda individual_id: rare_findings(data_root, individual_id=individual_id, disease=disease)
+
+
 def _build_kpredict_expl_agent(
     bundle: dict[str, Any],
     model: str,
@@ -220,7 +227,7 @@ def _build_kpredict_expl_agent(
     from agents.explanation import ExplanationAgent
     from agents.gene_importance import KPredictGeneImportanceAgent
     from disease_registry import get_disease_config
-    from kpredict_data import applicable_count, rare_findings, risk_profile
+    from kpredict_data import applicable_count, risk_profile
 
     disease_config = get_disease_config(disease)
     llm, query_agent, conversation_agent = _build_llm_bound_agents(
@@ -252,7 +259,7 @@ def _build_kpredict_expl_agent(
         risk_profile_provider=lambda pid: risk_profile(data_root, disease_config.slug, pid),
         minimize_sensitive_context=True,
         rare_variant_panel_available=True,
-        rare_findings_provider=lambda pid: rare_findings(data_root, disease_config.slug, pid),
+        rare_findings_provider=rare_findings_provider(data_root, disease_config.slug),
         reference_cohort_description=(
             f"the {applicable_count(data_root, disease_config.slug):,} individuals in the K-PREDICT cohort "
             f"to whom the {disease_config.display_name} model applies; the percentile is this individual's "
