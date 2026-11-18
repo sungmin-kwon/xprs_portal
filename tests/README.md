@@ -12,7 +12,7 @@ The suite is organized around behavior rather than implementation layers:
 - K-PREDICT data import, risk profiles, and rare-variant behavior;
 - literature retrieval, provider caches, eligibility, ranking, and recovery;
 - summary, report, plot, and task failure recovery;
-- browser-facing navigation, copy, layout, and accessibility contracts.
+- a few security invariants for the browser-facing pages (`test_security_invariants.py`).
 
 `test_chatbot_quality.py` is the compact chatbot QC matrix. It protects four
 high-risk behaviors with labeled subcases: request routing, multi-turn context
@@ -34,11 +34,12 @@ generated Markdown report deliberately leaves scientific grounding items as
 manual checkboxes: automated citation syntax checks cannot prove that a paper
 actually supports a claim.
 
-Static UI contracts are grouped into labeled `subTest` cases through
-`tests.support.ContractTestCase`. This keeps the reported test count useful
-without losing the specific contract name when an assertion fails. Security,
-data-integrity, retrieval, and recovery behaviors remain independent tests so
-one failure cannot hide another.
+Tests check behaviour, not source text. Do not add assertions that a JS/CSS/HTML
+file contains a particular label, selector, CSS value, or function name: they
+break on every wording or layout change and still pass when the code is broken.
+The exception is a small set of security invariants that apply to whole files
+(for example, new-tab links must send no referrer); keep those in
+`test_security_invariants.py`.
 
 Tests must not contact live external APIs or write into production runtime
 state. Use temporary directories, fake provider responses, and in-memory test

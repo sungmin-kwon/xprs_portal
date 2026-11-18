@@ -3,7 +3,6 @@ import uuid
 
 from routes.tasks import _terminal_event
 from task_manager import create_task_once, fail_task, finish_task, get_task
-from tests.support import ROOT
 
 
 class TaskRecoveryTests(unittest.TestCase):
@@ -39,15 +38,6 @@ class TaskRecoveryTests(unittest.TestCase):
             _terminal_event(get_task(failed_id)),
             {"event": "failed", "data": {"message": "upstream error"}},
         )
-
-    def test_dashboard_recovers_instead_of_failing_on_first_stream_error(self):
-        script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
-
-        self.assertIn('headers: { "X-XPRS-Request-ID": requestId }', script)
-        self.assertIn("startTaskWithRecovery", script)
-        self.assertIn("pollTaskStatus", script)
-        self.assertIn("recovering the running task automatically", script)
-        self.assertNotIn('finish(reject, new Error("Task stream connection lost"))', script)
 
 
 if __name__ == "__main__":

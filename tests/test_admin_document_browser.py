@@ -4,7 +4,6 @@ import unittest
 import threading
 
 from agents.rag import RAGAgent
-from tests.support import ROOT
 
 
 class FakeCollection:
@@ -112,21 +111,6 @@ class AdminDocumentBrowserTests(unittest.TestCase):
             inventory["genes"][0]["general_phenotypes"],
             {"type 2 diabetes": 1},
         )
-
-    def test_fallback_status_is_global_and_uses_a_live_expiry(self):
-        html = (ROOT / "static" / "admin-documents.html").read_text(encoding="utf-8")
-        script = (ROOT / "static" / "admin-documents.js").read_text(encoding="utf-8")
-        styles = (ROOT / "static" / "admin-documents.css").read_text(encoding="utf-8")
-
-        self.assertIn("Semantic Scholar cooldown", html)
-        self.assertIn("cooldown_expires_at", script)
-        self.assertIn("Applies to all Semantic Scholar fallback requests", script)
-        self.assertIn("Last query:", script)
-        self.assertIn('deferred: "Skipped — cooldown active"', script)
-        self.assertNotIn("titleCase(item.phenotype)", script)
-        self.assertIn("transform: translateY(-50%) rotate(45deg)", styles)
-        self.assertIn("transform: translateY(-50%) rotate(225deg)", styles)
-        self.assertNotIn('content: "⌄"', styles)
 
     def test_browse_is_gene_scoped_and_sorts_by_citations(self):
         result = self.rag.browse_documents(gene="GENE1")

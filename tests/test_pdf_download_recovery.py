@@ -7,7 +7,6 @@ from starlette.requests import Request
 
 from routes.reports import export_pdf_report
 from schemas import ReportPdfRequest
-from tests.support import ROOT
 
 
 def request() -> Request:
@@ -43,14 +42,6 @@ class PdfDownloadRecoveryTests(unittest.TestCase):
         self.assertEqual(response.body, b"%PDF-test")
         self.assertEqual(response.headers["content-length"], str(len(b"%PDF-test")))
         self.assertEqual(response.media_type, "application/pdf")
-
-    def test_dashboard_retries_only_interrupted_pdf_downloads(self):
-        script = (ROOT / "static" / "dashboard.js").read_text(encoding="utf-8")
-
-        self.assertIn("networkRetryDelaysMs: [0, 750]", script)
-        self.assertIn("if (!(error instanceof TypeError)", script)
-        self.assertIn("if (pdfDownloadInProgress) return;", script)
-        self.assertIn('t("exportPdfRetrying")', script)
 
 
 if __name__ == "__main__":

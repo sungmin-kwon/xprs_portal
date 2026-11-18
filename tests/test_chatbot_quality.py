@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -400,17 +399,6 @@ class ChatbotQualityTests(unittest.TestCase):
 
         agent.gene_agent = object()  # unknown basis: say nothing rather than guess
         self.assertEqual(agent._population_rank_note("en"), "")
-
-    def test_contribution_displays_use_shared_formatter(self):
-        root = Path(__file__).resolve().parents[1]
-        explanation_source = (root / "agents" / "explanation.py").read_text(encoding="utf-8")
-        pdf_source = (root / "pdf_report.py").read_text(encoding="utf-8")
-        dashboard_source = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
-
-        self.assertNotIn("contribution:.2f", explanation_source)
-        self.assertNotIn("individual_contribution']):.2f", explanation_source)
-        self.assertNotIn("individual_contribution')):.2f", pdf_source)
-        self.assertIn("formatContribution(score)", dashboard_source)
 
     def test_numerical_consistency_matrix(self):
         agent = ExplanationAgent.__new__(ExplanationAgent)
