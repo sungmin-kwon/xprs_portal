@@ -8,7 +8,6 @@ from kpredict_access import ACCESS_COOKIE, require_kpredict_access
 from kpredict_data import (
     cohort_analysis,
     cross_disease_gene_heatmap,
-    disease_evidence_summary,
     rare_findings,
     rare_findings_overview,
     panel_gene_options,
@@ -62,25 +61,6 @@ def get_rare_findings(request: Request, individual_id: str, disease: str):
     root = require_kpredict_access(request)
     response = rare_findings(root, individual_id, disease)
     return response
-
-
-@router.get("/api/kpredict/disease-evidence", include_in_schema=False)
-def get_disease_evidence(
-    request: Request,
-    individual_id: str,
-    disease: str,
-    gene_limit: int = Query(default=2, ge=1, le=5),
-):
-    root = require_kpredict_access(request)
-    try:
-        return disease_evidence_summary(
-            root,
-            individual_id,
-            disease,
-            gene_limit=gene_limit,
-        )
-    except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
 
 
 @router.get("/api/kpredict/rare-findings-overview", include_in_schema=False)

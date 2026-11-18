@@ -55,9 +55,10 @@ when papers for the selected genes are available.
   disease-panel context, and, when configured, matching ClinGen Actionability
   reports as references.
 - The **dashboard** generates the PRS density and gene-based Manhattan plots on
-  demand. It presents the five strongest risk-increasing and five strongest
-  risk-lowering gene contributions, a concise plain-language interpretation,
-  literature-backed follow-up chat, and a downloadable detailed PDF report.
+  demand, lists the individual's rare-variant findings (K-PREDICT), and offers a
+  plain-language summary of the five strongest risk-increasing and five
+  strongest risk-lowering gene contributions, literature-backed follow-up chat,
+  and a downloadable detailed PDF report.
 - The K-PREDICT **Gene Heatmap** compares an individual's gene contributions
   across diseases, as the difference from the cohort mean in cohort standard
   deviations. Genes that share SNPs are merged into one row.
