@@ -63,6 +63,9 @@ class DemoDataTests(unittest.TestCase):
         )
         payload = store.build_plot_payload(DEMO_IID)
         self.assertTrue(payload["manhattan"]["points"])
+        # The plot shows this person's gene contributions, not a population variance.
+        self.assertEqual(payload["manhattan"]["y_label"], "Gene contribution")
+        self.assertIn("contribution", payload["manhattan"]["points"][0])
         self.assertEqual(payload["density"]["prs_value"], self.full_prs.loc[
             self.full_prs["IID"] == DEMO_IID,
             "PRS",

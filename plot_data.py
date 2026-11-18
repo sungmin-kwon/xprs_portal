@@ -85,6 +85,9 @@ class PlotDataStore:
                 "chr": int(row.CHR),
                 "pos": float(row.BP),
                 "x": float(row.x),
+                # One person's gene-level contribution, not a population variance.
+                "contribution": float(row.ATTR),
+                # Retained for compatibility with older cached frontend code.
                 "variance": float(row.ATTR),
             }
             for row in ann.itertuples(index=False)
@@ -97,7 +100,7 @@ class PlotDataStore:
                 for row in chr_centers.itertuples(index=False)
             ],
             "title": f"{self.disease_config.display_name} Gene-based Manhattan Plot (Individual: {individual_id})",
-            "y_label": "Gene Contribution Var.",
+            "y_label": "Gene contribution",
         }
 
     def prs_density_data(self, individual_id: str, label_digits: int = 2) -> dict[str, Any]:
