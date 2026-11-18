@@ -19,6 +19,15 @@ let riskFilteredIndividuals = null;
 let riskPercentileById = new Map();
 let activeRiskFilter = null;
 let riskFilterRequestId = 0;
+// Panel genes per disease for the finder's gene list (disease slug -> rows).
+const panelGenesByDisease = new Map();
+const RARE_STATUS_TEXT_KEYS = {
+  all: "rareStatusAll",
+  finding: "rareStatusFinding",
+  alert: "rareStatusAlert",
+  carrier: "rareStatusCarrier",
+  none: "rareStatusNone",
+};
 let rareOverviewData = null;
 let rareOverviewRequestId = 0;
 let diseaseOverviewRequestId = 0;
@@ -142,11 +151,20 @@ const UI_TEXT = {
     checkingAccessCode: "Checking access code...",
     continueAction: "Continue",
     closeKpredictAccess: "Close K-PREDICT access dialog",
-    findIndividualsByRisk: "Find individuals by risk",
+    findIndividualsByRisk: "Find individuals",
     clearRiskFilter: "Clear disease-risk filter",
     cohortFinder: "Cohort finder",
-    riskFilterTitle: "Find Individuals by Disease Risk",
-    riskFilterSubtitle: "Filter the full K-PREDICT cohort using disease-specific percentiles.",
+    riskFilterTitle: "Find Individuals",
+    riskFilterSubtitle: "Filter the K-PREDICT cohort by disease PRS percentile and disease-panel rare-variant findings.",
+    rareVariantStatus: "Rare-variant status",
+    rareStatusAll: "Any",
+    rareStatusFinding: "Any panel finding",
+    rareStatusAlert: "Panel alert",
+    rareStatusCarrier: "Carrier only",
+    rareStatusNone: "No panel finding",
+    panelGene: "Gene with a panel finding",
+    anyGene: "Any gene",
+    panelGeneOption: (gene, alerts, carriers) => `${gene} (${alerts} alert${alerts === 1 ? "" : "s"}, ${carriers} carrier${carriers === 1 ? "" : "s"})`,
     closeRiskFilter: "Close risk filter",
     diseaseModel: "Disease model",
     percentileBand: "Percentile band",
@@ -168,7 +186,7 @@ const UI_TEXT = {
     applyingRiskFilter: "Searching the full cohort...",
     riskFilterFailed: "The disease-risk filter could not be applied.",
     riskFilterNote: "Percentiles describe position within the disease-specific applicable K-PREDICT reference population. They are not absolute disease probabilities.",
-    riskFilterSummary: (disease, band, count) => `${disease} · ${band} · ${count} individual${count === 1 ? "" : "s"}`,
+    riskFilterSummary: (disease, band, count, extra) => `${disease} · ${band}${extra ? ` · ${extra}` : ""} · ${count} individual${count === 1 ? "" : "s"}`,
     riskFilterResult: (count, applicable) => `${count} of ${applicable} applicable individuals match this filter.`,
     riskFilteredIndividualCount: (matches, total, shown = matches) => {
       const narrowed = matches < total ? `${matches} ID match${matches === 1 ? "" : "es"} within ${total} risk-filtered individuals` : `${total} risk-filtered individual${total === 1 ? "" : "s"}`;
@@ -296,11 +314,20 @@ const UI_TEXT = {
     checkingAccessCode: "접근 코드를 확인하는 중...",
     continueAction: "계속",
     closeKpredictAccess: "K-PREDICT 접근 창 닫기",
-    findIndividualsByRisk: "질환별 위험도 검색",
+    findIndividualsByRisk: "개인 검색",
     clearRiskFilter: "위험도 검색 조건 지우기",
     cohortFinder: "코호트 검색",
-    riskFilterTitle: "질환별 위험도 검색",
-    riskFilterSubtitle: "질환별 백분위를 기준으로 K-PREDICT 코호트에서 개인을 검색합니다.",
+    riskFilterTitle: "개인 검색",
+    riskFilterSubtitle: "질환별 PRS 백분위와 질환 패널 희귀변이 소견으로 K-PREDICT 코호트에서 개인을 검색합니다.",
+    rareVariantStatus: "희귀변이 상태",
+    rareStatusAll: "전체",
+    rareStatusFinding: "패널 소견 있음",
+    rareStatusAlert: "패널 주의 소견",
+    rareStatusCarrier: "보인자 소견만",
+    rareStatusNone: "패널 소견 없음",
+    panelGene: "패널 소견이 있는 유전자",
+    anyGene: "모든 유전자",
+    panelGeneOption: (gene, alerts, carriers) => `${gene} (주의 ${alerts}, 보인자 ${carriers})`,
     closeRiskFilter: "검색 창 닫기",
     diseaseModel: "질환 모델",
     percentileBand: "백분위 구간",
@@ -322,7 +349,7 @@ const UI_TEXT = {
     applyingRiskFilter: "전체 코호트에서 검색하는 중...",
     riskFilterFailed: "위험도 검색 결과를 불러오지 못했습니다.",
     riskFilterNote: "백분위는 이 질환 모델의 적용 대상인 K-PREDICT 참조 집단에서의 상대적 위치이며, 실제 발병 확률을 의미하지 않습니다.",
-    riskFilterSummary: (disease, band, count) => `${disease} · ${band} · ${count}명`,
+    riskFilterSummary: (disease, band, count, extra) => `${disease} · ${band}${extra ? ` · ${extra}` : ""} · ${count}명`,
     riskFilterResult: (count, applicable) => `대상자 ${applicable}명 중 ${count}명이 조건에 맞습니다.`,
     riskFilteredIndividualCount: (matches, total, shown = matches) => {
       const narrowed = matches < total ? `위험도 조건에 맞는 ${total}명 중 ${matches}명 검색됨` : `위험도 조건에 맞는 ${total}명`;
@@ -556,6 +583,8 @@ function applyLanguage(language) {
   renderActiveRiskFilter();
   if (rareOverviewData) renderRareOverview(rareOverviewData);
   if (traitOverviewData) renderTraitOverview(traitOverviewData);
+  // Gene options carry translated counts; rebuild them from the cache.
+  if ($("risk-filter-disease")?.value && panelGenesByDisease.size) loadPanelGenes($("risk-filter-disease").value);
   if (isGeneHeatmapOpen() && geneHeatmapData) renderGeneHeatmap(geneHeatmapData);
   window.XPRSRareVariantDrawer?.refresh({
     language: currentLanguage,
@@ -744,11 +773,59 @@ function renderActiveRiskFilter() {
   const disease = diseases.find((item) => item.slug === activeRiskFilter.disease);
   const diseaseName = disease ? diseaseDisplayName(disease) : activeRiskFilter.disease;
   const bandName = t(RISK_BAND_TEXT_KEYS[activeRiskFilter.band] || "riskBandAll");
+  const extra = [
+    activeRiskFilter.rareStatus && activeRiskFilter.rareStatus !== "all"
+      ? t(RARE_STATUS_TEXT_KEYS[activeRiskFilter.rareStatus])
+      : "",
+    activeRiskFilter.gene || "",
+  ].filter(Boolean).join(" · ");
   setText(
     "risk-filter-active-text",
-    t("riskFilterSummary", diseaseName, bandName, activeRiskFilter.matchingCount),
+    t("riskFilterSummary", diseaseName, bandName, activeRiskFilter.matchingCount, extra),
   );
   active.hidden = false;
+}
+
+async function loadPanelGenes(disease) {
+  const select = $("risk-filter-gene");
+  if (!select || !disease) return;
+  const previous = select.value;
+  let genes = panelGenesByDisease.get(disease);
+  if (!genes) {
+    // Clear the previous disease's genes at once so they cannot be picked
+    // while this disease's list is loading.
+    select.replaceChildren(new Option(t("anyGene"), ""));
+    syncRareStatusOptions();
+    try {
+      const data = await fetchJSONWithNetworkRetry(
+        `/api/kpredict/panel-genes?${new URLSearchParams({ disease }).toString()}`,
+        {},
+        OVERVIEW_NETWORK_RETRY_DELAYS_MS,
+      );
+      genes = Array.isArray(data.genes) ? data.genes : [];
+      panelGenesByDisease.set(disease, genes);
+    } catch (_error) {
+      genes = [];
+    }
+  }
+  if ($("risk-filter-disease")?.value !== disease) return;
+  const options = [new Option(t("anyGene"), "")];
+  genes.forEach((row) => {
+    options.push(new Option(t("panelGeneOption", row.gene, row.alert_count, row.carrier_count), row.gene));
+  });
+  select.replaceChildren(...options);
+  select.value = genes.some((row) => row.gene === previous) ? previous : "";
+  syncRareStatusOptions();
+}
+
+// "No panel finding" cannot be combined with a gene: switch to "Any panel finding".
+function syncRareStatusOptions() {
+  const status = $("risk-filter-rare-status");
+  const gene = $("risk-filter-gene")?.value || "";
+  const noneOption = status?.querySelector('option[value="none"]');
+  if (!status || !noneOption) return;
+  noneOption.disabled = Boolean(gene);
+  if (gene && status.value === "none") status.value = "finding";
 }
 
 function openRiskFilter() {
@@ -758,6 +835,8 @@ function openRiskFilter() {
     $("risk-filter-disease").value = activeRiskFilter.disease;
     $("risk-filter-band").value = activeRiskFilter.band;
     $("risk-filter-order").value = activeRiskFilter.order;
+    $("risk-filter-rare-status").value = activeRiskFilter.rareStatus || "all";
+    $("risk-filter-gene").value = activeRiskFilter.gene || "";
     setText(
       "risk-filter-status",
       t("riskFilterResult", activeRiskFilter.matchingCount, activeRiskFilter.applicableCount),
@@ -769,6 +848,12 @@ function openRiskFilter() {
   const overlay = $("risk-filter-overlay");
   if (overlay) overlay.hidden = false;
   $("risk-filter-disease")?.focus();
+  loadPanelGenes($("risk-filter-disease")?.value).then(() => {
+    if (activeRiskFilter?.gene && $("risk-filter-disease")?.value === activeRiskFilter.disease) {
+      $("risk-filter-gene").value = activeRiskFilter.gene;
+      syncRareStatusOptions();
+    }
+  });
 }
 
 function closeRiskFilter({ cancelRequest = true } = {}) {
@@ -785,6 +870,8 @@ async function applyRiskFilter(event) {
   const disease = $("risk-filter-disease")?.value || "breast_cancer";
   const band = $("risk-filter-band")?.value || "top_10";
   const order = $("risk-filter-order")?.value || "desc";
+  const rareStatus = $("risk-filter-rare-status")?.value || "all";
+  const gene = $("risk-filter-gene")?.value || "";
   const bounds = RISK_BANDS[band] || RISK_BANDS.top_10;
   const status = $("risk-filter-status");
   const applyButton = $("risk-filter-apply-btn");
@@ -800,6 +887,8 @@ async function applyRiskFilter(event) {
     percentile_max: String(bounds.maximum),
     order,
     limit: "5000",
+    rare_status: rareStatus,
+    gene,
   });
   try {
     const response = await fetch(`/api/kpredict/individual-risk-filter?${params.toString()}`);
@@ -818,6 +907,8 @@ async function applyRiskFilter(event) {
       disease,
       band,
       order,
+      rareStatus,
+      gene,
       matchingCount: Number(data.matching_count) || 0,
       applicableCount: Number(data.applicable_count) || 0,
     };
@@ -839,6 +930,28 @@ async function applyRiskFilter(event) {
   } finally {
     if (requestId === riskFilterRequestId && applyButton) applyButton.disabled = false;
   }
+}
+
+async function applyFinderPresetFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const disease = params.get("finder_disease");
+  if (selectedCohortSlug !== "kpredict" || !disease) return false;
+  populateRiskFilterDiseases();
+  const diseaseSelect = $("risk-filter-disease");
+  if (!diseaseSelect || ![...diseaseSelect.options].some((option) => option.value === disease)) return false;
+  diseaseSelect.value = disease;
+  const band = params.get("finder_band") || "all";
+  $("risk-filter-band").value = RISK_BANDS[band] ? band : "all";
+  const status = params.get("finder_status") || "finding";
+  $("risk-filter-rare-status").value = RARE_STATUS_TEXT_KEYS[status] ? status : "finding";
+  await loadPanelGenes(disease);
+  const gene = params.get("finder_gene") || "";
+  if ([...$("risk-filter-gene").options].some((option) => option.value === gene)) {
+    $("risk-filter-gene").value = gene;
+  }
+  syncRareStatusOptions();
+  await applyRiskFilter();
+  return true;
 }
 
 function clearRiskFilter({ refreshOverview = true, render = true } = {}) {
@@ -1871,7 +1984,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     await loadCohorts();
     await loadDiseases();
     await loadIndividuals();
-    await loadDiseaseOverview();
+    if (!(await applyFinderPresetFromUrl())) await loadDiseaseOverview();
   } catch (err) {
     setCohortSelectMessage(t("portalLoadFailed"));
     setText("individual-status", err.message);
@@ -1960,6 +2073,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   $("risk-filter-cancel-btn")?.addEventListener("click", closeRiskFilter);
   $("risk-filter-clear-btn")?.addEventListener("click", () => clearRiskFilter());
   $("risk-filter-form")?.addEventListener("submit", applyRiskFilter);
+  $("risk-filter-disease")?.addEventListener("change", (event) => loadPanelGenes(event.target.value));
+  $("risk-filter-gene")?.addEventListener("change", syncRareStatusOptions);
   $("risk-filter-band")?.addEventListener("change", () => {
     const band = $("risk-filter-band")?.value || "top_10";
     const order = $("risk-filter-order");

@@ -77,10 +77,16 @@ def risk_filtered_individuals(
     percentile_max: float = 100.0,
     order: str = "desc",
     limit: int = 5000,
+    rare_status: str = "all",
+    gene: str = "",
 ) -> dict:
-    """Find applicable individuals by disease-specific cohort percentile."""
-    configured = available_diseases(root)
-    if disease not in configured:
+    """Find applicable individuals by disease percentile and panel rare-variant findings.
+
+    ``rare_status``: all, alert, carrier, finding (alert or carrier), or none.
+    With ``gene``, only individuals with a panel finding in that gene match,
+    and the status refers to their findings in that gene.
+    """
+    if disease not in available_diseases(root):
         raise ValueError("No K-PREDICT data are available for this disease")
     percentile_min = float(percentile_min)
     percentile_max = float(percentile_max)
@@ -89,15 +95,24 @@ def risk_filtered_individuals(
     if order not in {"asc", "desc"}:
         raise ValueError("Order must be 'asc' or 'desc'")
     limit = max(1, min(int(limit), 5000))
+    if rare_status not in RARE_STATUS_FILTERS:
+        raise ValueError("Rare-variant status must be all, alert, carrier, finding, or none")
+    selected_gene = str(gene or "").strip()
+    if selected_gene and rare_status == "none":
+        raise ValueError("A gene filter needs individuals with a finding in that gene")
 
-    risk = _risk(str(root), disease).copy()
-    risk["percentile"] = pd.to_numeric(risk["percentile"], errors="coerce")
-    applicable = risk.loc[
-        risk["applicable"].fillna(False)
-        & risk["percentile"].notna()
-    ].copy()
-    matching = applicable.loc[
-        applicable["percentile"].between(
+    applicable, panel = _panel_cohort(root, disease)
+    candidates = applicable
+    if selected_gene:
+        gene_status = _status_by_individual(panel.loc[panel["gene"].eq(selected_gene)])
+        candidates = candidates.loc[candidates["individual_id"].isin(gene_status.index)].copy()
+        candidates["rare_status"] = gene_status.reindex(candidates["individual_id"]).to_numpy()
+    if rare_status == "finding":
+        candidates = candidates.loc[candidates["rare_status"].isin({"alert", "carrier"})]
+    elif rare_status != "all":
+        candidates = candidates.loc[candidates["rare_status"].eq(rare_status)]
+    matching = candidates.loc[
+        candidates["percentile"].between(
             percentile_min,
             percentile_max,
             inclusive="both",
@@ -113,6 +128,7 @@ def risk_filtered_individuals(
         {
             "individual_id": str(row.individual_id),
             "percentile": float(row.percentile),
+            "rare_status": str(row.rare_status),
         }
         for row in matching.head(limit).itertuples(index=False)
     ]
@@ -123,6 +139,8 @@ def risk_filtered_individuals(
         "percentile_min": percentile_min,
         "percentile_max": percentile_max,
         "order": order,
+        "rare_status": rare_status,
+        "gene": selected_gene or None,
         "applicable_count": int(len(applicable)),
         "matching_count": int(len(matching)),
         "returned_count": len(records),
@@ -130,36 +148,20 @@ def risk_filtered_individuals(
     }
 
 
-def cohort_analysis(
-    root: Path,
-    disease: str,
-    *,
-    rare_status: str = "all",
-    percentile_min: float = 0.0,
-    percentile_max: float = 100.0,
-    gene: str = "",
-    consequence: str = "",
-    individual_limit: int = 200,
-) -> dict:
-    """Aggregate disease-level PRS and panel-linked rare-variant evidence.
+RARE_STATUS_FILTERS = {"all", "alert", "carrier", "finding", "none"}
 
-    Distribution data are returned as five-percentile bins rather than
-    individual values. Pseudonymous IDs are exposed only in the explicitly
-    filtered and capped drill-down list.
+
+def _panel_cohort(root: Path, disease: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Applicable individuals with their panel status, and the disease's panel findings.
+
+    Returns ``cohort`` (individual_id, percentile, rare_status in
+    alert/carrier/none) and ``panel`` (one row per individual and finding,
+    columns include gene, consequence, moi_call). An individual with both an
+    alert and a carrier finding counts as "alert".
     """
     active_disease = normalize_kpredict_disease(disease)
     if active_disease not in available_diseases(root):
         raise ValueError("No K-PREDICT data are available for this disease")
-    if rare_status not in {"all", "alert", "carrier", "none"}:
-        raise ValueError("Rare-variant status must be all, alert, carrier, or none")
-    percentile_min = float(percentile_min)
-    percentile_max = float(percentile_max)
-    if not 0 <= percentile_min <= percentile_max <= 100:
-        raise ValueError("Percentile bounds must satisfy 0 <= minimum <= maximum <= 100")
-    individual_limit = max(1, min(int(individual_limit), 200))
-    selected_gene = str(gene or "").strip()
-    selected_consequence = str(consequence or "").strip()
-
     risk = _risk(str(root), active_disease).copy()
     risk["individual_id"] = risk["individual_id"].astype(str)
     risk["percentile"] = pd.to_numeric(risk["percentile"], errors="coerce")
@@ -170,9 +172,7 @@ def cohort_analysis(
 
     rare = _rare_findings(str(root)).copy()
     rare["individual_id"] = rare["individual_id"].astype(str)
-    rare["xprs_disease"] = rare["xprs_disease"].fillna("").map(
-        normalize_kpredict_disease
-    )
+    rare["xprs_disease"] = rare["xprs_disease"].fillna("").map(normalize_kpredict_disease)
     panel = rare.loc[
         rare["track"].fillna("").eq("panel")
         & rare["xprs_disease"].eq(active_disease)
@@ -184,164 +184,90 @@ def cohort_analysis(
     finding_key = "finding_id" if "finding_id" in panel else "variant"
     panel = panel.drop_duplicates(["individual_id", finding_key, "xprs_disease"])
 
-    alert_ids = set(panel.loc[panel["moi_call"].eq("alert"), "individual_id"])
-    carrier_ids = set(panel.loc[panel["moi_call"].eq("carrier"), "individual_id"]) - alert_ids
-    cohort["rare_status"] = "none"
-    cohort.loc[cohort["individual_id"].isin(carrier_ids), "rare_status"] = "carrier"
-    cohort.loc[cohort["individual_id"].isin(alert_ids), "rare_status"] = "alert"
+    status = _status_by_individual(panel)
+    cohort["rare_status"] = status.reindex(cohort["individual_id"]).fillna("none").to_numpy()
+    return cohort, panel
 
-    status_labels = {
-        "alert": "Panel alert",
-        "carrier": "Carrier only",
-        "none": "No panel finding",
-    }
-    bin_edges = np.arange(0.0, 105.0, 5.0)
-    distributions: list[dict] = []
-    for status in ("alert", "carrier", "none"):
-        values = cohort.loc[cohort["rare_status"].eq(status), "percentile"].to_numpy(dtype=float)
-        counts, _ = np.histogram(values, bins=bin_edges)
-        cumulative = np.cumsum(counts)
-        cumulative_percent = (
-            (cumulative / values.size * 100.0).tolist()
-            if values.size
-            else [0.0] * len(counts)
-        )
-        distributions.append({
-            "status": status,
-            "label": status_labels[status],
-            "count": int(values.size),
-            "bin_upper_bounds": bin_edges[1:].tolist(),
-            "bin_counts": counts.astype(int).tolist(),
-            "cumulative_percent": cumulative_percent,
-            "q1": float(np.quantile(values, 0.25)) if values.size else None,
-            "median": float(np.quantile(values, 0.5)) if values.size else None,
-            "q3": float(np.quantile(values, 0.75)) if values.size else None,
+
+def _status_by_individual(panel: pd.DataFrame) -> pd.Series:
+    """"alert" if any of an individual's findings is an alert, else "carrier" (index: individual_id)."""
+    if panel.empty:
+        return pd.Series(dtype=object)
+    is_alert = panel["moi_call"].eq("alert").groupby(panel["individual_id"]).any()
+    is_carrier = panel["moi_call"].eq("carrier").groupby(panel["individual_id"]).any()
+    status = pd.Series("none", index=is_alert.index, dtype=object)
+    status[is_carrier] = "carrier"
+    status[is_alert] = "alert"
+    return status[status.ne("none")]
+
+
+def panel_gene_options(root: Path, disease: str) -> list[dict]:
+    """Genes with panel findings for one disease, for the Overview's individual finder."""
+    _cohort, panel = _panel_cohort(root, disease)
+    rows = []
+    for gene_name, rows_for_gene in panel.loc[panel["gene"].ne("")].groupby("gene", sort=False):
+        status = _status_by_individual(rows_for_gene)
+        rows.append({
+            "gene": str(gene_name),
+            "individual_count": int(len(status)),
+            "alert_count": int(status.eq("alert").sum()),
+            "carrier_count": int(status.eq("carrier").sum()),
         })
+    return sorted(rows, key=lambda row: (-row["individual_count"], row["gene"]))
 
-    filtered = cohort.loc[
-        cohort["percentile"].between(percentile_min, percentile_max, inclusive="both")
-    ].copy()
-    if rare_status != "all":
-        filtered = filtered.loc[filtered["rare_status"].eq(rare_status)].copy()
 
-    filtered_panel = panel.copy()
-    if selected_gene:
-        filtered_panel = filtered_panel.loc[filtered_panel["gene"].eq(selected_gene)]
-    if selected_consequence:
-        filtered_panel = filtered_panel.loc[
-            filtered_panel["consequence"].eq(selected_consequence)
-        ]
-    if selected_gene or selected_consequence:
-        filtered = filtered.loc[
-            filtered["individual_id"].isin(filtered_panel["individual_id"])
-        ].copy()
+def cohort_analysis(root: Path, disease: str) -> dict:
+    """Panel-linked rare-variant findings across the cohort, with their PRS percentiles.
 
-    matching_ids = set(filtered["individual_id"])
-    analysis_panel = panel.loc[panel["individual_id"].isin(matching_ids)].copy()
-    if selected_gene:
-        analysis_panel = analysis_panel.loc[analysis_panel["gene"].eq(selected_gene)]
-    if selected_consequence:
-        analysis_panel = analysis_panel.loc[
-            analysis_panel["consequence"].eq(selected_consequence)
-        ]
-    analysis_panel = analysis_panel.merge(
-        cohort[["individual_id", "percentile"]],
-        on="individual_id",
-        how="left",
-    )
+    Returns a cohort summary (including how many alert carriers would be in
+    the top 10% by chance), one point per individual and gene with a panel
+    finding (no IDs; for the dot plot), and a per-gene table. Finding
+    individuals is done on the Overview (risk_filtered_individuals).
+    """
+    cohort, panel = _panel_cohort(root, disease)
+    active_disease = normalize_kpredict_disease(disease)
+    percentile_by_id = cohort.set_index("individual_id")["percentile"]
+    top_10 = cohort["percentile"].ge(90)
+    top_10_share = float(top_10.mean()) if len(cohort) else 0.0
+    alert_count = int(cohort["rare_status"].eq("alert").sum())
 
+    points: list[dict] = []
     gene_rows: list[dict] = []
-    for gene_name, rows in analysis_panel.loc[analysis_panel["gene"].ne("")].groupby(
-        "gene",
-        sort=False,
-    ):
-        distinct = rows.drop_duplicates("individual_id")
+    for gene_name, rows_for_gene in panel.loc[panel["gene"].ne("")].groupby("gene", sort=False):
+        status = _status_by_individual(rows_for_gene)
+        percentiles = percentile_by_id.reindex(status.index)
+        points.extend(
+            {"gene": str(gene_name), "status": str(value), "percentile": float(percentile)}
+            for value, percentile in zip(status, percentiles)
+        )
         gene_rows.append({
             "gene": str(gene_name),
-            "individual_count": int(distinct["individual_id"].nunique()),
-            "alert_count": int(
-                rows.loc[rows["moi_call"].eq("alert"), "individual_id"].nunique()
-            ),
-            "carrier_count": int(
-                rows.loc[rows["moi_call"].eq("carrier"), "individual_id"].nunique()
-            ),
-            "median_percentile": float(distinct["percentile"].median()),
-            "top_10_percent_count": int(
-                distinct.loc[distinct["percentile"].ge(90), "individual_id"].nunique()
-            ),
+            "individual_count": int(len(status)),
+            "alert_count": int(status.eq("alert").sum()),
+            "carrier_count": int(status.eq("carrier").sum()),
+            "median_percentile": float(percentiles.median()),
+            "top_10_percent_count": int(percentiles.ge(90).sum()),
         })
-    gene_rows.sort(
-        key=lambda row: (
-            -row["individual_count"],
-            -row["alert_count"],
-            row["gene"],
-        )
-    )
-
-    panel_by_individual = panel.groupby("individual_id", sort=False)
-    filtered = filtered.sort_values(["percentile", "individual_id"], ascending=[False, True])
-    individual_rows: list[dict] = []
-    for row in filtered.head(individual_limit).itertuples(index=False):
-        if row.individual_id in panel_by_individual.groups:
-            findings = panel_by_individual.get_group(row.individual_id)
-            genes = sorted({value for value in findings["gene"] if value})
-            alert_count = int(findings["moi_call"].eq("alert").sum())
-            carrier_count = int(findings["moi_call"].eq("carrier").sum())
-        else:
-            genes = []
-            alert_count = 0
-            carrier_count = 0
-        individual_rows.append({
-            "individual_id": str(row.individual_id),
-            "percentile": float(row.percentile),
-            "rare_status": str(row.rare_status),
-            "genes": genes,
-            "alert_count": alert_count,
-            "carrier_count": carrier_count,
-        })
+    gene_rows.sort(key=lambda row: (-row["individual_count"], -row["alert_count"], row["gene"]))
 
     config = DISEASE_REGISTRY.get(active_disease)
-    options_genes = sorted({value for value in panel["gene"] if value})
-    options_consequences = sorted({value for value in panel["consequence"] if value})
     return {
         "disease": active_disease,
         "disease_label": (
-            config.display_name
-            if config is not None
-            else active_disease.replace("_", " ").title()
+            config.display_name if config is not None else active_disease.replace("_", " ").title()
         ),
         "summary": {
             "applicable_count": int(len(cohort)),
-            "alert_individual_count": int(cohort["rare_status"].eq("alert").sum()),
+            "alert_individual_count": alert_count,
             "carrier_individual_count": int(cohort["rare_status"].eq("carrier").sum()),
             "no_panel_finding_count": int(cohort["rare_status"].eq("none").sum()),
-            "top_10_percent_count": int(cohort["percentile"].ge(90).sum()),
-            "top_10_alert_overlap_count": int(
-                (cohort["percentile"].ge(90) & cohort["rare_status"].eq("alert")).sum()
-            ),
+            "top_10_percent_count": int(top_10.sum()),
+            "top_10_alert_overlap_count": int((top_10 & cohort["rare_status"].eq("alert")).sum()),
+            # If PRS and alerts were unrelated, about this many alert carriers would be in the top 10%.
+            "top_10_alert_expected_count": round(alert_count * top_10_share, 1),
         },
-        "distribution": {
-            "bin_width": 5,
-            "groups": distributions,
-        },
-        "filters": {
-            "rare_status": rare_status,
-            "percentile_min": percentile_min,
-            "percentile_max": percentile_max,
-            "gene": selected_gene or None,
-            "consequence": selected_consequence or None,
-        },
-        "filter_options": {
-            "genes": options_genes,
-            "consequences": options_consequences,
-        },
-        "filtered": {
-            "matching_count": int(len(filtered)),
-            "returned_count": len(individual_rows),
-            "individual_limit": individual_limit,
-            "individuals": individual_rows,
-            "genes": gene_rows[:100],
-        },
+        "points": sorted(points, key=lambda point: (point["gene"], point["percentile"])),
+        "genes": gene_rows,
     }
 
 

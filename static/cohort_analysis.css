@@ -40,7 +40,12 @@ button, select { font: inherit; }
 button, a, select { -webkit-tap-highlight-color: transparent; }
 .page-shell { min-height: 100vh; }
 .topbar { min-height: 76px; padding: 12px clamp(18px, 4vw, 54px); background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 24px; position: sticky; top: 0; z-index: 20; }
-.topbar-heading, .topbar-actions, .nav-link, .brand, .icon-button, .cohort-pill, .primary-button, .text-button { display: flex; align-items: center; }
+.topbar-heading,
+.topbar-actions,
+.nav-link,
+.brand,
+.icon-button,
+.cohort-pill { display: flex; align-items: center; }
 .topbar-heading { gap: 13px; }
 .brand { justify-content: center; width: 42px; height: 42px; border-radius: 12px; background: var(--brand-soft); color: var(--brand); text-decoration: none; }
 .topbar h1 { margin: 1px 0 0; font-size: 1.22rem; }
@@ -59,34 +64,21 @@ main { width: min(1500px, calc(100% - 36px)); margin: 26px auto 54px; }
 .intro-card h2 { margin: 7px 0 8px; font-size: clamp(1.35rem, 2vw, 1.75rem); }
 .intro-card > div { max-width: 1060px; }
 .intro-card > div > p { margin: 0; color: var(--muted); line-height: 1.55; }
-.intro-card .intro-question { color: var(--text); font-size: .98rem; font-weight: 650; }
 .intro-card .intro-scope { margin-top: 5px; font-size: .82rem; }
 .intro-definitions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 15px; }
 .intro-definitions p { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-muted); color: var(--muted); font-size: .76rem; line-height: 1.5; }
 .intro-definitions strong { color: var(--text); }
-.intro-boundary { margin-top: 11px !important; font-size: .75rem; }
 .panel-source-note { margin-top: 10px; color: var(--muted); font-size: .73rem; }
 .panel-source-note summary { width: fit-content; color: var(--brand); font-weight: 750; cursor: pointer; }
 .panel-source-note p { margin: 8px 0 0; max-width: 920px; padding-left: 14px; border-left: 2px solid var(--border); line-height: 1.55; }
 .cohort-pill { flex: none; gap: 6px; padding: 8px 11px; border-radius: 999px; background: var(--brand-soft); color: var(--brand); font-size: .78rem; font-weight: 700; }
 .cohort-pill .material-symbols-outlined { font-size: 16px; }
 .filter-card { margin-top: 18px; padding: 20px 22px; }
-.filter-heading, .panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
-.filter-heading h2, .panel-heading h2 { margin: 0; font-size: 1.05rem; }
-.text-button { gap: 5px; border: 0; color: var(--brand); background: transparent; cursor: pointer; font-weight: 700; font-size: .82rem; }
-.text-button .material-symbols-outlined { font-size: 18px; }
-.filter-grid { display: grid; grid-template-columns: minmax(190px, .7fr) minmax(0, 3.3fr); gap: 12px; align-items: stretch; margin-top: 18px; }
-.filter-grid label { min-width: 0; display: grid; gap: 7px; color: var(--muted); font-size: .74rem; font-weight: 700; }
-.filter-mode { min-width: 0; padding: 11px; border: 1px solid var(--border); border-radius: 11px; background: var(--surface-muted); }
-.filter-mode--immediate { border-color: color-mix(in srgb, var(--brand) 32%, var(--border)); background: color-mix(in srgb, var(--brand-soft) 55%, var(--surface)); }
-.staged-filter-fields { display: grid; grid-template-columns: repeat(4, minmax(125px, 1fr)) auto; gap: 10px; align-items: end; }
-.filter-mode--staged.has-pending-changes { border-color: color-mix(in srgb, var(--carrier) 48%, var(--border)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--carrier) 12%, transparent); }
-.filter-mode--staged.has-pending-changes .primary-button { box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 18%, transparent); }
+.panel-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+.panel-heading h2 { margin: 0; font-size: 1.05rem; }
 select { width: 100%; min-height: 40px; padding: 0 34px 0 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-muted); color: var(--text); }
-.primary-button { justify-content: center; gap: 7px; min-height: 40px; padding: 0 16px; border: 0; border-radius: 9px; background: var(--brand); color: #fff; cursor: pointer; font-weight: 700; white-space: nowrap; }
-.primary-button:disabled { opacity: .6; cursor: wait; }
-.primary-button .material-symbols-outlined { font-size: 18px; }
 .page-status { min-height: 28px; margin: 13px 2px 0; color: var(--muted); font-size: .84rem; }
+.page-status:empty { display: none; }
 .page-status.is-error { padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--alert) 35%, var(--border)); border-radius: 10px; background: var(--alert-soft); color: var(--alert); }
 .panel { margin-top: 16px; padding: 20px; min-width: 0; }
 .panel-heading .eyebrow { margin-bottom: 5px; }
@@ -105,19 +97,13 @@ select { width: 100%; min-height: 40px; padding: 0 34px 0 11px; border: 1px soli
 .cohort-summary > p { margin: 0; padding: 10px 14px; color: var(--muted); font-size: .64rem; line-height: 1.45; }
 .method-note { margin: 2px 2px 0; padding-top: 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: .76rem; line-height: 1.55; }
 .method-note strong { color: var(--text); }
-.detail-grid { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 16px; }
 .table-wrap { overflow: auto; max-height: 470px; margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; }
 .table-note { margin: 7px 0 0; color: var(--muted); font-size: .71rem; line-height: 1.45; }
 table { width: 100%; border-collapse: collapse; font-size: .78rem; }
 th { position: sticky; top: 0; z-index: 1; padding: 10px 11px; background: var(--surface-muted); color: var(--muted); text-align: left; font-size: .69rem; letter-spacing: .02em; white-space: nowrap; }
 td { padding: 10px 11px; border-top: 1px solid var(--border); vertical-align: middle; }
 tbody tr:hover { background: var(--surface-muted); }
-.gene-button, .individual-link { border: 0; padding: 0; background: transparent; color: var(--brand); font-weight: 750; text-decoration: none; cursor: pointer; }
-.status-badge { display: inline-flex; padding: 4px 7px; border-radius: 999px; font-size: .68rem; font-weight: 750; white-space: nowrap; }
-.status-alert { background: var(--alert-soft); color: var(--alert); }
-.status-carrier { background: var(--carrier-soft); color: var(--carrier); }
-.status-none { background: var(--surface-muted); color: var(--none); }
-.genes-cell { max-width: 230px; color: var(--muted); line-height: 1.45; }
+.gene-button { border: 0; padding: 0; background: transparent; color: var(--brand); font-weight: 750; text-decoration: none; cursor: pointer; }
 .empty-message { padding: 24px 8px 10px; color: var(--muted); text-align: center; font-size: .82rem; }
 [hidden] { display: none !important; }
 
@@ -152,4 +138,78 @@ tbody tr:hover { background: var(--surface-muted); }
   .cohort-summary { display: block; }
   .cohort-summary h3 { border-right: 0; border-bottom: 1px solid var(--border); }
   .cohort-summary dl { display: block; }
+}
+
+/* Disease picker bar (the only filter left on this page). */
+.disease-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+}
+
+.disease-bar label {
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(320px, 100%);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+/* Dot-plot legend: alert dots, carrier diamonds, top-10% zone. */
+.dot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.2rem;
+  margin: 0 0 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.dot-legend__item::before {
+  content: "";
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 0.4rem;
+  vertical-align: -1px;
+}
+
+.dot-legend__item--alert::before {
+  border-radius: 50%;
+  background: #d54b59;
+}
+
+.dot-legend__item--carrier::before {
+  background: #c98a1d;
+  transform: rotate(45deg) scale(0.85);
+}
+
+.dot-legend__item--top::before {
+  width: 18px;
+  border-radius: 2px;
+  background: rgba(213, 75, 89, 0.18);
+}
+
+.summary-expected {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.gene-name {
+  font-weight: 700;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
