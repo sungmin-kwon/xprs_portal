@@ -25,13 +25,27 @@ def available_diseases(root: Path) -> dict[str, dict]:
     }
 
 
+def _require_known_disease(root_string: str, disease: str) -> None:
+    """Only disease slugs listed in the release manifest may become file paths.
+
+    Disease names arrive as request parameters; an unknown name used to reach
+    pd.read_parquet and fail with a FileNotFoundError (HTTP 500), and a name
+    such as "../x" would otherwise be joined into a path.
+    """
+    known = {str(item.get("portal_disease_slug")) for item in _manifest(root_string).get("diseases", [])}
+    if disease not in known:
+        raise ValueError("Unknown disease for this cohort")
+
+
 @lru_cache(maxsize=16)
 def _risk(root_string: str, disease: str) -> pd.DataFrame:
+    _require_known_disease(root_string, disease)
     return pd.read_parquet(Path(root_string) / "diseases" / disease / "individual_risk.parquet")
 
 
 @lru_cache(maxsize=16)
 def _genes(root_string: str, disease: str) -> pd.DataFrame:
+    _require_known_disease(root_string, disease)
     return pd.read_parquet(Path(root_string) / "diseases" / disease / "genes.parquet")
 
 
