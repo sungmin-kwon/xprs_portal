@@ -9,7 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/home.css?v=45" />
+  <link rel="stylesheet" href="/static/home.css?v=46" />
   <link rel="stylesheet" href="/static/rare_variant_detail.css?v=1" />
 </head>
 <body>
@@ -230,27 +230,10 @@
         </button>
       </header>
       <div class="analysis-modal__body">
-        <div class="heatmap-tabs" role="tablist" aria-label="Gene comparison view" data-i18n-aria="geneComparisonView">
-          <button id="individual-heatmap-tab" class="heatmap-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="individual-heatmap-panel" data-i18n="individualGeneProfile">Selected Individual</button>
-          <button id="population-architecture-tab" class="heatmap-tab" type="button" role="tab" aria-selected="false" aria-controls="population-architecture-panel">
-            <span data-i18n="populationArchitecture">Population Architecture</span>
-            <small data-i18n="prototype">Prototype</small>
-          </button>
-        </div>
-        <section id="individual-heatmap-panel" class="heatmap-panel" role="tabpanel" aria-labelledby="individual-heatmap-tab">
+        <section id="individual-heatmap-panel" class="heatmap-panel">
           <div id="gene-heatmap-status" class="heatmap-status"></div>
           <div id="gene-heatmap-plot" class="gene-heatmap-plot" hidden></div>
           <p id="gene-heatmap-note" class="analysis-modal__note" hidden></p>
-        </section>
-        <section id="population-architecture-panel" class="heatmap-panel" role="tabpanel" aria-labelledby="population-architecture-tab" hidden>
-          <form id="population-architecture-controls" class="architecture-controls">
-            <label><span data-i18n="architectureThreshold">High-variance threshold</span><select id="architecture-threshold"><option value="97.5" data-i18n="topTwoPointFivePercent">Top 2.5%</option><option value="99" selected data-i18n="topOnePercent">Top 1%</option><option value="99.5" data-i18n="topHalfPercent">Top 0.5%</option></select></label>
-            <label><span data-i18n="architectureMinimumDiseases">Shared across at least</span><select id="architecture-min-diseases"><option value="2" data-i18n="twoDiseases">2 diseases</option><option value="3" selected data-i18n="threeDiseases">3 diseases</option><option value="4" data-i18n="fourDiseases">4 diseases</option></select></label>
-            <button class="analysis-btn" type="submit" data-i18n="updateComparison">Update comparison</button>
-          </form>
-          <div id="population-architecture-status" class="heatmap-status"></div>
-          <div id="population-architecture-plot" class="gene-heatmap-plot" hidden></div>
-          <p id="population-architecture-note" class="analysis-modal__note" hidden></p>
         </section>
       </div>
     </section>
@@ -258,6 +241,6 @@
 
 
   <script src="/static/rare_variant_detail.js?v=2"></script>
-  <script src="/static/home.js?v=52"></script>
+  <script src="/static/home.js?v=53"></script>
 </body>
 </html>

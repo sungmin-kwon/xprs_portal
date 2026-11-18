@@ -14,10 +14,7 @@ let individualSearchIndex = [];
 let individualSearchTimer = null;
 let renderedIndividualKey = "";
 let geneHeatmapData = null;
-let populationGeneArchitectureData = null;
 let geneHeatmapRequestId = 0;
-let populationArchitectureRequestId = 0;
-let activeGeneComparisonView = "individual";
 let riskFilteredIndividuals = null;
 let riskPercentileById = new Map();
 let activeRiskFilter = null;
@@ -219,26 +216,6 @@ const UI_TEXT = {
         : "";
       return `Genes are included when their absolute standardized contribution ranks in the top ${fraction}% for at least ${minimum} diseases. The chart shows up to ${maximum} of ${candidates} qualifying genes, prioritizing genes found across more diseases and those with larger contributions. Each cell is the gene contribution divided by the square root of its population variance. Positive values raise the PRS; negative values lower it. To keep extreme values from flattening the rest of the chart, the color scale is capped at the 95th percentile of absolute values; hover over a cell for its exact value. Gray cells indicate that no standardized contribution was available for that gene–disease pair; they are not zeros.${excluded} This is an exploratory comparison of shared contribution patterns, not evidence of biological interaction, and it does not combine diseases into a single risk score.`;
     },
-    geneComparisonView: "Gene comparison view",
-    individualGeneProfile: "Selected Individual",
-    populationArchitecture: "Population Architecture",
-    prototype: "Prototype",
-    architectureThreshold: "High-variance threshold",
-    architectureMinimumDiseases: "Shared across at least",
-    topTwoPointFivePercent: "Top 2.5%",
-    topOnePercent: "Top 1%",
-    topHalfPercent: "Top 0.5%",
-    twoDiseases: "2 diseases",
-    threeDiseases: "3 diseases",
-    fourDiseases: "4 diseases",
-    updateComparison: "Update comparison",
-    populationArchitectureLoading: "Comparing population gene architecture across disease models...",
-    populationArchitectureFailed: "The population gene-architecture comparison could not be loaded.",
-    populationArchitectureScale: "Population variance percentile",
-    populationRawVariance: "Raw population variance",
-    populationArchitectureMissing: "Gene not available in this disease model",
-    populationArchitectureSubtitle: (count) => `${count} K-PREDICT disease models`,
-    populationArchitectureMethod: (threshold, minimum, shown, candidates) => `This prototype compares each gene's population contribution variance with other genes in the same disease model. It shows ${shown} of ${candidates} genes that rank in the top ${(100 - threshold).toFixed(threshold % 1 ? 1 : 0)}% for at least ${minimum} diseases. A value of 99 means that the gene has greater contribution variance than approximately 99% of genes in that disease model. This is a comparison of the supplied PRS models—not evidence that a gene causes, connects, or predicts the diseases.`,
   },
   ko: {
     documentTitle: "XPRS 질환 위험 개요",
@@ -386,26 +363,6 @@ const UI_TEXT = {
       const excluded = unavailable ? ` 이 개인에게 적용되지 않는 질환 모델 ${unavailable}개는 분석에서 제외했습니다.` : "";
       return `표준화 기여도의 절댓값이 최소 ${minimum}개 질환에서 상위 ${fraction}%에 드는 유전자를 포함합니다. 조건을 충족한 ${candidates}개 유전자 중 여러 질환에서 공통으로 나타나고 기여도가 큰 순서로 최대 ${maximum}개를 표시합니다. 각 셀은 유전자 기여도를 집단 분산의 제곱근으로 나눈 값입니다. 양수는 PRS를 높이고 음수는 낮춥니다. 극단값 때문에 나머지 패턴이 흐려지지 않도록 색상 범위를 절댓값의 95백분위수에서 제한했으며, 정확한 값은 마우스를 올려 확인할 수 있습니다. 회색 셀은 해당 유전자-질환 조합의 표준화 기여도 값이 없음을 뜻하며 0으로 해석해서는 안 됩니다.${excluded} 이 결과는 질환 간 공통 기여 패턴을 탐색하기 위한 것으로, 생물학적 상호작용을 입증하지 않으며 여러 질환을 하나의 위험 점수로 합산하지 않습니다.`;
     },
-    geneComparisonView: "유전자 비교 보기",
-    individualGeneProfile: "선택한 개인",
-    populationArchitecture: "집단 유전자 구조",
-    prototype: "프로토타입",
-    architectureThreshold: "고분산 기준",
-    architectureMinimumDiseases: "최소 공통 질환 수",
-    topTwoPointFivePercent: "상위 2.5%",
-    topOnePercent: "상위 1%",
-    topHalfPercent: "상위 0.5%",
-    twoDiseases: "질환 2개",
-    threeDiseases: "질환 3개",
-    fourDiseases: "질환 4개",
-    updateComparison: "비교 업데이트",
-    populationArchitectureLoading: "질환 모델별 집단 유전자 구조를 비교하는 중...",
-    populationArchitectureFailed: "집단 유전자 구조 비교 결과를 불러오지 못했습니다.",
-    populationArchitectureScale: "집단 분산 백분위",
-    populationRawVariance: "원 집단 분산",
-    populationArchitectureMissing: "이 질환 모델에 해당 유전자 없음",
-    populationArchitectureSubtitle: (count) => `K-PREDICT 질환 모델 ${count}개`,
-    populationArchitectureMethod: (threshold, minimum, shown, candidates) => `이 프로토타입은 각 유전자의 집단 기여도 분산을 동일한 질환 모델 내 다른 유전자와 비교합니다. 최소 ${minimum}개 질환에서 상위 ${(100 - threshold).toFixed(threshold % 1 ? 1 : 0)}%에 포함된 유전자 ${candidates}개 중 ${shown}개를 표시합니다. 값이 99라면 해당 질환 모델 유전자의 약 99%보다 기여도 분산이 크다는 뜻입니다. 이는 제공된 PRS 모델의 구조를 비교한 결과이며, 유전자가 질환을 유발하거나 질환 간 생물학적 연관성을 만든다는 근거는 아닙니다.`,
   },
 };
 
@@ -594,10 +551,6 @@ function applyLanguage(language) {
   if (rareOverviewData) renderRareOverview(rareOverviewData);
   if (traitOverviewData) renderTraitOverview(traitOverviewData);
   if (isGeneHeatmapOpen() && geneHeatmapData) renderGeneHeatmap(geneHeatmapData);
-  if (isGeneHeatmapOpen() && populationGeneArchitectureData) {
-    renderPopulationGeneArchitecture(populationGeneArchitectureData);
-  }
-  if (isGeneHeatmapOpen()) syncGeneComparisonView();
   window.XPRSRareVariantDrawer?.refresh({
     language: currentLanguage,
     diseaseLabel: rareDetailDiseaseName,
@@ -625,9 +578,6 @@ function applyTheme(theme) {
   syncThemeToggle();
   if (visibleDiseaseCards.length) renderDiseaseCards(visibleDiseaseCards);
   if (isGeneHeatmapOpen() && geneHeatmapData) renderGeneHeatmap(geneHeatmapData);
-  if (isGeneHeatmapOpen() && populationGeneArchitectureData) {
-    renderPopulationGeneArchitecture(populationGeneArchitectureData);
-  }
 }
 
 function toggleTheme() {
@@ -1441,188 +1391,6 @@ function renderGeneHeatmap(data) {
   });
 }
 
-function syncGeneComparisonView() {
-  const isPopulation = activeGeneComparisonView === "population";
-  const individualTab = $("individual-heatmap-tab");
-  const populationTab = $("population-architecture-tab");
-  const individualPanel = $("individual-heatmap-panel");
-  const populationPanel = $("population-architecture-panel");
-  if (!individualTab || !populationTab || !individualPanel || !populationPanel) return;
-
-  individualTab.classList.toggle("is-active", !isPopulation);
-  populationTab.classList.toggle("is-active", isPopulation);
-  individualTab.setAttribute("aria-selected", String(!isPopulation));
-  populationTab.setAttribute("aria-selected", String(isPopulation));
-  individualPanel.hidden = isPopulation;
-  populationPanel.hidden = !isPopulation;
-  setText(
-    "gene-heatmap-title",
-    isPopulation ? t("populationArchitecture") : t("geneHeatmapTitle"),
-  );
-  if (isPopulation) {
-    const count = populationGeneArchitectureData?.diseases?.length || diseases.length;
-    setText("gene-heatmap-subtitle", t("populationArchitectureSubtitle", count));
-  } else if (geneHeatmapData) {
-    setText(
-      "gene-heatmap-subtitle",
-      t("geneHeatmapSubtitle", geneHeatmapData.individual_id, geneHeatmapData.diseases.length),
-    );
-  }
-}
-
-function renderPopulationGeneArchitecture(data) {
-  const plot = $("population-architecture-plot");
-  const status = $("population-architecture-status");
-  const note = $("population-architecture-note");
-  if (!plot || !status || !note) return;
-  if (!window.Plotly) {
-    status.textContent = t("geneHeatmapPlotlyUnavailable");
-    status.classList.add("is-error");
-    status.hidden = false;
-    plot.hidden = true;
-    note.hidden = true;
-    return;
-  }
-
-  const diseasesInData = Array.isArray(data.diseases) ? data.diseases : [];
-  const genes = Array.isArray(data.genes) ? data.genes : [];
-  const values = Array.isArray(data.values) ? data.values : [];
-  const rawVariances = Array.isArray(data.raw_variances) ? data.raw_variances : [];
-  const metrics = Array.isArray(data.gene_metrics) ? data.gene_metrics : [];
-  const selection = data.selection || {};
-  const diseaseLabels = diseasesInData.map(localizedHeatmapDiseaseName);
-  const geneLabels = genes.map((gene, index) => {
-    const support = Number(metrics[index]?.qualifying_disease_count) || 0;
-    return `${gene} · ${support}/${diseasesInData.length}`;
-  });
-  const darkTheme = currentTheme === "dark";
-  const height = Math.max(500, genes.length * 27 + 165);
-  plot.style.height = `${height}px`;
-  status.hidden = true;
-  status.classList.remove("is-error");
-  plot.hidden = false;
-  note.textContent = t(
-    "populationArchitectureMethod",
-    Number(selection.percentile_threshold) || 99,
-    Number(selection.minimum_qualifying_diseases) || 3,
-    genes.length,
-    Number(selection.candidate_count) || genes.length,
-  );
-  note.hidden = false;
-
-  const hoverLabels = values.map((row, rowIndex) => row.map((value, columnIndex) => {
-    if (value === null || value === undefined || !Number.isFinite(Number(value))) {
-      return t("populationArchitectureMissing");
-    }
-    const raw = Number(rawVariances[rowIndex]?.[columnIndex]);
-    const varianceLabel = Number.isFinite(raw) ? raw.toExponential(3) : "—";
-    return `${t("populationArchitectureScale")}: ${Number(value).toFixed(2)}<br>${t("populationRawVariance")}: ${varianceLabel}`;
-  }));
-  const missingValues = values.map((row) => row.map((value) => (
-    value === null || value === undefined || !Number.isFinite(Number(value)) ? 1 : null
-  )));
-  const hasMissing = missingValues.some((row) => row.some((value) => value === 1));
-  const missingTrace = {
-    type: "heatmap",
-    x: diseaseLabels,
-    y: geneLabels,
-    z: missingValues,
-    text: hoverLabels,
-    zmin: 0,
-    zmax: 1,
-    colorscale: [[0, darkTheme ? "#4a535c" : "#c9cfd6"], [1, darkTheme ? "#4a535c" : "#c9cfd6"]],
-    showscale: false,
-    xgap: 1,
-    ygap: 1,
-    hovertemplate: "<b>%{y}</b><br>%{x}<br>%{text}<extra></extra>",
-  };
-  const trace = {
-    type: "heatmap",
-    x: diseaseLabels,
-    y: geneLabels,
-    z: values,
-    text: hoverLabels,
-    zmin: 0,
-    zmax: 100,
-    colorscale: darkTheme
-      ? [[0, "#22282e"], [0.9, "#29343e"], [0.975, "#35688f"], [0.99, "#4b91c6"], [1, "#8bc7ef"]]
-      : [[0, "#f3f5f7"], [0.9, "#e8eef4"], [0.975, "#a9cce5"], [0.99, "#4d91c3"], [1, "#174f7a"]],
-    colorbar: {
-      title: { text: t("populationArchitectureScale"), side: "right", font: { size: 11 } },
-      thickness: 14,
-      len: 0.82,
-      tickvals: [0, 90, 95, 99, 100],
-    },
-    xgap: 1,
-    ygap: 1,
-    hovertemplate: "<b>%{y}</b><br>%{x}<br>%{text}<extra></extra>",
-  };
-  window.Plotly.react(plot, hasMissing ? [missingTrace, trace] : [trace], {
-    height,
-    autosize: true,
-    margin: { l: 125, r: 105, t: 18, b: 120 },
-    paper_bgcolor: "rgba(0,0,0,0)",
-    plot_bgcolor: "rgba(0,0,0,0)",
-    font: { family: "Inter, sans-serif", color: darkTheme ? "#dee4ea" : "#1f2933" },
-    xaxis: { fixedrange: true, tickangle: -32, tickfont: { size: 11 }, side: "bottom" },
-    yaxis: { fixedrange: true, autorange: "reversed", tickfont: { size: 11 } },
-  }, {
-    displayModeBar: false,
-    displaylogo: false,
-    responsive: true,
-    scrollZoom: false,
-    doubleClick: false,
-  });
-}
-
-async function loadPopulationGeneArchitecture() {
-  const status = $("population-architecture-status");
-  const plot = $("population-architecture-plot");
-  const note = $("population-architecture-note");
-  if (!status || !plot || !note || selectedCohortSlug !== "kpredict") return;
-  status.hidden = false;
-  status.classList.remove("is-error");
-  status.textContent = t("populationArchitectureLoading");
-  plot.hidden = true;
-  note.hidden = true;
-  const requestId = ++populationArchitectureRequestId;
-  const params = new URLSearchParams({
-    percentile_threshold: $("architecture-threshold")?.value || "99",
-    min_diseases: $("architecture-min-diseases")?.value || "3",
-    max_genes: "24",
-  });
-  try {
-    const response = await fetch(`/api/kpredict/population-gene-architecture?${params.toString()}`);
-    if (!response.ok) {
-      const body = await response.json().catch(() => ({}));
-      throw new Error(body.detail || `${t("populationArchitectureFailed")} (HTTP ${response.status})`);
-    }
-    const data = await response.json();
-    if (requestId !== populationArchitectureRequestId || !isGeneHeatmapOpen()) return;
-    populationGeneArchitectureData = data;
-    renderPopulationGeneArchitecture(data);
-    syncGeneComparisonView();
-  } catch (error) {
-    if (requestId !== populationArchitectureRequestId || !isGeneHeatmapOpen()) return;
-    status.textContent = error.message || t("populationArchitectureFailed");
-    status.classList.add("is-error");
-  }
-}
-
-function selectGeneComparisonView(view) {
-  activeGeneComparisonView = view === "population" ? "population" : "individual";
-  syncGeneComparisonView();
-  if (activeGeneComparisonView === "population") {
-    if (populationGeneArchitectureData) {
-      renderPopulationGeneArchitecture(populationGeneArchitectureData);
-    } else {
-      loadPopulationGeneArchitecture();
-    }
-  } else if (geneHeatmapData) {
-    renderGeneHeatmap(geneHeatmapData);
-  }
-}
-
 async function openGeneHeatmap() {
   const pid = selectedIndividualId || $("individual-id")?.value || "";
   if (selectedCohortSlug !== "kpredict" || !pid) return;
@@ -1633,8 +1401,6 @@ async function openGeneHeatmap() {
   if (!overlay || !status || !plot || !note) return;
 
   overlay.hidden = false;
-  activeGeneComparisonView = "individual";
-  syncGeneComparisonView();
   status.hidden = false;
   status.classList.remove("is-error");
   status.textContent = t("geneHeatmapLoading");
@@ -1668,7 +1434,6 @@ async function openGeneHeatmap() {
 
 function closeGeneHeatmap() {
   geneHeatmapRequestId += 1;
-  populationArchitectureRequestId += 1;
   const overlay = $("gene-heatmap-overlay");
   const wasOpen = Boolean(overlay && !overlay.hidden);
   if (overlay) overlay.hidden = true;
@@ -2123,7 +1888,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     traitOverviewData = null;
     traitsAvailable = false;
     geneHeatmapData = null;
-    populationGeneArchitectureData = null;
     closeGeneHeatmap();
     clearIndividualSearch();
     updateCohortStatus();
@@ -2163,17 +1927,6 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   $("cross-disease-heatmap-btn")?.addEventListener("click", openGeneHeatmap);
   $("gene-heatmap-close-btn")?.addEventListener("click", closeGeneHeatmap);
-  $("individual-heatmap-tab")?.addEventListener("click", () => {
-    selectGeneComparisonView("individual");
-  });
-  $("population-architecture-tab")?.addEventListener("click", () => {
-    selectGeneComparisonView("population");
-  });
-  $("population-architecture-controls")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    populationGeneArchitectureData = null;
-    loadPopulationGeneArchitecture();
-  });
   $("gene-heatmap-overlay")?.addEventListener("click", (event) => {
     if (event.target === $("gene-heatmap-overlay")) closeGeneHeatmap();
   });

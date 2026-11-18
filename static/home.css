@@ -1353,84 +1353,6 @@ button.disease-card:hover {
   overflow: auto;
 }
 
-.heatmap-tabs {
-  width: fit-content;
-  margin: 0 0 0.8rem;
-  padding: 3px;
-  display: flex;
-  gap: 3px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-soft);
-}
-
-.heatmap-tab {
-  min-height: 36px;
-  padding: 0.45rem 0.8rem;
-  border: 0;
-  border-radius: 7px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  color: var(--muted);
-  background: transparent;
-  font: inherit;
-  font-size: 0.82rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.heatmap-tab small {
-  padding: 0.12rem 0.38rem;
-  border-radius: 999px;
-  color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 11%, transparent);
-  font-size: 0.62rem;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-
-.heatmap-tab.is-active {
-  color: var(--ink);
-  background: var(--panel);
-  box-shadow: 0 1px 4px rgba(10, 18, 27, 0.1);
-}
-
-.architecture-controls {
-  margin-bottom: 0.75rem;
-  padding: 0.7rem 0.8rem;
-  display: flex;
-  align-items: end;
-  gap: 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-soft);
-}
-
-.architecture-controls label {
-  min-width: 190px;
-  display: grid;
-  gap: 0.3rem;
-  color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.architecture-controls select {
-  min-height: 38px;
-  padding: 0 2rem 0 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--panel);
-  font: inherit;
-}
-
-.architecture-controls .analysis-btn {
-  min-height: 38px;
-  margin-left: auto;
-}
-
 .analysis-modal--filter {
   width: min(760px, 96vw);
 }
@@ -1906,29 +1828,6 @@ body.dark-theme .heatmap-status.is-error {
     padding: 0.5rem;
   }
 
-  .heatmap-tabs {
-    width: 100%;
-  }
-
-  .heatmap-tab {
-    flex: 1;
-    justify-content: center;
-  }
-
-  .architecture-controls {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .architecture-controls label {
-    min-width: 0;
-  }
-
-  .architecture-controls .analysis-btn {
-    width: 100%;
-    margin-left: 0;
-  }
-
   .risk-filter-form {
     padding: 1rem;
   }
@@ -1999,5 +1898,4 @@ body.dark-theme .heatmap-status.is-error {
     flex: 1 1 auto;
   }
 }
-
 

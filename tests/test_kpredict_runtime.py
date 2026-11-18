@@ -15,7 +15,6 @@ from kpredict_data import (
     disease_evidence_summary,
     manhattan_data,
     panel_finding_counts_by_disease,
-    population_gene_architecture,
     rare_findings,
     rare_findings_overview,
     risk_profile,
@@ -271,33 +270,6 @@ class KPredictRuntimeTests(unittest.TestCase):
         self.assertEqual(
             payload["normalization"],
             "contribution / sqrt(population variance)",
-        )
-
-    def test_population_gene_architecture_compares_within_disease_variance_percentiles(self):
-        payload = population_gene_architecture(
-            self.root,
-            percentile_threshold=50,
-            min_diseases=2,
-        )
-
-        self.assertTrue(payload["prototype"])
-        self.assertEqual(payload["genes"], ["GENE1"])
-        self.assertEqual(
-            [disease["slug"] for disease in payload["diseases"]],
-            ["breast_cancer", "type2_diabetes"],
-        )
-        self.assertAlmostEqual(payload["values"][0][0], 100.0)
-        self.assertAlmostEqual(payload["values"][0][1], 50.0)
-        self.assertAlmostEqual(payload["raw_variances"][0][0], 0.5)
-        self.assertAlmostEqual(payload["raw_variances"][0][1], 0.25)
-        self.assertEqual(
-            payload["gene_metrics"][0]["qualifying_disease_count"],
-            2,
-        )
-        self.assertEqual(payload["selection"]["candidate_count"], 1)
-        self.assertEqual(
-            payload["metric"],
-            "within-disease percentile of population gene-contribution variance",
         )
 
     def test_panel_finding_counts_are_grouped_by_validated_disease_assignment(self):

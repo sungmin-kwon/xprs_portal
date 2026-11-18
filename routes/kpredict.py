@@ -9,7 +9,6 @@ from kpredict_data import (
     cohort_analysis,
     cross_disease_gene_heatmap,
     disease_evidence_summary,
-    population_gene_architecture,
     rare_findings,
     rare_findings_overview,
     risk_filtered_individuals,
@@ -121,25 +120,6 @@ def get_cross_disease_gene_heatmap(
             root,
             individual_id,
             top_fraction=top_fraction,
-            min_diseases=min_diseases,
-            max_genes=max_genes,
-        )
-    except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-
-
-@router.get("/api/kpredict/population-gene-architecture", include_in_schema=False)
-def get_population_gene_architecture(
-    request: Request,
-    percentile_threshold: float = Query(default=99.0, ge=90.0, le=99.9),
-    min_diseases: int = Query(default=3, ge=2, le=6),
-    max_genes: int = Query(default=24, ge=8, le=40),
-):
-    root = require_kpredict_access(request)
-    try:
-        return population_gene_architecture(
-            root,
-            percentile_threshold=percentile_threshold,
             min_diseases=min_diseases,
             max_genes=max_genes,
         )
