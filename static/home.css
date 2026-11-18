@@ -241,6 +241,11 @@ select {
   white-space: nowrap;
 }
 
+.topbar-button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
 .topbar-link:hover,
 .about-link:hover {
   background: var(--panel-soft);
@@ -581,7 +586,12 @@ body.dark-theme .risk-tint-key__bar {
   background: var(--panel-soft);
 }
 
+.risk-tint-key.is-placeholder {
+  visibility: hidden;
+}
+
 .overview-view-tabs {
+  flex: 0 0 auto;
   display: inline-flex;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1983,14 +1993,4 @@ body.dark-theme .heatmap-status.is-error {
   }
 }
 
-@container (max-width: 390px) {
-  #cross-disease-heatmap-btn > span:not(.material-symbols-outlined) {
-    display: none;
-  }
 
-  #cross-disease-heatmap-btn {
-    width: 40px;
-    flex: 0 0 40px;
-    padding: 0;
-  }
-}

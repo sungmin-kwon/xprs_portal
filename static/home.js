@@ -1311,9 +1311,8 @@ function isGeneHeatmapOpen() {
 function syncCrossDiseaseHeatmapButton() {
   const button = $("cross-disease-heatmap-btn");
   if (!button) return;
-  // The heatmap compares diseases, so it is hidden while the Traits view is shown.
-  const traitsShown = activeOverviewView === "traits" && traitsAvailable;
-  button.hidden = selectedCohortSlug !== "kpredict" || !selectedIndividualId || traitsShown;
+  // Top-bar action: shown in both overview views so the bar does not shift.
+  button.hidden = selectedCohortSlug !== "kpredict" || !selectedIndividualId;
 }
 
 function localizedHeatmapDiseaseName(disease) {
@@ -1941,8 +1940,13 @@ function syncOverviewViewTabs() {
   const traitPanel = $("trait-overview");
   if (grid) grid.hidden = view === "traits";
   if (traitPanel) traitPanel.hidden = view !== "traits";
+  // Keep the colour key's space in the Traits view (invisible, not removed) so
+  // the header wraps the same way and the switch stays in place.
   const tintKey = document.querySelector(".risk-tint-key");
-  if (tintKey) tintKey.hidden = view === "traits";
+  if (tintKey) {
+    tintKey.classList.toggle("is-placeholder", view === "traits");
+    tintKey.setAttribute("aria-hidden", String(view === "traits"));
+  }
   if (view === "traits") setText("disease-grid-title", t("traitOverviewTitle"));
   syncCrossDiseaseHeatmapButton();
 }
