@@ -202,19 +202,20 @@ const UI_TEXT = {
     rareEvidenceWithoutPrsHelp: "This supplied disease-panel finding is separate from the unavailable PRS model and does not provide a PRS percentile.",
     geneHeatmap: "Gene Heatmap",
     exploratoryAnalysis: "Cross-Disease Comparison",
-    geneHeatmapTitle: "Gene Contributions Across Diseases",
+    geneHeatmapTitle: "Genes Where This Individual Stands Out Across Diseases",
     closeGeneHeatmap: "Close gene comparison",
     geneHeatmapLoading: "Comparing gene contributions across diseases...",
     geneHeatmapFailed: "The gene contribution comparison could not be loaded.",
     geneHeatmapPlotlyUnavailable: "The gene heatmap could not be displayed.",
-    geneHeatmapScale: "Standardized gene contribution (SD)",
-    geneHeatmapMissingValue: "No standardized contribution available",
+    geneHeatmapScale: "Difference from K-PREDICT average (SD)",
+    geneHeatmapMissingValue: "No value for this gene in this disease model",
+    geneHeatmapLinkedGenes: "Also covers (shares SNPs)",
     geneHeatmapSubtitle: (pid, count) => `${pid} · ${count} disease models included`,
-    geneHeatmapMethod: (fraction, minimum, maximum, candidates, unavailable) => {
+    geneHeatmapMethod: (fraction, minimum, shown, loci, unavailable) => {
       const excluded = unavailable
-        ? ` ${unavailable} disease model${unavailable === 1 ? " is" : "s are"} not applicable to this individual and ${unavailable === 1 ? "is" : "are"} excluded.`
+        ? ` ${unavailable} disease model${unavailable === 1 ? " does" : "s do"} not apply to this individual.`
         : "";
-      return `Genes are included when their absolute standardized contribution ranks in the top ${fraction}% for at least ${minimum} diseases. The chart shows up to ${maximum} of ${candidates} qualifying genes, prioritizing genes found across more diseases and those with larger contributions. Each cell is the gene contribution divided by the square root of its population variance. Positive values raise the PRS; negative values lower it. To keep extreme values from flattening the rest of the chart, the color scale is capped at the 95th percentile of absolute values; hover over a cell for its exact value. Gray cells indicate that no standardized contribution was available for that gene–disease pair; they are not zeros.${excluded} This is an exploratory comparison of shared contribution patterns, not evidence of biological interaction, and it does not combine diseases into a single risk score.`;
+      return `Each row is a gene that is among this individual's most unusual (top ${fraction}% of genes) in at least ${minimum} disease models; ${shown} of ${loci} such regions are shown. Colour is the difference from the K-PREDICT average in SD: red raises that disease's PRS, blue lowers it. Genes sharing SNPs are merged into one row (+N). Why it matters: one region standing out in several models means a single part of this individual's genome is shifting several disease scores at once. Grey cells have no value. This is not a combined risk score or evidence of a biological mechanism.${excluded}`;
     },
   },
   ko: {
@@ -351,17 +352,18 @@ const UI_TEXT = {
     rareEvidenceWithoutPrsHelp: "원자료의 질환 패널 소견은 적용할 수 없는 PRS 모델과 별개의 근거이며 PRS 백분위를 제공하지 않습니다.",
     geneHeatmap: "유전자 히트맵",
     exploratoryAnalysis: "질환 간 비교",
-    geneHeatmapTitle: "질환별 유전자 기여도 비교",
+    geneHeatmapTitle: "여러 질환에서 이 개인이 두드러지는 유전자",
     closeGeneHeatmap: "유전자 기여도 비교 닫기",
     geneHeatmapLoading: "질환별 유전자 기여도를 비교하는 중...",
     geneHeatmapFailed: "유전자 기여도 비교 결과를 불러오지 못했습니다.",
     geneHeatmapPlotlyUnavailable: "유전자 히트맵을 표시할 수 없습니다.",
-    geneHeatmapScale: "표준화 유전자 기여도 (표준편차)",
-    geneHeatmapMissingValue: "표준화 기여도 값 없음",
+    geneHeatmapScale: "K-PREDICT 평균과의 차이 (표준편차)",
+    geneHeatmapMissingValue: "이 질환 모델에 해당 유전자 값 없음",
+    geneHeatmapLinkedGenes: "함께 포함된 유전자 (SNP 공유)",
     geneHeatmapSubtitle: (pid, count) => `${pid} · 분석 대상 질환 모델 ${count}개`,
-    geneHeatmapMethod: (fraction, minimum, maximum, candidates, unavailable) => {
-      const excluded = unavailable ? ` 이 개인에게 적용되지 않는 질환 모델 ${unavailable}개는 분석에서 제외했습니다.` : "";
-      return `표준화 기여도의 절댓값이 최소 ${minimum}개 질환에서 상위 ${fraction}%에 드는 유전자를 포함합니다. 조건을 충족한 ${candidates}개 유전자 중 여러 질환에서 공통으로 나타나고 기여도가 큰 순서로 최대 ${maximum}개를 표시합니다. 각 셀은 유전자 기여도를 집단 분산의 제곱근으로 나눈 값입니다. 양수는 PRS를 높이고 음수는 낮춥니다. 극단값 때문에 나머지 패턴이 흐려지지 않도록 색상 범위를 절댓값의 95백분위수에서 제한했으며, 정확한 값은 마우스를 올려 확인할 수 있습니다. 회색 셀은 해당 유전자-질환 조합의 표준화 기여도 값이 없음을 뜻하며 0으로 해석해서는 안 됩니다.${excluded} 이 결과는 질환 간 공통 기여 패턴을 탐색하기 위한 것으로, 생물학적 상호작용을 입증하지 않으며 여러 질환을 하나의 위험 점수로 합산하지 않습니다.`;
+    geneHeatmapMethod: (fraction, minimum, shown, loci, unavailable) => {
+      const excluded = unavailable ? ` 이 개인에게 적용되지 않는 질환 모델 ${unavailable}개는 제외했습니다.` : "";
+      return `각 행은 최소 ${minimum}개 질환 모델에서 이 개인의 값이 가장 특이한 유전자(상위 ${fraction}%)이며, 해당 영역 ${loci}개 중 ${shown}개를 표시합니다. 색은 K-PREDICT 평균과의 차이(표준편차)로, 빨간색은 해당 질환의 PRS를 높이고 파란색은 낮춥니다. SNP를 공유하는 유전자는 한 행으로 합쳤습니다(+N). 의미: 한 영역이 여러 모델에서 두드러진다면, 이 개인 유전체의 한 부분이 여러 질환 점수를 동시에 움직이고 있다는 뜻입니다. 회색 칸은 값이 없음을 뜻합니다. 여러 질환을 합친 위험 점수나 생물학적 기전의 근거는 아닙니다.${excluded}`;
     },
   },
 };
@@ -1298,7 +1300,15 @@ function renderGeneHeatmap(data) {
   const geneLabels = genes.map((gene, index) => {
     const metric = geneMetrics[index] || {};
     const support = Number(metric.qualifying_disease_count) || 0;
-    return support ? `${gene} · ${support}/${diseases.length}` : gene;
+    const linked = Array.isArray(metric.linked_genes) ? metric.linked_genes.length : 0;
+    const label = linked ? `${gene} (+${linked})` : gene;
+    return support ? `${label} · ${support}/${diseases.length}` : label;
+  });
+  const linkedText = genes.map((_gene, index) => {
+    const linked = (geneMetrics[index] || {}).linked_genes;
+    return Array.isArray(linked) && linked.length
+      ? `<br>${escapeHtml(t("geneHeatmapLinkedGenes"))}: ${linked.map(escapeHtml).join(", ")}`
+      : "";
   });
   const darkTheme = currentTheme === "dark";
   const colorLimit = Math.max(2, Number(data.color_limit) || 2);
@@ -1311,8 +1321,8 @@ function renderGeneHeatmap(data) {
     "geneHeatmapMethod",
     ((Number(selection.top_fraction) || 0.0025) * 100).toFixed(2),
     Number(selection.minimum_qualifying_diseases) || 3,
-    Number(selection.maximum_genes) || 20,
-    Number(selection.candidate_count) || genes.length,
+    genes.length,
+    Number(selection.locus_count) || genes.length,
     unavailable,
   );
   note.hidden = false;
@@ -1321,10 +1331,10 @@ function renderGeneHeatmap(data) {
   const missingValues = values.map((row) => row.map((value) => (
     value === null || value === undefined || !Number.isFinite(Number(value)) ? 1 : null
   )));
-  const hoverLabels = values.map((row) => row.map((value) => (
-    value === null || value === undefined || !Number.isFinite(Number(value))
+  const hoverLabels = values.map((row, rowIndex) => row.map((value) => (
+    (value === null || value === undefined || !Number.isFinite(Number(value))
       ? t("geneHeatmapMissingValue")
-      : `${t("geneHeatmapScale")}: ${Number(value).toFixed(2)}`
+      : `${t("geneHeatmapScale")}: ${Number(value).toFixed(2)}`) + linkedText[rowIndex]
   )));
   const hasMissingValues = missingValues.some((row) => row.some((value) => value === 1));
   const missingTrace = {

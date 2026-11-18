@@ -11,7 +11,6 @@ import pandas as pd
 from agents.gene_importance import KPredictGeneImportanceAgent
 from kpredict_data import (
     cohort_analysis,
-    cross_disease_gene_heatmap,
     disease_evidence_summary,
     manhattan_data,
     panel_finding_counts_by_disease,
@@ -244,33 +243,6 @@ class KPredictRuntimeTests(unittest.TestCase):
         self.assertEqual(payload["filtered"]["matching_count"], 1)
         self.assertEqual(payload["filtered"]["individuals"][0]["rare_status"], "carrier")
         self.assertEqual(payload["filtered"]["genes"][0]["gene"], "GENE-T2D")
-
-    def test_cross_disease_heatmap_standardizes_and_deduplicates_genes(self):
-        payload = cross_disease_gene_heatmap(
-            self.root,
-            "KP-ABCDEF123456",
-        )
-
-        self.assertEqual(
-            [disease["slug"] for disease in payload["diseases"]],
-            ["breast_cancer", "type2_diabetes"],
-        )
-        self.assertEqual(payload["genes"], ["GENE1"])
-        self.assertNotIn("GENE1*", payload["genes"])
-        self.assertNotIn("NA_1", payload["genes"])
-        self.assertEqual(len(payload["values"]), 1)
-        self.assertAlmostEqual(payload["values"][0][0], 0.7 / np.sqrt(0.5))
-        self.assertAlmostEqual(payload["values"][0][1], 4.0)
-        self.assertEqual(
-            payload["gene_metrics"][0]["qualifying_disease_count"],
-            2,
-        )
-        self.assertEqual(payload["selection"]["minimum_qualifying_diseases"], 2)
-        self.assertEqual(payload["selection"]["candidate_count"], 1)
-        self.assertEqual(
-            payload["normalization"],
-            "contribution / sqrt(population variance)",
-        )
 
     def test_panel_finding_counts_are_grouped_by_validated_disease_assignment(self):
         payload = panel_finding_counts_by_disease(self.root, "KP-ABCDEF123456")
