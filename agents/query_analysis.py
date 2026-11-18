@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
@@ -8,6 +9,9 @@ from config import GENERIC_PHENOTYPES, PHENOTYPE_ALIASES
 from llm_utils import LLMAgent
 from phenotype_utils import infer_phenotypes_from_text, normalize_phenotype_values
 from text_utils import unique_preserving_order
+
+
+logger = logging.getLogger(__name__)
 
 
 class QueryAnalysisAgent:
@@ -80,10 +84,17 @@ Question:
 {question}
 """.strip()
 
-        parsed = self._extract_json(self.llm.chat([
-            {"role": "system", "content": "You are a precise biomedical query analysis assistant. Output JSON only."},
-            {"role": "user", "content": prompt},
-        ]))
+        try:
+            parsed = self._extract_json(self.llm.chat([
+                {"role": "system", "content": "You are a precise biomedical query analysis assistant. Output JSON only."},
+                {"role": "user", "content": prompt},
+            ]))
+        except Exception:
+            # Query analysis only refines retrieval. If the model is unavailable,
+            # fall back to the deterministic gene/phenotype hits above and the
+            # original question rather than failing the whole chat request.
+            logger.warning("[QUERY_ANALYSIS] LLM analysis failed; using deterministic fallback", exc_info=True)
+            parsed = {}
 
         llm_genes = [g for g in parsed.get("genes", []) if g in available_genes]
         raw_llm_phenotypes = [

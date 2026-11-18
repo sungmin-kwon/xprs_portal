@@ -63,6 +63,76 @@ class OpenRouterPrivacyTests(unittest.TestCase):
 
         self.assertEqual(len(completions.requests), 3)
 
+    def test_empty_completion_error_reports_provider_error_without_raw_payload(self):
+        # OpenRouter reports upstream failures as an `error` object inside an
+        # HTTP 200 body; the OpenAI SDK exposes unknown fields via model_extra.
+        empty = SimpleNamespace(
+            choices=None,
+            model_extra={
+                "error": {
+                    "code": 502,
+                    "message": "Upstream provider returned an error",
+                    "metadata": {"provider_name": "ExampleProvider", "raw": "PRIVATE ECHO"},
+                },
+            },
+        )
+        completions = SequenceCompletions([empty, empty, empty])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+        agent = LLMAgent(provider="openrouter", client=client, model="test/model")
+
+        with self.assertRaises(RuntimeError) as raised:
+            agent.chat([{"role": "user", "content": "hello"}])
+
+        message = str(raised.exception)
+        self.assertIn("code=502", message)
+        self.assertIn("provider=ExampleProvider", message)
+        self.assertNotIn("PRIVATE ECHO", message)
+
+    def test_fallback_model_is_tried_once_with_the_same_privacy_routing(self):
+        ok = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="from fallback"))])
+        completions = SequenceCompletions([
+            SimpleNamespace(choices=None),
+            SimpleNamespace(choices=None),
+            SimpleNamespace(choices=None),
+            ok,
+        ])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+        agent = LLMAgent(
+            provider="openrouter",
+            client=client,
+            model="primary/model",
+            fallback_model="backup/model",
+        )
+
+        with self.assertLogs("llm_utils", level="WARNING"):
+            self.assertEqual(agent.chat([{"role": "user", "content": "hello"}]), "from fallback")
+
+        self.assertEqual([r["model"] for r in completions.requests],
+                         ["primary/model"] * 3 + ["backup/model"])
+        fallback_provider = completions.requests[-1]["extra_body"]["provider"]
+        self.assertEqual(fallback_provider, {"zdr": True, "data_collection": "deny"})
+
+    def test_failed_fallback_reports_both_models(self):
+        empty = SimpleNamespace(choices=None)
+        completions = SequenceCompletions([empty, empty, empty, empty])
+        client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+        agent = LLMAgent(provider="openrouter", client=client, model="primary/model", fallback_model="backup/model")
+
+        with self.assertRaisesRegex(RuntimeError, "fallback model backup/model also failed"):
+            agent.chat([{"role": "user", "content": "hello"}])
+        self.assertEqual(len(completions.requests), 4)
+
+    def test_fallback_model_must_be_on_the_generation_allowlist(self):
+        from runtime_agents import generation_fallback_model
+
+        with patch.dict("os.environ", {"LLM_FALLBACK_MODEL": "anthropic/claude-opus-5.5"}):
+            self.assertEqual(generation_fallback_model(), "anthropic/claude-opus-5.5")
+        with patch.dict("os.environ", {"LLM_FALLBACK_MODEL": "someone/unvetted-model"}):
+            with self.assertLogs("runtime_agents", level="WARNING"):
+                self.assertIsNone(generation_fallback_model())
+        with patch.dict("os.environ", {"LLM_FALLBACK_MODEL": ""}):
+            self.assertIsNone(generation_fallback_model())
+
     def test_every_openrouter_completion_enforces_zdr_and_denies_collection(self):
         completions = RecordingCompletions()
         client = SimpleNamespace(chat=SimpleNamespace(completions=completions))

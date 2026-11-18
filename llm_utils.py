@@ -123,10 +123,14 @@ class LLMAgent:
         temperature: float = 0.2,
         ollama_url: str = "http://localhost:11434",
         privacy_mode: str | None = None,
+        fallback_model: str | None = None,
     ):
         self.provider = provider
         self.client = client
         self.model = model
+        # Second allowlisted model, tried once when the primary keeps returning
+        # empty completions (e.g. its only ZDR-eligible endpoint is degraded).
+        self.fallback_model = fallback_model if fallback_model and fallback_model != model else None
         self.temperature = temperature
         self.ollama_url = ollama_url
         self.privacy_mode = privacy_mode
@@ -140,11 +144,39 @@ class LLMAgent:
         ]
 
     @staticmethod
+    def _empty_completion_details(response: Any) -> str:
+        """Summarize why OpenRouter returned no choices, for logs.
+
+        OpenRouter reports upstream failures inside an HTTP 200 body as an
+        ``error`` object. Only the code, a truncated message, and the provider
+        name are kept; ``metadata.raw`` is skipped because it is arbitrary
+        provider output and could echo request content in K-PREDICT mode.
+        """
+        extra = getattr(response, "model_extra", None) or {}
+        error = extra.get("error") or getattr(response, "error", None)
+        provider = extra.get("provider") or getattr(response, "provider", None)
+        details: list[str] = []
+        if isinstance(error, dict):
+            if error.get("code") is not None:
+                details.append(f"code={error['code']}")
+            if error.get("message"):
+                details.append(f"message={str(error['message'])[:200]!r}")
+            metadata = error.get("metadata")
+            if isinstance(metadata, dict) and metadata.get("provider_name"):
+                provider = provider or metadata["provider_name"]
+        if provider:
+            details.append(f"provider={provider}")
+        return f" ({', '.join(details)})" if details else " (no error details in response)"
+
+    @staticmethod
     def _completion_text(response: Any) -> str:
         """Extract one completion with a useful error for malformed providers."""
         choices = getattr(response, "choices", None)
         if not choices:
-            raise RuntimeError("completion response contained no choices")
+            raise RuntimeError(
+                "completion response contained no choices"
+                + LLMAgent._empty_completion_details(response)
+            )
         message = getattr(choices[0], "message", None)
         content = getattr(message, "content", None) if message is not None else None
         if isinstance(content, str) and content.strip():
@@ -201,6 +233,24 @@ class LLMAgent:
                             return self._completion_text(retry_resp)
                         except RuntimeError as retry_error:
                             malformed_error = retry_error
+                    if self.provider == "openrouter" and self.fallback_model:
+                        logger.warning(
+                            "[LLM] model=%s still returned no completion after retries; "
+                            "falling back once to model=%s: %s",
+                            self.model,
+                            self.fallback_model,
+                            malformed_error,
+                        )
+                        fallback_resp = self.client.chat.completions.create(
+                            **{**request_kwargs, "model": self.fallback_model}
+                        )
+                        try:
+                            return self._completion_text(fallback_resp)
+                        except RuntimeError as fallback_error:
+                            raise RuntimeError(
+                                f"{malformed_error}; fallback model {self.fallback_model} also failed: "
+                                f"{fallback_error}"
+                            ) from fallback_error
                     raise malformed_error
             except BadRequestError as e:
                 provider_name = {
@@ -299,6 +349,7 @@ def build_llm_agent(
     client: Optional[Any],
     model: Optional[str],
     privacy_mode: str | None = None,
+    fallback_model: str | None = None,
 ):
     return build_llm_agent_with_temperature(
         provider,
@@ -306,6 +357,7 @@ def build_llm_agent(
         model=model,
         temperature=LLM_TEMPERATURE,
         privacy_mode=privacy_mode,
+        fallback_model=fallback_model,
     )
 
 
@@ -315,6 +367,7 @@ def build_llm_agent_with_temperature(
     model: Optional[str],
     temperature: float | None,
     privacy_mode: str | None = None,
+    fallback_model: str | None = None,
 ):
     if provider == "ollama":
         logger.info("[INIT] LLM Agent: Ollama (Model: %s @ %s)", OLLAMA_MODEL, OLLAMA_BASE_URL)
@@ -346,4 +399,5 @@ def build_llm_agent_with_temperature(
         model=model or OPENROUTER_MODEL,
         temperature=temperature,
         privacy_mode=privacy_mode,
+        fallback_model=fallback_model,
     )

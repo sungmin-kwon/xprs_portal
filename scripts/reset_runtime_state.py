@@ -81,7 +81,7 @@ def main() -> int:
 
     # (label, path). Order is just for readable output.
     targets: list[tuple[str, Path]] = [
-        ("session chat logs", LOG_DIR),
+        ("session chat and server logs", LOG_DIR),
         ("Europe PMC cache", EUROPE_PMC_CACHE_DIR),
         ("Semantic Scholar cache", S2_CACHE_DIR),
         ("ChromaDB vector store", CHROMA_DIR),

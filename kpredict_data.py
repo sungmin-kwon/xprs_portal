@@ -35,6 +35,18 @@ def _genes(root_string: str, disease: str) -> pd.DataFrame:
     return pd.read_parquet(Path(root_string) / "diseases" / disease / "genes.parquet")
 
 
+def applicable_count(root: Path, disease: str) -> int:
+    """Number of individuals the disease model applies to (the percentile reference).
+
+    The supplied percentiles equal each individual's rank among these
+    applicable K-PREDICT individuals (verified 2026-11-11 against the
+    2026-09-17 release: max difference 0.03 percentile points), so this is
+    the reference group a percentile is compared with.
+    """
+    risk = _risk(str(root), disease)
+    return int((risk["applicable"].astype(bool) & risk["percentile"].notna()).sum())
+
+
 def individual_ids(root: Path, disease: str | None = None) -> list[str]:
     diseases = available_diseases(root)
     selected = disease if disease in diseases else next(iter(diseases), None)

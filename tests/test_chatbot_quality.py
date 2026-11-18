@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pandas as pd
@@ -12,7 +13,7 @@ from llm_utils import (
     restore_kpredict_sensitive_values,
     sanitize_kpredict_text,
 )
-from text_utils import infer_output_language
+from text_utils import format_contribution, infer_output_language
 
 
 class ChatbotQualityTests(unittest.TestCase):
@@ -287,6 +288,130 @@ class ChatbotQualityTests(unittest.TestCase):
         self.assertEqual(result["Discussed Genes"], ["KCNQ1"])
         self.assertEqual(result["Generated Answer"], "KCNQ1 has association evidence [1].")
 
+    def test_failed_followup_generation_returns_explicit_failure_not_blank(self):
+        class FakeGeneAgent:
+            default_top_n = 5
+
+            def get_top_genes(self, _pid, top_n=5):
+                return pd.DataFrame({"Gene": ["KCNQ1", "CDKAL1"][:top_n]}), pd.DataFrame()
+
+            def get_bottom_genes(self, _pid, bottom_n=5):
+                return pd.DataFrame({"Gene": ["LOW1"][:bottom_n]})
+
+        class FakeEvidenceAgent:
+            def retrieve_gene_context_for_question(self, *_args, **_kwargs):
+                return [], [], "RAG_MEDCPT_PRIMARY_DISEASE"
+
+        class FailingLLM:
+            model = "test/model"
+
+            def chat(self, *_args, **_kwargs):
+                raise RuntimeError("completion response contained no choices")
+
+        agent = ExplanationAgent(
+            llm=FailingLLM(),
+            gene_agent=FakeGeneAgent(),
+            evidence_agent=FakeEvidenceAgent(),
+            ot_agent=None,
+            conversation_agent=ConversationAgent(),
+            primary_phenotype="type 2 diabetes",
+            disease_display_name="Type 2 Diabetes",
+            minimize_sensitive_context=True,
+        )
+        existing_references = [{"n": 1, "title": "Saved summary paper"}]
+
+        with self.assertLogs("agents.explanation", level="ERROR"):
+            result = agent.answer_followup(
+                "KP-ABCDEF123456",
+                "Does KCNQ1 have direct evidence for type 2 diabetes?",
+                existing_references=existing_references,
+                summary_context={"Model Safe Context": "Saved public gene-evidence summary."},
+                conversation_state={"active_genes": ["KCNQ1"]},
+            )
+
+        self.assertTrue(result["Generated Answer"].strip())
+        self.assertIn("could not be generated", result["Generated Answer"])
+        self.assertFalse(result["Store In History"])
+        self.assertEqual(result["References"], existing_references)
+
+    def test_interpretation_question_is_not_refused_but_personal_action_is(self):
+        allowed = [
+            "The measured value doesn't match the PRS. Which should I trust?",  # C05
+            "Which result should I believe?",
+        ]
+        refused = ["Should I get tested for breast cancer?", "Should I take tamoxifen?"]
+        for question in allowed:
+            with self.subTest(question=question):
+                self.assertEqual(ConversationAgent.classify_turn_fallback(question, []), "biomedical_followup")
+        for question in refused:
+            with self.subTest(question=question):
+                self.assertEqual(ConversationAgent.classify_turn_fallback(question, []), "medical_advice_seeking")
+
+    def test_decline_text_is_not_addressed_to_the_patient(self):
+        from text_utils import ui_label
+
+        english = ui_label("en", "medical_advice_decline")
+        korean = ui_label("ko", "medical_advice_decline")
+        self.assertNotIn("your own", english)
+        self.assertIn("treating clinician", english)
+        self.assertNotIn("본인의", korean)
+        self.assertIn("담당 임상의", korean)
+
+    def test_applicable_count_is_the_percentile_reference_group(self):
+        import kpredict_data
+
+        risk = pd.DataFrame({
+            "applicable": [True, True, False, True],
+            "percentile": [10.0, 90.0, None, None],
+        })
+        with patch.object(kpredict_data, "_risk", return_value=risk):
+            self.assertEqual(kpredict_data.applicable_count("/unused", "breast_cancer"), 2)
+
+    def test_small_contributions_are_not_rounded_to_zero(self):
+        # Clinician feedback #11: risk-lowering genes displayed as 0.00.
+        cases = {
+            0.123456: "0.123",
+            -0.0104: "-0.0104",
+            -0.009876: "-0.00988",
+            0.000321: "3.21e-4",
+            -3.2e-05: "-3.20e-5",
+            1.5: "1.5",
+            0.0: "0",
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(format_contribution(value), expected)
+
+    def test_population_rank_note_matches_each_cohorts_ranking_basis(self):
+        from agents.gene_importance import GeneImportanceAgent, KPredictGeneImportanceAgent
+
+        self.assertEqual(GeneImportanceAgent.population_rank_basis, "mean")
+        self.assertEqual(KPredictGeneImportanceAgent.population_rank_basis, "variance")
+
+        agent = ExplanationAgent.__new__(ExplanationAgent)
+        agent.gene_agent = type("Gene", (), {"population_rank_basis": "variance"})()
+        note = agent._population_rank_note("en")
+        self.assertIn("varies across the reference cohort", note)
+        self.assertIn("not this person's rank", note)
+        self.assertIn("분산", agent._population_rank_note("ko"))
+
+        agent.gene_agent = type("Gene", (), {"population_rank_basis": "mean"})()
+        self.assertIn("average contribution", agent._population_rank_note("en"))
+
+        agent.gene_agent = object()  # unknown basis: say nothing rather than guess
+        self.assertEqual(agent._population_rank_note("en"), "")
+
+    def test_contribution_displays_use_shared_formatter(self):
+        root = Path(__file__).resolve().parents[1]
+        explanation_source = (root / "agents" / "explanation.py").read_text(encoding="utf-8")
+        pdf_source = (root / "pdf_report.py").read_text(encoding="utf-8")
+        dashboard_source = (root / "static" / "dashboard.js").read_text(encoding="utf-8")
+
+        self.assertNotIn("contribution:.2f", explanation_source)
+        self.assertNotIn("individual_contribution']):.2f", explanation_source)
+        self.assertNotIn("individual_contribution')):.2f", pdf_source)
+        self.assertIn("formatContribution(score)", dashboard_source)
+
     def test_numerical_consistency_matrix(self):
         agent = ExplanationAgent.__new__(ExplanationAgent)
         agent.primary_phenotype = "type 2 diabetes"
@@ -305,7 +430,7 @@ class ChatbotQualityTests(unittest.TestCase):
         self.assertIn("higher than about 50.7% of the cohort", summary)
         self.assertNotIn("0.507", summary)
         self.assertIn("contribution 1.23", summary)
-        self.assertIn("contribution -0.99", summary)
+        self.assertIn("contribution -0.987", summary)
         self.assertEqual(payload["risk_overview"]["percentile"], 50.74)
         self.assertEqual(payload["risk_overview"]["prs_value"], 157.139)
         self.assertEqual(payload["gene_rankings"]["top"], top_rows)

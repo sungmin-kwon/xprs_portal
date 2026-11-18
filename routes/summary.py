@@ -122,7 +122,7 @@ def summary(req: SummaryRequest, request: Request):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logging.error("Failed to write summary session log: %s", e)
+        logging.exception("Summary request failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 

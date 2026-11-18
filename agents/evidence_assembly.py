@@ -40,13 +40,20 @@ from reference_utils import (
     parse_metadata_list,
     publication_dedup_key,
 )
-from text_utils import emit_progress, emit_timing, is_cancer_phenotype, unique_preserving_order
+from text_utils import (
+    emit_progress,
+    emit_timing,
+    is_cancer_phenotype,
+    is_unannotated_region,
+    unique_preserving_order,
+)
 
 logger = logging.getLogger(__name__)
 
 PRIMARY_INTENT = "primary_disease"
 OTHER_INTENT = "other_disease"
 NEUTRAL_INTENT = "disease_neutral"
+UNANNOTATED_REGION_MODE = "UNANNOTATED_REGION_NO_LITERATURE"
 VALID_DISEASE_INTENTS = {PRIMARY_INTENT, OTHER_INTENT, NEUTRAL_INTENT}
 NAMED_PHENOTYPE_LIMIT = max(1, int(os.getenv("S2_NAMED_PHENOTYPE_LIMIT", "10")))
 MINIMUM_INTERACTIVE_ELIGIBLE_DOCUMENTS = (
@@ -1155,6 +1162,9 @@ class EvidenceAssemblyAgent:
         top_k: int = 10,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> tuple[list[str], list[dict[str, Any]], str]:
+        if is_unannotated_region(gene):
+            # No gene symbol to search for; see text_utils.is_unannotated_region.
+            return [], [], UNANNOTATED_REGION_MODE
         emit_progress(progress_callback, f'Gathering literature context for "{gene}"')
         context = (
             self.enrichment_queue.interactive_retrieval()
@@ -1182,6 +1192,8 @@ class EvidenceAssemblyAgent:
         disease_intent: str | None = None,
         progress_callback: Optional[Callable[[str], None]] = None,
     ) -> tuple[list[str], list[dict[str, Any]], str]:
+        if is_unannotated_region(gene):
+            return [], [], UNANNOTATED_REGION_MODE
         emit_progress(progress_callback, f'Retrieving question-specific evidence for "{gene}"')
         intent, targets, broad_other, broad_cancers_only = self._resolve_disease_intent(
             question,

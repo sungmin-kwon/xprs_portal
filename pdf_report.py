@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from text_utils import ui_label
+from text_utils import format_contribution, ui_label
 
 
 def _decode_image_data(image_data: str | None) -> BytesIO | None:
@@ -609,7 +609,7 @@ def build_pdf_report(
         for row in rows:
             table_rows.append([
                 p(str(row.get("gene") or "—"), table_body_style),
-                p(f"{float(row.get('individual_contribution')):.2f}" if row.get("individual_contribution") is not None else "—", table_body_style),
+                p(format_contribution(row.get('individual_contribution')) if row.get("individual_contribution") is not None else "—", table_body_style),
                 p(str(row.get("population_rank")) if row.get("population_rank") is not None else "—", table_body_style),
             ])
         table = Table(table_rows, repeatRows=1, colWidths=[1.5 * inch, 2.0 * inch, 1.6 * inch], hAlign="LEFT")
@@ -638,6 +638,8 @@ def build_pdf_report(
     )
     if not top_table_added and not bottom_table_added:
         story.extend(technical_heading_flowables)
+    elif report.get("population_rank_note"):
+        story.append(p(str(report["population_rank_note"]), small_style))
 
     current_gene_group = None
     for section in report.get("gene_sections") or []:

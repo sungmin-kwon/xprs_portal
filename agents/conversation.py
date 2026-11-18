@@ -69,7 +69,9 @@ class ConversationAgent:
     # Deliberately conservative: only catch unambiguous first-person, action-seeking phrasing.
     # General/research questions like "what does TP53 do" must not match these.
     MEDICAL_ADVICE_FALLBACK_PATTERNS = [
-        re.compile(r"\bshould\s+i\b", re.I),
+        # "Which should I trust/believe?" asks how to interpret evidence (C05), not
+        # what the user should personally do.
+        re.compile(r"\bshould\s+i\b(?!\s+(?:trust|believe|rely\s+on|interpret|read|understand|compare|weigh)\b)", re.I),
         re.compile(r"\b(do|did|will|am|was)\s+i\s+(have|get|develop|need|require|qualify|risk)\b", re.I),
         re.compile(r"\bdoes\s+this\s+mean\s+i\s+(?:have|will|get|develop|need)\b", re.I),
         re.compile(
@@ -415,6 +417,7 @@ Rules:
     * "What treatments exist for breast cancer?" (general, not personal)
     * "What does my PRS value mean as a statistical signal?" (interpretation of displayed value)
     * "Why is this gene in the top 5?"
+    * "The measured value doesn't match the PRS. Which should I trust?" (interpreting two kinds of evidence)
 - If the user explicitly names genes, use those genes.
 - If the user refers to prior genes indirectly, use the currently active genes from state.
 - If the user is clarifying which genes they meant, preserve the prior question's intent but replace the active genes.
