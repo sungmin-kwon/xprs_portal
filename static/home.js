@@ -29,10 +29,10 @@ let traitOverviewData = null;
 let traitOverviewRequestId = 0;
 let activeOverviewView = "diseases";
 let traitsAvailable = false;
-// Groups opened by default: the most familiar panels; the rest show their
-// most extreme trait in the collapsed header.
-const DEFAULT_OPEN_TRAIT_GROUPS = ["lipids", "glucose", "blood_pressure", "body_size"];
-const openTraitGroups = new Set(DEFAULT_OPEN_TRAIT_GROUPS);
+// All trait groups start open; a group the user collapses shows its most
+// extreme trait in the header. (If startup proves too long, collapse by
+// default here instead.)
+const collapsedTraitGroups = new Set();
 const OVERVIEW_VIEW_PREFERENCE_KEY = "xprs.overview_view";
 // Neutral flag for the tails; not a clinical threshold.
 const TRAIT_TAIL_PERCENT = 5;
@@ -1896,7 +1896,7 @@ function renderTraitOverview(data) {
     return;
   }
   const groups = data.groups.map((group) => {
-    const open = openTraitGroups.has(group.key);
+    const open = !collapsedTraitGroups.has(group.key);
     const rows = open
       ? `<div class="trait-rows" role="list">${group.traits.map(traitRowHtml).join("")}</div>`
       : "";
@@ -2137,8 +2137,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     const toggle = event.target.closest(".trait-group-toggle");
     if (!toggle) return;
     const key = toggle.dataset.traitGroup;
-    if (openTraitGroups.has(key)) openTraitGroups.delete(key);
-    else openTraitGroups.add(key);
+    if (collapsedTraitGroups.has(key)) collapsedTraitGroups.delete(key);
+    else collapsedTraitGroups.add(key);
     renderTraitOverview(traitOverviewData);
   });
 
