@@ -12,7 +12,7 @@
       "reason": "Name the reference group; the clinician asked for it to be specified (feedback #10)."
     },
     "D03": {
-      "must_include_any": ["absolute", "lifetime"],
+      "must_include_any": ["absolute", "lifetime", "does not include an estimate", "does not include a risk"],
       "reason": "The report has no absolute risk; the answer must say so rather than estimate one (feedback #12)."
     },
     "D06": {
@@ -20,7 +20,7 @@
       "reason": "False premise: the report has no confidence interval (11 Nov replay)."
     },
     "D09": {
-      "must_include_any": ["does not include a follow-up badge", "no follow-up badge"],
+      "must_include_any": ["does not include a follow-up badge", "does not include follow-up badges", "no follow-up badge", "no badge"],
       "reason": "False premise: the report has no Follow-up badge (feedback #13; 11 Nov replay)."
     },
     "D12": {
