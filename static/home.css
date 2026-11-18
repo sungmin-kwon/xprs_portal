@@ -692,76 +692,6 @@ body.dark-theme .risk-tint-key__bar {
   color: var(--faint);
 }
 
-.rare-overview-summary__variants {
-  margin-top: 0.2rem;
-  color: var(--faint);
-  font-size: 0.69rem;
-  font-weight: 650;
-}
-
-.rare-summary-help {
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.rare-summary-help:hover,
-.rare-summary-help:focus-visible,
-.rare-summary-help[aria-expanded="true"] {
-  color: var(--primary);
-  background: rgba(39, 96, 157, 0.1);
-  outline: none;
-}
-
-.rare-summary-help .material-symbols-outlined {
-  font-size: 17px;
-  font-variation-settings: "FILL" 0, "wght" 500, "GRAD" 0, "opsz" 20;
-}
-
-.rare-summary-tooltip {
-  position: fixed;
-  z-index: 1200;
-  width: min(280px, calc(100vw - 24px));
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--ink);
-  background: var(--panel);
-  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.24);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.5;
-  text-align: left;
-}
-
-.rare-summary-tooltip::before {
-  content: "";
-  position: absolute;
-  left: var(--rare-tooltip-arrow-left, 50%);
-  top: -6px;
-  width: 10px;
-  height: 10px;
-  border-top: 1px solid var(--border);
-  border-left: 1px solid var(--border);
-  background: var(--panel);
-  transform: translateX(-50%) rotate(45deg);
-}
-
-.rare-summary-tooltip.is-above::before {
-  top: auto;
-  bottom: -6px;
-  transform: translateX(-50%) rotate(225deg);
-}
-
 .rare-overview-content {
   flex: 1;
   min-height: 0;
@@ -810,6 +740,26 @@ body.dark-theme .risk-tint-key__bar {
   font-size: 0.94rem;
   font-weight: 850;
   letter-spacing: 0.01em;
+}
+
+.rare-overview-item__count {
+  color: var(--faint);
+  font-size: 0.7rem;
+  font-weight: 750;
+}
+
+/* Gene with several different variants: one section per variant. */
+.rare-overview-variant {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.rare-overview-variant__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
 }
 
 .rare-call-badge {

@@ -336,19 +336,27 @@ class UiContractTests(ContractTestCase):
         self.assertIn("rareOverviewCarrierGenes", script)
         self.assertIn('item.call === "alert" && item.gene', script)
         self.assertIn('item.call === "carrier" && item.gene', script)
-        self.assertIn("rareAlertHelp", script)
-        self.assertIn("rareCarrierHelp", script)
         self.assertNotIn("rareOverviewNote", script)
         self.assertNotIn("rare-overview-footnote", html)
         self.assertNotIn(".rare-overview-footnote", css)
-        self.assertIn('id="rare-summary-tooltip"', html)
-        self.assertIn('aria-expanded="false"', script)
-        self.assertIn("positionRareSummaryTooltip", script)
-        self.assertIn("button.getBoundingClientRect()", script)
-        self.assertIn('showRareSummaryTooltip(button, { pinned: true })', script)
-        self.assertIn(".rare-summary-tooltip {", css)
-        self.assertIn("position: fixed;", css)
-        self.assertIn(".rare-summary-tooltip.is-above::before", css)
+        # The alert/carrier help icons were removed (the detail drawer explains
+        # both); the summary shows "N genes", or "V variants in N genes" when
+        # someone carries two different variants in one gene.
+        for removed in ("rareAlertHelp", "rareCarrierHelp", "RareSummaryTooltip", "rare-summary-help"):
+            self.assertNotIn(removed, script)
+        self.assertNotIn('id="rare-summary-tooltip"', html)
+        self.assertNotIn(".rare-summary-tooltip", css)
+        self.assertIn("rareOverviewVariantsInGenes", script)
+        self.assertIn("variantCount > geneCount", script)
+        self.assertNotIn("rareOverviewVariantCount", script)
+        # Same-gene variants share one card with a section per variant; each
+        # keeps its own index for the detail drawer. Alert/carrier counts are genes.
+        self.assertIn("const geneGroups = new Map();", script)
+        self.assertIn('class="rare-overview-variant"', script)
+        self.assertIn("rareDetailButton(index)", script)
+        self.assertIn("rareOverviewGeneVariants", script)
+        self.assertIn('gene${genes === 1 ? "" : "s"} with ${findings === 1 ? "an alert" : "alerts"}', script)
+        self.assertIn(".rare-overview-variant {", css)
 
     def _check_private_cohort_access_uses_an_inline_validation_dialog(self):
         html = (STATIC / "home.html").read_text(encoding="utf-8")
