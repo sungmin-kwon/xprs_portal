@@ -4,7 +4,7 @@
 K-PREDICT rare-variant findings supplied with the data handoff, as imported by the XPRS portal (import contract: `docs/private-cohort-onboarding.md`). This note describes the rare-variant track shown in the portal's Rare Variant Analysis panel. It is separate from the polygenic risk score (PRS) and from XPRS gene contributions.
 
 ## Source Scope
-This note explains how the supplied rare-variant findings were defined and labelled, and which fields the portal shows for each finding. It contains no individual-level findings. The chat cannot see any individual's rare-variant findings; they are shown only in the Rare Variant Analysis panel.
+This note explains how the supplied rare-variant findings were defined and labelled, and which fields the portal shows for each finding. The note itself contains no individual-level findings. For a K-PREDICT individual, the chat receives that individual's findings at gene level only (gene, alert or carrier, consequence, ClinVar classification and conditions); exact variants, positions and genotypes are not sent to the language model and are shown in the portal's own findings table and in the Rare Variant Analysis panel.
 
 ## Relationship to the PRS
 - The PRS and XPRS gene contributions summarize many common variants. The rare-variant track lists individual rare variants classified as pathogenic or likely pathogenic.

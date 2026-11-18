@@ -151,11 +151,16 @@ class ExplanationAgent:
         minimize_sensitive_context: bool = False,
         rare_variant_panel_available: bool = False,
         reference_cohort_description: str = "",
+        rare_findings_provider: Optional[Callable[[str], dict[str, Any]]] = None,
     ):
         self.llm = llm
         # True when the dashboard shows a Rare Variant Analysis panel for this
-        # cohort (K-PREDICT). Rare-variant findings are never sent to the LLM.
+        # cohort (K-PREDICT).
         self.rare_variant_panel_available = rare_variant_panel_available
+        # Returns kpredict_data.rare_findings() for an individual (K-PREDICT
+        # only). The model receives these findings at gene level only (see
+        # _rare_findings_model_text); exact variants stay on the server.
+        self.rare_findings_provider = rare_findings_provider
         # Who the percentile compares this individual with (clinician question D02).
         self.reference_cohort_description = reference_cohort_description.strip()
         self.gene_agent = gene_agent
@@ -376,6 +381,8 @@ class ExplanationAgent:
         report_question: bool = False,
         shown_report_values: str = "",
         rare_variant_question: bool = False,
+        rare_findings_text: str = "",
+        rare_findings_shown: bool = False,
     ) -> str:
         output_language = "Korean" if normalize_output_language(language) == "ko" else "English"
         evidence_context = compact_ctx if compact_ctx else "(No evidence context available.)"
@@ -421,9 +428,26 @@ class ExplanationAgent:
             f"Reference cohort for the percentile: {self.reference_cohort_description}\n"
             if self.reference_cohort_description else ""
         )
-        if rare_variant_question:
+        if rare_findings_text:
+            # Clinical feedback #1: the chat should use the individual's rare
+            # findings. They are supplied at gene level only.
+            methodology_instructions += (
+                "This individual's rare-variant findings from the supplied K-PREDICT data are listed under "
+                "'Rare-variant findings' below, at gene level. "
+                + ("The reader sees the exact variants in a table directly above your answer; do not repeat that table. "
+                   if rare_findings_shown else "")
+                + "Base every statement about this individual's rare variants only on that list, and do not name, "
+                "guess or describe exact variants, positions or genotypes. If no finding is listed for this disease's "
+                "panel, say that none is recorded in the supplied data; never say the individual has no pathogenic "
+                "variants, because only supplied ClinVar pathogenic or likely pathogenic findings are recorded. "
+                "Keep rare findings and the PRS as separate lines of evidence and do not combine them into one risk "
+                "estimate. A carrier finding in a recessive gene is not by itself expected to cause disease. "
+                "If a Rare-Variant Track Methods Note is provided, use it to explain how findings were defined, "
+                "assigned to diseases and labelled.\n"
+            )
+        elif rare_variant_question:
             # Clinician testing (D15) showed the model stating that no rare
-            # variant was found, although it never receives rare-variant data.
+            # variant was found when it had no rare-variant data.
             methodology_instructions += (
                 "Rare-variant findings (pathogenic variants, alerts, carrier findings) are not available to you. "
                 "Never state or imply that this individual has, or does not have, any rare or pathogenic variant, "
@@ -459,7 +483,8 @@ class ExplanationAgent:
                             f"{reference_cohort_line}"
                             f"Largest valid reference number: {n_max}\n\n"
                             f"Background:\n{background}\n\n"
-                            f"Evidence context:\n{evidence_context}\n\n"
+                            + (f"Rare-variant findings:\n{rare_findings_text}\n\n" if rare_findings_text else "")
+                            + f"Evidence context:\n{evidence_context}\n\n"
                             f"Reference index:\n{reference_index}\n\n"
                             f"Question: {question}"
                         ),
@@ -892,6 +917,137 @@ class ExplanationAgent:
             if note and len(parts) > 1:
                 parts.append(f"_{note}_")
 
+        return "\n\n".join(parts)
+
+    MAX_RARE_FINDINGS_LISTED = 15
+
+    def _rare_findings_data(self, pid: str) -> dict[str, Any] | None:
+        """The individual's rare findings, or None when unavailable."""
+        if self.rare_findings_provider is None or not pid:
+            return None
+        try:
+            return self.rare_findings_provider(pid)
+        except (ValueError, KeyError, OSError) as exc:
+            logging.warning("Rare findings unavailable for the chat: %s", exc)
+            return None
+
+    @staticmethod
+    def _rare_finding_groups(data: dict[str, Any]) -> tuple[list[tuple[dict, list[str]]], list[tuple[dict, list[str]]]]:
+        """One entry per variant: (finding, other panel labels).
+
+        The data hold one row per panel assignment, so a variant in a gene on
+        two panels (e.g. ATM: breast and pancreatic cancer) appears twice.
+        The first list holds variants linked to the active disease panel; the
+        second holds the rest. Each variant is listed once, with its other
+        panels.
+        """
+        def key(finding: dict) -> str:
+            return str(finding.get("variant") or finding.get("hgvs") or finding.get("finding_id") or finding.get("gene"))
+
+        other_panels: dict[str, list[str]] = {}
+        first_seen: dict[str, dict] = {}
+        for group in data.get("other_disease_groups") or []:
+            label = str(group.get("disease_label") or group.get("disease") or "")
+            for finding in group.get("findings") or []:
+                first_seen.setdefault(key(finding), finding)
+                labels = other_panels.setdefault(key(finding), [])
+                if label and label not in labels:
+                    labels.append(label)
+        for finding in (data.get("unassigned_group") or {}).get("findings") or []:
+            first_seen.setdefault(key(finding), finding)
+            other_panels.setdefault(key(finding), [])
+
+        active: list[tuple[dict, list[str]]] = []
+        active_keys: set[str] = set()
+        for finding in (data.get("active_disease_group") or {}).get("findings") or []:
+            if key(finding) in active_keys:
+                continue
+            active_keys.add(key(finding))
+            active.append((finding, other_panels.get(key(finding), [])))
+        others = [(finding, other_panels[k]) for k, finding in first_seen.items() if k not in active_keys]
+        return active, others
+
+    def _rare_findings_model_text(self, data: dict[str, Any]) -> str:
+        """Gene-level summary sent to the hosted model.
+
+        Deliberately excludes the exact variant (HGVS), rsID, genotype,
+        position and allele frequencies; the K-PREDICT LLM client also strips
+        those patterns from every prompt.
+        """
+        def describe(finding: dict, panels: list[str], also: bool) -> str:
+            call = "panel alert" if finding.get("moi_call") == "alert" else "carrier (heterozygous, recessive)"
+            significance = {"P": "pathogenic", "LP": "likely pathogenic"}.get(str(finding.get("clnsig")), "pathogenic or likely pathogenic")
+            stars = finding.get("stars")
+            review = f", ClinVar review {int(stars)} star{'s' if int(stars) != 1 else ''}" if isinstance(stars, (int, float)) and stars == stars else ""
+            conditions = re.sub(r"\s+", " ", str(finding.get("clinvar_conditions") or "")).strip()
+            if len(conditions) > 160:
+                conditions = conditions[:157].rstrip() + "..."
+            parts = [f"{finding.get('gene') or 'unknown gene'}: {call}",
+                     str(finding.get("consequence") or "consequence not recorded"),
+                     f"ClinVar {significance}{review}"]
+            if panels:
+                prefix = "also linked to" if also else "linked to"
+                parts.append(f"{prefix} the {' and '.join(panels)} panel{'s' if len(panels) > 1 else ''}")
+            if conditions:
+                parts.append(f"ClinVar conditions: {conditions}")
+            return "- " + "; ".join(parts)
+
+        active, others = self._rare_finding_groups(data)
+        lines = [f"Linked to the {self.disease_display_name} panel:"]
+        lines += [describe(finding, panels, True) for finding, panels in active] or ["- none recorded"]
+        lines.append("Other findings (not linked to this disease's panel; each variant listed once):")
+        listed = others[: self.MAX_RARE_FINDINGS_LISTED]
+        lines += [describe(finding, panels, False) for finding, panels in listed] or ["- none recorded"]
+        if len(others) > len(listed):
+            lines.append(f"- and {len(others) - len(listed)} more")
+        return "\n".join(lines)
+
+    def _rare_findings_display(self, data: dict[str, Any], language: str) -> str:
+        """Full findings table rendered by the server above the answer (never sent to the model)."""
+        disease = self.disease_display_name
+        if language == "ko":
+            disease = PHENOTYPE_LABELS_KO.get(self.primary_phenotype, self.disease_display_name)
+        cell = lambda value: str(value if value not in (None, "") else "—").replace("|", "\\|")
+
+        def row(finding: dict, panels: list[str] | None = None) -> str:
+            stars = finding.get("stars")
+            clinvar = ui_label(language, f"rare_clnsig_{finding.get('clnsig')}") or cell(finding.get("clnsig"))
+            if isinstance(stars, (int, float)) and stars == stars:
+                clinvar += f" ({'★' * int(stars)})"
+            call = ui_label(language, "rare_call_alert" if finding.get("moi_call") == "alert" else "rare_call_carrier")
+            cells = [cell(finding.get("gene")), cell(finding.get("hgvs") or finding.get("variant")),
+                     cell(finding.get("consequence")), clinvar, call]
+            if panels is not None:
+                cells.append(cell(", ".join(panels)) if panels else ui_label(language, "rare_no_panel"))
+            return "| " + " | ".join(cells) + " |"
+
+        header = [ui_label(language, key) for key in ("rare_col_gene", "rare_col_variant", "rare_col_consequence", "rare_col_clinvar", "rare_col_call")]
+        active, others = self._rare_finding_groups(data)
+        parts = [ui_label(language, "rare_findings_heading")]
+        if not active and not others:
+            parts.append(ui_label(language, "rare_findings_none_at_all"))
+        else:
+            if active:
+                # Show other panels for the same variant in this table, so it is
+                # not listed again under "Other findings".
+                also = any(panels for _finding, panels in active)
+                active_header = header + ([ui_label(language, "rare_col_also")] if also else [])
+                parts.append("\n".join([
+                    f"**{ui_label(language, 'rare_findings_panel', disease=disease)}**", "",
+                    "| " + " | ".join(active_header) + " |", "|" + "---|" * len(active_header),
+                    *[row(finding, panels if also else None) for finding, panels in active],
+                ]))
+            else:
+                parts.append(ui_label(language, "rare_findings_none_for_disease", disease=disease))
+            if others:
+                listed = others[: self.MAX_RARE_FINDINGS_LISTED]
+                other_header = header + [ui_label(language, "rare_col_panel")]
+                parts.append("\n".join([
+                    f"**{ui_label(language, 'rare_findings_other', disease=disease)}**", "",
+                    "| " + " | ".join(other_header) + " |", "|" + "---|" * len(other_header),
+                    *[row(finding, panels) for finding, panels in listed],
+                ]))
+        parts.append(f"_{ui_label(language, 'rare_findings_scope')}_")
         return "\n\n".join(parts)
 
     @staticmethod
@@ -2024,7 +2180,19 @@ class ExplanationAgent:
         report_facts = ""
         shown_report_values = ""
         asks_about_other_trait = analysis.get("disease_intent") == "other_disease"
-        if rare_variant_question and self.rare_variant_panel_available:
+        rare_data = (
+            self._rare_findings_data(pid)
+            if rare_variant_question or (patient_specific and not asks_about_other_trait)
+            else None
+        )
+        rare_findings_text = self._rare_findings_model_text(rare_data) if rare_data is not None else ""
+        rare_findings_shown = False
+        if rare_variant_question and rare_data is not None:
+            # The exact findings are rendered by the server; the model gets the
+            # gene-level summary only.
+            report_facts = self._rare_findings_display(rare_data, language)
+            rare_findings_shown = True
+        elif rare_variant_question and self.rare_variant_panel_available:
             report_facts = ui_label(language, "rare_variant_chat_note")
         elif patient_specific and not asks_about_other_trait:
             # The percentile/gene facts belong to the active disease; prepending
@@ -2056,6 +2224,8 @@ class ExplanationAgent:
             report_question=patient_specific,
             shown_report_values=shown_report_values,
             rare_variant_question=rare_variant_question,
+            rare_findings_text=rare_findings_text,
+            rare_findings_shown=rare_findings_shown,
         )
 
         if not answer:
