@@ -167,8 +167,8 @@
     <section class="analysis-modal analysis-modal--filter" role="dialog" aria-modal="true" aria-labelledby="risk-filter-title">
       <header class="analysis-modal__header">
         <div>
-          <p class="analysis-modal__eyebrow" data-i18n="cohortFinder">Cohort finder</p>
-          <h2 id="risk-filter-title" data-i18n="riskFilterTitle">Find Individuals</h2>
+          <p class="analysis-modal__eyebrow" data-i18n="cohortFinder">K-PREDICT cohort</p>
+          <h2 id="risk-filter-title" data-i18n="riskFilterTitle">Find individuals</h2>
           <p class="analysis-modal__subtitle" data-i18n="riskFilterSubtitle">Filter the K-PREDICT cohort by disease PRS percentile and disease-panel rare-variant findings.</p>
         </div>
         <button id="risk-filter-close-btn" class="analysis-modal__close" type="button" data-i18n-title="closeRiskFilter" data-i18n-aria="closeRiskFilter">
@@ -186,14 +186,14 @@
             <select id="risk-filter-band">
               <option value="top_1" data-i18n="riskBandTop1">Top 1%</option>
               <option value="top_5" data-i18n="riskBandTop5">Top 5%</option>
-              <option value="top_10" data-i18n="riskBandTop10" selected>Top 10%</option>
+              <option value="top_10" data-i18n="riskBandTop10">Top 10%</option>
               <option value="top_25" data-i18n="riskBandTop25">Top 25%</option>
               <option value="middle_50" data-i18n="riskBandMiddle50">Middle 50%</option>
               <option value="bottom_25" data-i18n="riskBandBottom25">Bottom 25%</option>
               <option value="bottom_10" data-i18n="riskBandBottom10">Bottom 10%</option>
               <option value="bottom_5" data-i18n="riskBandBottom5">Bottom 5%</option>
               <option value="bottom_1" data-i18n="riskBandBottom1">Bottom 1%</option>
-              <option value="all" data-i18n="riskBandAll">All applicable individuals</option>
+              <option value="all" data-i18n="riskBandAll" selected>All applicable individuals</option>
             </select>
           </label>
           <label>
@@ -262,6 +262,6 @@
 
 
   <script src="/static/rare_variant_detail.js?v=3"></script>
-  <script src="/static/home.js?v=62"></script>
+  <script src="/static/home.js?v=63"></script>
 </body>
 </html>
