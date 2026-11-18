@@ -18,6 +18,10 @@ FINDINGS = {
             "gene": "BRCA2", "moi_call": "alert", "consequence": "frameshift", "clnsig": "P", "stars": 2,
             "clinvar_conditions": "Hereditary breast ovarian cancer syndrome",
             "hgvs": EXACT_VARIANT, "rsid": RSID, "genotype": "0/1",
+            "actionability": [{
+                "doc_id": "AC133", "context": "Adult", "condition": "Hereditary Breast and Ovarian Cancer",
+                "interventions": ["Surveillance"], "url": "https://actionability.clinicalgenome.org/ac/Adult/ui/stg2SummaryRpt?doc=AC133",
+            }],
         }],
     },
     "other_disease_groups": [{
@@ -103,6 +107,18 @@ class ChatbotRareVariantTests(unittest.TestCase):
         answer = result["Generated Answer"]
         self.assertIn(EXACT_VARIANT, answer)      # server-rendered table
         self.assertIn("Model answer.", answer)
+
+    def test_actionability_reports_are_references_not_recommendations(self):
+        agent, llm = agent_with(lambda _pid: FINDINGS)
+        result = ask(agent, "Does this patient carry a pathogenic variant relevant to breast cancer?")
+
+        prompt = llm.prompts[-1]
+        self.assertIn("ClinGen Actionability report AC133: Hereditary Breast and Ovarian Cancer", prompt)
+        self.assertIn("interventions covered: Surveillance", prompt)
+        self.assertIn("Never recommend, suggest or imply any of those interventions for this individual", prompt)
+        answer = result["Generated Answer"]
+        self.assertIn("ClinGen Actionability reports (references, not recommendations for this individual)", answer)
+        self.assertIn("(https://actionability.clinicalgenome.org/ac/Adult/ui/stg2SummaryRpt?doc=AC133)", answer)
 
     def test_no_recorded_finding_is_worded_as_not_recorded(self):
         agent, llm = agent_with(lambda _pid: NO_FINDINGS)

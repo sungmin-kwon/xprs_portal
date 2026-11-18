@@ -41,6 +41,13 @@
       absentInGnomad: "— (absent in gnomAD)",
       noGnomadData: "— (no gnomAD data)",
       openClinvar: "Open in ClinVar",
+      actionabilitySection: "ClinGen Actionability (reference)",
+      actionabilityIntro: "ClinGen has an actionability report for this gene and condition. It summarises interventions studied for people with pathogenic variants. It is a reference, not a recommendation for this individual; decisions belong to the treating clinician and, where appropriate, genetic counselling.",
+      actionabilityCondition: "Condition (report)",
+      actionabilityInheritance: "Inheritance (report)",
+      actionabilityInterventions: "Interventions covered",
+      actionabilityScore: (score) => `ClinGen score ${score}`,
+      openActionability: "Open ClinGen report",
       noPanelDetails: "No disease-panel assignment is recorded for this finding.",
       boundary: "These are supplied research annotations. They do not establish a diagnosis, prognosis, or causal relationship with the selected disease.",
       stars: (count) => `${count} of 4 stars`,
@@ -84,6 +91,13 @@
       absentInGnomad: "— (gnomAD에 없음)",
       noGnomadData: "— (gnomAD 자료 없음)",
       openClinvar: "ClinVar에서 열기",
+      actionabilitySection: "ClinGen Actionability (참고 자료)",
+      actionabilityIntro: "이 유전자와 질환에 대한 ClinGen actionability 보고서가 있습니다. 병원성 변이를 가진 사람을 대상으로 연구된 조치를 요약한 자료이며, 이 개인에 대한 권고가 아닌 참고 자료입니다. 결정은 담당 임상의와 필요한 경우 유전상담을 통해 이루어집니다.",
+      actionabilityCondition: "질환 (보고서)",
+      actionabilityInheritance: "유전 양식 (보고서)",
+      actionabilityInterventions: "다루는 조치",
+      actionabilityScore: (score) => `ClinGen 점수 ${score}`,
+      openActionability: "ClinGen 보고서 열기",
       noPanelDetails: "이 소견에는 질환 패널 배정이 없습니다.",
       boundary: "이 정보는 제공받은 연구용 주석입니다. 진단, 예후 또는 선택한 질환과의 인과관계를 확정하지 않습니다.",
       stars: (count) => `4점 중 ${count}점`,
@@ -226,6 +240,35 @@
     </a>`;
   }
 
+  function actionabilitySection(item) {
+    const reports = Array.isArray(item.actionability) ? item.actionability : [];
+    if (!reports.length) return "";
+    const blocks = reports.map((report) => {
+      const outcomes = (Array.isArray(report.outcomes) ? report.outcomes : [])
+        .map((row) => `<li>${escapeHtml(row.intervention || "—")} — ${escapeHtml(row.outcome || "")}${row.overall ? ` <span class="rare-detail-score">${escapeHtml(tr("actionabilityScore", row.overall))}</span>` : ""}</li>`)
+        .join("");
+      const link = /^https:\/\/actionability\.clinicalgenome\.org\//.test(String(report.url || ""))
+        ? `<a class="rare-detail-clinvar" href="${escapeHtml(report.url)}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">
+            <span>${escapeHtml(tr("openActionability"))} (${escapeHtml(report.doc_id || "")})</span>
+            <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+          </a>`
+        : "";
+      return `<div class="rare-detail-actionability">
+        <dl class="rare-detail-grid">
+          ${detailField(tr("actionabilityCondition"), `${report.condition || "—"}${report.context ? ` (${report.context})` : ""}`, "is-wide")}
+          ${detailField(tr("actionabilityInheritance"), (report.inheritance || []).join(", "))}
+        </dl>
+        ${outcomes ? `<p class="rare-detail-actionability__label">${escapeHtml(tr("actionabilityInterventions"))}</p><ul class="rare-detail-actionability__list">${outcomes}</ul>` : ""}
+        ${link}
+      </div>`;
+    }).join("");
+    return `<section class="rare-detail-section">
+      <h3>${escapeHtml(tr("actionabilitySection"))}</h3>
+      <p class="rare-detail-actionability__intro">${escapeHtml(tr("actionabilityIntro"))}</p>
+      ${blocks}
+    </section>`;
+  }
+
   function render() {
     if (!currentItem) return;
     ensureDrawer();
@@ -280,6 +323,7 @@
       </div>
       ${variantSection}
       ${clinicalSection}
+      ${actionabilitySection(item)}
       ${panelSection}
       ${frequencySection}
       ${clinvarLink(item)}

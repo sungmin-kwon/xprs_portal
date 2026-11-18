@@ -9,6 +9,7 @@ import pandas as pd
 from scipy.stats import gaussian_kde
 
 from disease_registry import DISEASE_REGISTRY
+from actionability import matching_reports
 from kpredict_schema import PORTAL_DISEASE_ORDER, TRAIT_GROUPS, normalize_kpredict_disease
 
 
@@ -745,15 +746,26 @@ def _json_scalar(value):
     return value.item() if hasattr(value, "item") else value
 
 
+def _with_actionability(record: dict, call: object) -> dict:
+    """Attach ClinGen Actionability references to alerts (see actionability.py).
+
+    Carrier findings are, by the supplied classification, single variants for
+    recessive conditions, so dominant-condition reports are not attached to them.
+    """
+    record["actionability"] = matching_reports(record) if str(call or "").lower() == "alert" else []
+    return record
+
+
 def _rare_finding_records(source: pd.DataFrame) -> list[dict]:
     """Return the complete non-identifying annotation for each finding row."""
     records: list[dict] = []
     for row in source.itertuples(index=False):
         values = row._asdict()
-        records.append({
+        record = {
             field: _json_scalar(values.get(field))
             for field in RARE_FINDING_DETAIL_FIELDS
-        })
+        }
+        records.append(_with_actionability(record, record.get("moi_call")))
     return records
 
 
@@ -1088,6 +1100,8 @@ def rare_findings_overview(root: Path, individual_id: str) -> dict:
             "clingen_tier": first_value("clingen_tier"),
             "clingen_detail": first_value("clingen_detail"),
             "category": first_value("category"),
+            # Filled in below, once the record is complete.
+            "actionability": [],
             "gnomad_af": first_value("gnomad_af"),
             "gnomad_af_eas": first_value("gnomad_af_eas"),
             "eas_specific": first_value("eas_specific"),
@@ -1099,6 +1113,7 @@ def rare_findings_overview(root: Path, individual_id: str) -> dict:
             "unassigned": bool(group["track"].fillna("").eq("other").any()),
             "assignment_count": int(len(group)),
         })
+        _with_actionability(variants[-1], call)
 
     tier_rank = {"HIGH": 0, "MODERATE": 1, "LOW": 2}
     variants.sort(key=lambda item: (

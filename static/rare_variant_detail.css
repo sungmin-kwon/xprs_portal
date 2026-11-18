@@ -356,3 +356,36 @@ body.dark-theme .rare-detail-call.is-carrier {
     transition: none;
   }
 }
+
+/* ClinGen Actionability references (alerts with a matching report). */
+.rare-detail-actionability__intro {
+  margin: 0 0 0.6rem;
+  color: var(--muted, #66727d);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.rare-detail-actionability + .rare-detail-actionability {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--border, #dfe7ee);
+}
+
+.rare-detail-actionability__label {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: var(--muted, #66727d);
+}
+
+.rare-detail-actionability__list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.rare-detail-score {
+  color: var(--muted, #66727d);
+  font-size: 0.7rem;
+}
