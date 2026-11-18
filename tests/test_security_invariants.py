@@ -113,6 +113,16 @@ class StaticSourceInvariantTests(unittest.TestCase):
                         self.assertRegex(line, r"\.rel\s*=\s*\"[^\"]*\bnoreferrer\b")
         self.assertGreater(checked, 0)
 
+    def test_external_scripts_are_pinned_to_a_version(self):
+        # An unversioned CDN URL (e.g. .../npm/marked/marked.min.js) runs
+        # whatever the CDN serves that day inside the logged-in page.
+        # Prefer serving libraries from static/vendor/.
+        for path in sorted(STATIC.glob("*.html")):
+            text = path.read_text(encoding="utf-8")
+            for src in re.findall(r'<script\b[^>]*\bsrc="(https?://[^"]+)"', text):
+                with self.subTest(file=path.name, src=src):
+                    self.assertRegex(src, r"\d+\.\d+\.\d+")
+
 
 if __name__ == "__main__":
     unittest.main()
