@@ -932,14 +932,39 @@ class ExplanationAgent:
             return None
 
     @staticmethod
-    def _rare_finding_groups(data: dict[str, Any]) -> tuple[list[dict], list[tuple[str, dict]]]:
-        """Findings linked to the active disease panel, and all others with their panel label."""
-        active = list((data.get("active_disease_group") or {}).get("findings") or [])
-        others: list[tuple[str, dict]] = []
+    def _rare_finding_groups(data: dict[str, Any]) -> tuple[list[tuple[dict, list[str]]], list[tuple[dict, list[str]]]]:
+        """One entry per variant: (finding, other panel labels).
+
+        The data hold one row per panel assignment, so a variant in a gene on
+        two panels (e.g. ATM: breast and pancreatic cancer) appears twice.
+        The first list holds variants linked to the active disease panel; the
+        second holds the rest. Each variant is listed once, with its other
+        panels.
+        """
+        def key(finding: dict) -> str:
+            return str(finding.get("variant") or finding.get("hgvs") or finding.get("finding_id") or finding.get("gene"))
+
+        other_panels: dict[str, list[str]] = {}
+        first_seen: dict[str, dict] = {}
         for group in data.get("other_disease_groups") or []:
             label = str(group.get("disease_label") or group.get("disease") or "")
-            others.extend((label, finding) for finding in group.get("findings") or [])
-        others.extend(("", finding) for finding in (data.get("unassigned_group") or {}).get("findings") or [])
+            for finding in group.get("findings") or []:
+                first_seen.setdefault(key(finding), finding)
+                labels = other_panels.setdefault(key(finding), [])
+                if label and label not in labels:
+                    labels.append(label)
+        for finding in (data.get("unassigned_group") or {}).get("findings") or []:
+            first_seen.setdefault(key(finding), finding)
+            other_panels.setdefault(key(finding), [])
+
+        active: list[tuple[dict, list[str]]] = []
+        active_keys: set[str] = set()
+        for finding in (data.get("active_disease_group") or {}).get("findings") or []:
+            if key(finding) in active_keys:
+                continue
+            active_keys.add(key(finding))
+            active.append((finding, other_panels.get(key(finding), [])))
+        others = [(finding, other_panels[k]) for k, finding in first_seen.items() if k not in active_keys]
         return active, others
 
     def _rare_findings_model_text(self, data: dict[str, Any]) -> str:
@@ -949,7 +974,7 @@ class ExplanationAgent:
         position and allele frequencies; the K-PREDICT LLM client also strips
         those patterns from every prompt.
         """
-        def describe(finding: dict, panel: str = "") -> str:
+        def describe(finding: dict, panels: list[str], also: bool) -> str:
             call = "panel alert" if finding.get("moi_call") == "alert" else "carrier (heterozygous, recessive)"
             significance = {"P": "pathogenic", "LP": "likely pathogenic"}.get(str(finding.get("clnsig")), "pathogenic or likely pathogenic")
             stars = finding.get("stars")
@@ -960,18 +985,19 @@ class ExplanationAgent:
             parts = [f"{finding.get('gene') or 'unknown gene'}: {call}",
                      str(finding.get("consequence") or "consequence not recorded"),
                      f"ClinVar {significance}{review}"]
-            if panel:
-                parts.append(f"linked to the {panel} panel")
+            if panels:
+                prefix = "also linked to" if also else "linked to"
+                parts.append(f"{prefix} the {' and '.join(panels)} panel{'s' if len(panels) > 1 else ''}")
             if conditions:
                 parts.append(f"ClinVar conditions: {conditions}")
             return "- " + "; ".join(parts)
 
         active, others = self._rare_finding_groups(data)
         lines = [f"Linked to the {self.disease_display_name} panel:"]
-        lines += [describe(finding) for finding in active] or ["- none recorded"]
-        lines.append("Other findings (not linked to this disease's panel):")
+        lines += [describe(finding, panels, True) for finding, panels in active] or ["- none recorded"]
+        lines.append("Other findings (not linked to this disease's panel; each variant listed once):")
         listed = others[: self.MAX_RARE_FINDINGS_LISTED]
-        lines += [describe(finding, panel) for panel, finding in listed] or ["- none recorded"]
+        lines += [describe(finding, panels, False) for finding, panels in listed] or ["- none recorded"]
         if len(others) > len(listed):
             lines.append(f"- and {len(others) - len(listed)} more")
         return "\n".join(lines)
@@ -983,7 +1009,7 @@ class ExplanationAgent:
             disease = PHENOTYPE_LABELS_KO.get(self.primary_phenotype, self.disease_display_name)
         cell = lambda value: str(value if value not in (None, "") else "—").replace("|", "\\|")
 
-        def row(finding: dict, panel: str | None = None) -> str:
+        def row(finding: dict, panels: list[str] | None = None) -> str:
             stars = finding.get("stars")
             clinvar = ui_label(language, f"rare_clnsig_{finding.get('clnsig')}") or cell(finding.get("clnsig"))
             if isinstance(stars, (int, float)) and stars == stars:
@@ -991,8 +1017,8 @@ class ExplanationAgent:
             call = ui_label(language, "rare_call_alert" if finding.get("moi_call") == "alert" else "rare_call_carrier")
             cells = [cell(finding.get("gene")), cell(finding.get("hgvs") or finding.get("variant")),
                      cell(finding.get("consequence")), clinvar, call]
-            if panel is not None:
-                cells.append(cell(panel) if panel else ui_label(language, "rare_no_panel"))
+            if panels is not None:
+                cells.append(cell(", ".join(panels)) if panels else ui_label(language, "rare_no_panel"))
             return "| " + " | ".join(cells) + " |"
 
         header = [ui_label(language, key) for key in ("rare_col_gene", "rare_col_variant", "rare_col_consequence", "rare_col_clinvar", "rare_col_call")]
@@ -1002,10 +1028,14 @@ class ExplanationAgent:
             parts.append(ui_label(language, "rare_findings_none_at_all"))
         else:
             if active:
+                # Show other panels for the same variant in this table, so it is
+                # not listed again under "Other findings".
+                also = any(panels for _finding, panels in active)
+                active_header = header + ([ui_label(language, "rare_col_also")] if also else [])
                 parts.append("\n".join([
                     f"**{ui_label(language, 'rare_findings_panel', disease=disease)}**", "",
-                    "| " + " | ".join(header) + " |", "|" + "---|" * len(header),
-                    *[row(finding) for finding in active],
+                    "| " + " | ".join(active_header) + " |", "|" + "---|" * len(active_header),
+                    *[row(finding, panels if also else None) for finding, panels in active],
                 ]))
             else:
                 parts.append(ui_label(language, "rare_findings_none_for_disease", disease=disease))
@@ -1015,7 +1045,7 @@ class ExplanationAgent:
                 parts.append("\n".join([
                     f"**{ui_label(language, 'rare_findings_other', disease=disease)}**", "",
                     "| " + " | ".join(other_header) + " |", "|" + "---|" * len(other_header),
-                    *[row(finding, panel) for panel, finding in listed],
+                    *[row(finding, panels) for finding, panels in listed],
                 ]))
         parts.append(f"_{ui_label(language, 'rare_findings_scope')}_")
         return "\n\n".join(parts)

@@ -120,6 +120,32 @@ class ChatbotRareVariantTests(unittest.TestCase):
         self.assertNotIn("directly above your answer; do not repeat that table", llm.prompts[-1])
         self.assertNotIn(EXACT_VARIANT, result["Generated Answer"])
 
+    def test_variant_on_two_panels_is_listed_once_with_both_panels(self):
+        # The data hold one row per panel assignment: the same BRCA2 variant on
+        # the breast and pancreatic cancer panels arrives twice.
+        brca2 = FINDINGS["active_disease_group"]["findings"][0]
+        duplicated = {
+            **FINDINGS,
+            "other_disease_groups": FINDINGS["other_disease_groups"] + [{
+                "disease_label": "Pancreatic Cancer",
+                "findings": [{**brca2, "variant": "13:99999999:CT:C"}],
+            }],
+            "active_disease_group": {
+                "disease_label": "Breast Cancer",
+                "findings": [{**brca2, "variant": "13:99999999:CT:C"}],
+            },
+        }
+        agent, llm = agent_with(lambda _pid: duplicated)
+        result = ask(agent, "Does this patient carry a pathogenic variant?")
+
+        prompt = llm.prompts[-1]
+        self.assertEqual(prompt.count("BRCA2: panel alert"), 1)
+        self.assertIn("also linked to the Pancreatic Cancer panel", prompt)
+        answer = result["Generated Answer"]
+        self.assertEqual(answer.count(EXACT_VARIANT), 1)
+        self.assertIn("Also on panel", answer)
+        self.assertIn("Pancreatic Cancer", answer)
+
     def test_without_findings_the_chat_still_refuses_to_guess(self):
         agent, llm = agent_with(None)
         ask(agent, "Does this patient carry a pathogenic variant?")

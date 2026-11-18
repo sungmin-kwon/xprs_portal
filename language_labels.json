@@ -72,7 +72,8 @@
     "rare_call_carrier": "Carrier",
     "rare_clnsig_P": "Pathogenic",
     "rare_clnsig_LP": "Likely pathogenic",
-    "rare_no_panel": "—"
+    "rare_no_panel": "—",
+    "rare_col_also": "Also on panel"
   },
   "ko": {
     "summary_title": "XPRS 유전자 수준 요약",
@@ -147,6 +148,7 @@
     "rare_call_carrier": "보인자",
     "rare_clnsig_P": "병원성",
     "rare_clnsig_LP": "병원성 가능성 높음",
-    "rare_no_panel": "—"
+    "rare_no_panel": "—",
+    "rare_col_also": "다른 질환 패널"
   }
 }
