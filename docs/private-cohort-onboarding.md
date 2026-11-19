@@ -148,14 +148,42 @@ percentile distribution, label, and retrieval phenotype. It does not fall back
 to the public 1000 Genomes breast-cancer matrix.
 
 All OpenRouter calls require provider-side Zero Data Retention and deny provider
-data collection. Prompts are limited to the active disease, selected gene symbols,
-public papers, and rank-only wording. They exclude pseudonymous IIDs, demographic
-fields, exact PRS/percentiles, exact gene contributions, full vectors, and all
-rare-variant details. A final sanitizer removes any K-PREDICT IID, rsID, HGVS
-string, or genotype that reaches the common client boundary. Private sessions
-are kept in process memory rather than persisted to disk. Task streams, session
-exports, and report downloads re-check K-PREDICT authorization.
+data collection. Zero Data Retention limits what the provider keeps; the prompt
+content still reaches the provider for processing.
+
+What prompts contain:
+
+- **Summary and ordinary follow-ups:** the active disease, selected gene
+  symbols, public papers, and rank-only wording.
+- **Follow-ups about rare variants or about the individual** (since 2026-11-18):
+  the individual's rare-variant findings at gene level. For each finding the
+  prompt gives the gene, the alert or carrier call, the molecular consequence,
+  the ClinVar classification and review stars, the ClinVar condition names
+  (shortened to 160 characters), the disease panels it is linked to, and any
+  matching ClinGen Actionability report (report ID, condition, context and the
+  interventions it covers). Every finding linked to the active disease's panel
+  is listed; other findings are listed up to 15, followed by a count of the
+  rest. The findings are supplied by `rare_findings_provider` in
+  `runtime_agents.py`; removing it returns the chat to declining
+  individual rare-variant questions.
+
+Prompts exclude pseudonymous IIDs, demographic fields, exact PRS values and
+percentiles, exact gene contributions, full vectors, and every variant-level
+detail: HGVS, genomic position, rsID, genotype, and allele frequencies. The
+server renders the percentile, gene ranks and the full findings table above the
+answer instead of sending them. A final sanitizer removes any K-PREDICT IID,
+rsID, HGVS string, genomic coordinate, genotype, PRS value or percentile that
+reaches the common client boundary.
+
+Private chat sessions are kept in process memory rather than persisted to disk.
+The server log file records warnings and failures by default; every line passes
+through the same sanitizer, and INFO-level detail (which includes question text)
+is written only when `SERVER_LOG_FILE_LEVEL=INFO` is set for debugging. Task
+streams, session exports, and report downloads re-check K-PREDICT authorization.
 
 These controls reduce disclosure but do not make pseudonymized genetic data
-anonymous. Deployment still requires institutional/data-owner approval and a
-review of external processors and retention terms.
+anonymous. Gene-level rare findings are individual-level, health-related
+information even without identifiers. Deployment still requires
+institutional/data-owner approval, including for sending those findings to an
+external model provider, and a review of external processors and retention
+terms.

@@ -353,8 +353,8 @@ set is documented in [`tests/README.md`](tests/README.md) and stored under
 
 ### End-to-end chatbot test
 
-`scripts/run_question_bank.py` asks every question in a clinician question
-bank (a private spreadsheet, not in this repository) to a running portal, checks
+`scripts/run_question_bank.py` asks every question in the development
+question bank (a private spreadsheet, not in this repository) to a running portal, checks
 each answer and writes answers and results in order as JSON (optionally
 Markdown):
 
@@ -367,14 +367,15 @@ python scripts/run_question_bank.py --questions BANK.xlsx --out PRIVATE/run.json
 python scripts/run_question_bank.py --rescore PRIVATE/run.json --compare PRIVATE/previous.json
 ```
 
-Each section runs in its own chat session after a summary, as a clinician
+Each section runs in its own chat session after a summary, as a portal user
 would use it. Every answer gets general checks (no pseudonymous ID or rsID,
 percentile not read as a probability, no "has no pathogenic variants" claim,
 quoted percentile matches the report); questions listed in
 `benchmarks/question_bank_expectations.json` also get their intended behaviour
 checked (refusal expected or not, required phrases), with the reason recorded.
 The output holds pseudonymous IDs and individual-level answers, so it must be
-written outside the repository.
+written outside the repository. The bank's questions were used while tuning the
+chatbot, so its results are regression checks, not a held-out evaluation.
 
 Retrieval comparison reports are retained under `benchmarks/`. Generated
 corpora, abstracts, embeddings, Chroma/LanceDB indexes, and blinded-review files
