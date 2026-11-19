@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End-to-end test of the chatbot with the clinician question bank.
+"""End-to-end test of the chatbot with the development question bank.
 
 Asks every question in a question-bank spreadsheet to a running portal, checks
 each answer, and writes the answers and check results in spreadsheet order as
@@ -10,7 +10,7 @@ English)", "Answered well?", "Comment") is private and not stored in this
 repository; pass its path.
 
 How questions are asked: each section runs in its own chat session, in
-spreadsheet order, starting with "Generate Summary" as a clinician would, so
+spreadsheet order, starting with "Generate Summary" as a portal user would, so
 follow-up questions keep their context. "Track 2" (rare-variant) questions use
 an individual with a panel alert for the chosen disease; the other sections an
 individual without panel findings. Both are chosen deterministically (lowest
@@ -149,7 +149,7 @@ def _xlsx_rows(path: Path) -> list[list[str]]:
 
 
 def load_questions(path: Path) -> list[dict]:
-    """Questions in spreadsheet order: id, section, topic, question, clinician rating and comment."""
+    """Questions in spreadsheet order: id, section, topic, question, earlier reviewer rating and comment."""
     rows = _xlsx_rows(path)
     header = rows[0]
     missing = [name for name in EXPECTED_COLUMNS.values() if name not in header]
@@ -283,7 +283,7 @@ def write_markdown(path: Path, payload: dict) -> None:
         if result.get("expectation_reason"):
             lines += [f"*Expected:* {result['expectation_reason']}", ""]
         if result["clinician_rating"] or result["clinician_comment"]:
-            lines += [f"*Clinician (earlier round):* {result['clinician_rating'] or '—'}"
+            lines += [f"*Reviewer (earlier round):* {result['clinician_rating'] or '—'}"
                       f"{' — ' + result['clinician_comment'] if result['clinician_comment'] else ''}", ""]
         lines += [result["answer"] if result["status"] == "ok" else f"**{result['status']}:** {result['error']}", ""]
         if result["references"]:
