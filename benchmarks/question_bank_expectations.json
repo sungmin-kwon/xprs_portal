@@ -16,8 +16,8 @@
       "reason": "The report has no absolute risk; the answer must say so rather than estimate one (feedback #12)."
     },
     "D06": {
-      "must_include_any": ["does not include a confidence interval", "no confidence interval", "does not report a confidence interval", "no reported interval"],
-      "reason": "False premise: the report has no confidence interval (11 Nov replay)."
+      "must_include_any": ["does not include a confidence interval", "does not include confidence intervals", "no confidence interval", "does not report a confidence interval", "does not report confidence intervals", "no reported interval"],
+      "reason": "False premise: the report has no confidence interval (11 Nov replay). Plural forms added 25 Nov after correct answers failed on wording."
     },
     "D09": {
       "must_include_any": ["does not include a follow-up badge", "does not include follow-up badges", "no follow-up badge", "no badge"],

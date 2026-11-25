@@ -52,6 +52,16 @@ class GeneralCheckTests(unittest.TestCase):
                       failed(general_checks("The patient has no pathogenic variants.", percentile=None)))
         self.assertEqual(failed(general_checks("No panel finding is recorded for this individual.", percentile=None)), [])
 
+    def test_absence_caveat_passes_but_bare_negation_does_not(self):
+        caveat = ("No finding is recorded for the panel, so this does not mean the individual "
+                  "has no pathogenic variants.")
+        self.assertEqual(failed(general_checks(caveat, percentile=None)), [])
+        self.assertEqual(failed(general_checks(
+            "This does not mean this individual has no pathogenic variants in related genes.", percentile=None)), [])
+        # A "no" earlier in the sentence is not a caveat; the claim still fails.
+        self.assertIn("no_absence_claim", failed(general_checks(
+            "There are no panel findings, so she has no pathogenic variants.", percentile=None)))
+
     def test_portal_failure_message_is_not_an_answer(self):
         from scripts.question_bank_checks import failure_texts
         failures = failure_texts()
