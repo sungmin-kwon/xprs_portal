@@ -397,7 +397,7 @@ class LocalReferenceMethodologyTests(unittest.TestCase):
         )
 
         prompt = llm.messages[-1]["content"]
-        self.assertIn("It does not contain confidence intervals", prompt)
+        self.assertIn("items this report never contains are confidence intervals", prompt)
         self.assertIn("follow-up badges or flags", prompt)
         self.assertIn("plus a separate Rare Variant Analysis panel", prompt)
         self.assertIn("Refer to the person as 'this individual'", prompt)
