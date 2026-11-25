@@ -222,11 +222,18 @@ def _build_generation_agent(model: str | None = None):
     from llm_utils import LLM_PROVIDER, build_llm_agent, build_llm_client
 
     client, default_model = build_llm_client(LLM_PROVIDER)
-    agent = ExplanationAgent.__new__(ExplanationAgent)
-    agent.llm = RecordingLLM(
-        build_llm_agent(LLM_PROVIDER, client=client, model=model or default_model)
+    from runtime_agents import PUBLIC_REFERENCE_COHORT
+
+    # Use the real constructor so new prompt attributes keep their defaults;
+    # follow-up generation needs no retrieval agents, and the reference-cohort
+    # wording matches the public runtime agent.
+    return ExplanationAgent(
+        llm=RecordingLLM(build_llm_agent(LLM_PROVIDER, client=client, model=model or default_model)),
+        gene_agent=None,
+        evidence_agent=None,
+        ot_agent=None,
+        reference_cohort_description=PUBLIC_REFERENCE_COHORT,
     )
-    return agent
 
 
 def _run_generation(agent, case: dict[str, Any]) -> tuple[str, str, str]:
