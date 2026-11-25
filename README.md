@@ -74,7 +74,7 @@ when papers for the selected genes are available.
 - Vanilla HTML, CSS and JavaScript frontend; Plotly (pinned CDN version) for
   plots; vendored KaTeX, marked and DOMPurify (chat answers are sanitised before
   display)
-- OpenRouter for generation and GPT-5 mini reference extraction
+- OpenRouter for generation and GPT-6 Luna reference extraction
 - Europe PMC REST API with Semantic Scholar as an emergency literature fallback
 - ChromaDB dense retrieval with BGE-M3 embeddings
 - MedCPT cross-encoder reranking
@@ -295,7 +295,7 @@ The complete key-free template is in `.env.example`. The principal settings are:
 - `OPENROUTER_API_KEY`, `LLM_MODEL`, `LLM_FALLBACK_MODEL`
 - `OPENROUTER_ZDR_REQUIRED=true`, `OPENROUTER_DATA_COLLECTION=deny` (required)
 - `REFERENCE_EXTRACTION_PROVIDER=openrouter`
-- `REFERENCE_EXTRACTION_MODEL=openai/gpt-5-mini`
+- `REFERENCE_EXTRACTION_MODEL=openai/gpt-6-luna`
 - `LITERATURE_CACHE_DIR`, `EUROPE_PMC_CACHE_DIR`, `S2_CACHE_DIR`, `S2_API_KEY`
 - `S2_API_KEY_MIN_INTERVAL_SECONDS`, `S2_PUBLIC_MIN_INTERVAL_SECONDS`,
   `S2_ENRICHMENT_API_KEY_MIN_INTERVAL_SECONDS`
