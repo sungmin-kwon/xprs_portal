@@ -418,6 +418,9 @@ Rules:
     * "What does my PRS value mean as a statistical signal?" (interpretation of displayed value)
     * "Why is this gene in the top 5?"
     * "The measured value doesn't match the PRS. Which should I trust?" (interpreting two kinds of evidence)
+- The reader is usually a clinician or researcher asking about "this patient" or "this individual". Apply the same boundary to them:
+    * medical_advice_seeking: they ask for a clinical management decision for this individual, such as starting, stopping or changing a treatment or drug, a screening or testing schedule, testing relatives, or using these results to guide treatment or the medical record. Examples: "Should she begin mammography at 35?", "Is it safe to prescribe raloxifene for him?", "Can these gene scores inform his chemotherapy choice?", "Should his brother be tested?"
+    * biomedical_followup: they ask what the report shows or means for this individual, including a risk figure the report may not contain, or a question built on a premise that the answer should check against the report. Examples: "What is her chance of developing diabetes by 60?" (the answer explains that the report has no absolute risk), "The summary shows no rare findings, so is he in the clear?" (the answer checks the recorded findings), "Why is APOE not in the gene list?"
 - If the user explicitly names genes, use those genes.
 - If the user refers to prior genes indirectly, use the currently active genes from state.
 - If the user is clarifying which genes they meant, preserve the prior question's intent but replace the active genes.
