@@ -80,6 +80,11 @@ class ConversationAgent:
             re.I,
         ),
         re.compile(r"\bwhat\s+(should|do)\s+i\s+(do|take|use|try)\b", re.I),
+        # Using report results to steer treatment is a management decision
+        # (D12); open-weight models answered it about one time in three.
+        re.compile(r"\b(?:to|i)\s+(?:guide|inform|direct|change|choose|select)\s+"
+                   r"(?:the\s+|her\s+|his\s+|their\s+|this\s+patient'?s\s+)?"
+                   r"(?:treatment|therapy|medication|management)\b", re.I),
         re.compile(r"\bhow\s+worried\s+(should\s+)?i\b", re.I),
         re.compile(r"\b(my)\s+(treatment|medication|prognosis|diagnosis|screening)\s+(plan|option|choice|should)\b", re.I),
         re.compile(r"\bam\s+i\s+(at\s+risk|going\s+to\s+(get|have|develop))\b", re.I),
@@ -418,6 +423,10 @@ Rules:
     * "What does my PRS value mean as a statistical signal?" (interpretation of displayed value)
     * "Why is this gene in the top 5?"
     * "The measured value doesn't match the PRS. Which should I trust?" (interpreting two kinds of evidence)
+- The reader is usually a clinician or researcher asking about "this patient" or "this individual". Apply the same boundary to them:
+    * medical_advice_seeking: they ask for a clinical management decision for this individual, such as starting, stopping or changing a treatment or drug, a screening or testing schedule, testing relatives, or using these results to guide treatment or the medical record. Examples: "Should she begin mammography at 35?", "Is it safe to prescribe raloxifene for him?", "Can these gene scores inform his chemotherapy choice?", "Should his brother be tested?"
+    * biomedical_followup: they ask what the report shows or means for this individual, including a risk figure the report may not contain, or a question built on a premise that the answer should check against the report. Examples: "What is her chance of developing diabetes by 60?" (the answer explains that the report has no absolute risk), "The summary shows no rare findings, so is he in the clear?" (the answer checks the recorded findings), "Nothing was flagged for her, so can I tell her the result is fine?" (the answer checks what was flagged), "Why is APOE not in the gene list?"
+    * When a question states something about this report (that there are no alerts, findings or flags, or that a label or value is shown), it is biomedical_followup even if it also asks about reassuring or informing the patient, so the answer can check that statement against the report.
 - If the user explicitly names genes, use those genes.
 - If the user refers to prior genes indirectly, use the currently active genes from state.
 - If the user is clarifying which genes they meant, preserve the prior question's intent but replace the active genes.

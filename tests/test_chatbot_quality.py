@@ -26,6 +26,10 @@ class ChatbotQualityTests(unittest.TestCase):
             ("How is XPRS calculated?", "biomedical_followup"),
             ("What treatments exist for breast cancer?", "biomedical_followup"),
             ("Should I start diabetes medication?", "medical_advice_seeking"),
+            ("Can I use the gene contribution table to guide treatment?", "medical_advice_seeking"),
+            ("Could these scores help to inform her therapy?", "medical_advice_seeking"),
+            ("Which genes guide the treatment response literature?", "biomedical_followup"),
+            ("How does tamoxifen guide estrogen receptor signalling?", "biomedical_followup"),
             ("Write Python code to analyze KCNQ1 in breast cancer.", "off_domain_request"),
             ("What is the weather today?", "casual_chat"),
         )

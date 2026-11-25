@@ -120,10 +120,16 @@ def user_facing_wording_rules(disease_display_name: str, rare_variant_panel_avai
         "- This report contains the PRS percentile within its reference cohort, a PRS density plot, a gene-based "
         "Manhattan plot, the top and bottom gene contribution tables, and literature evidence for those genes"
         + (", plus a separate Rare Variant Analysis panel" if rare_variant_panel_available else "")
-        + ". It does not contain confidence intervals, absolute or lifetime risk, survival curves, follow-up "
-        "badges or flags, model performance metrics, or pharmacogenomic results. If a question assumes one of "
-        "these, say plainly in one sentence that this report does not include it, and do not discuss it as if "
-        "it existed."
+        + ".\n"
+        "- Reference only, not text to repeat: items this report never contains are confidence intervals, "
+        "absolute or lifetime risk, survival curves, follow-up badges or flags, model performance metrics and "
+        "pharmacogenomic results. If the question assumes one of them, say in one sentence that this report "
+        "does not include that one item. Never list the other items (open-weight models in the 25 Nov tests "
+        "recited this whole list in unrelated answers).\n"
+        "- Before saying that this report or the rare-variant findings do not include something the question "
+        "mentions, check the background, the report's gene lists and the rare-variant findings. If the "
+        "question's premise conflicts with them (it names a label, alert or value that is not there, or says "
+        "there is none when one is listed), say so directly and answer from what is actually listed."
     )
 
 
@@ -383,6 +389,7 @@ class ExplanationAgent:
         rare_variant_question: bool = False,
         rare_findings_text: str = "",
         rare_findings_shown: bool = False,
+        report_gene_order: str = "",
     ) -> str:
         output_language = "Korean" if normalize_output_language(language) == "ko" else "English"
         evidence_context = compact_ctx if compact_ctx else "(No evidence context available.)"
@@ -428,6 +435,17 @@ class ExplanationAgent:
             f"Reference cohort for the percentile: {self.reference_cohort_description}\n"
             if self.reference_cohort_description else ""
         )
+        if report_gene_order:
+            # Gene symbols in table order only; no contribution values. Weaker
+            # models otherwise said the report does not show the top gene (D11).
+            methodology_instructions += (
+                f"{report_gene_order}\n"
+                "If asked why a gene is not in these tables, explain that the tables list only the genes with the "
+                "largest contributions for this individual, so a well-known gene can be absent for that reason, and "
+                "that absence from the tables says nothing about rare or pathogenic variants in that gene"
+                + (" (those are shown only in the Rare Variant Analysis panel)" if self.rare_variant_panel_available else "")
+                + ".\n"
+            )
         if rare_findings_text:
             # Clinical feedback #1: the chat should use the individual's rare
             # findings. They are supplied at gene level only.
@@ -446,6 +464,9 @@ class ExplanationAgent:
                 "gene and condition and name the interventions it covers, as a reference. Never recommend, suggest or "
                 "imply any of those interventions for this individual; say that such decisions belong to the treating "
                 "clinician and, where appropriate, genetic counselling. "
+                "Each ClinGen Actionability report lists its context (adult or pediatric). When a question asks "
+                "whether a label, context or entry applies to this individual, check the listed reports' contexts "
+                "and say what is actually listed. "
                 "If a Rare-Variant Track Methods Note is provided, use it to explain how findings were defined, "
                 "assigned to diseases and labelled.\n"
             )
@@ -475,7 +496,9 @@ class ExplanationAgent:
                             "Do not include raw URLs.\n"
                             f"Output language: {output_language}. "
                             "If Korean, use consistent formal 존댓말.\n"
-                            "Format mathematical expressions in LaTeX: use $...$ for inline math and $$...$$ for display math. "
+                            "Use mathematical notation only when the question asks for a formula or a calculation; otherwise "
+                            "explain in plain words. When you do write math, format it in LaTeX: use $...$ for inline "
+                            "math and $$...$$ for display math. "
                             "Prefer proper symbols such as \\beta, subscripts like _{i}, and \\cdot for multiplication. "
                             "Write named subscripts with \\mathrm, for example $CS_{\\mathrm{gene},j}$, "
                             "$A_{\\mathrm{gene},j}$, and $CS_{\\mathrm{SNP},i}$. Never escape an underscore as \\_ in math. "
@@ -502,6 +525,20 @@ class ExplanationAgent:
             # log here so provider outages are visible instead of silent.
             logger.exception("[FOLLOWUP] answer generation failed for model=%s", self.llm.model)
             return ""
+
+    @staticmethod
+    def _report_gene_order_text(summary_context: dict[str, Any] | None) -> str:
+        """Gene symbols of the report's selected genes in table order, without values."""
+        payload = (summary_context or {}).get("Report Payload") or {}
+        lines = []
+        for key, label in (("top_genes", "risk-increasing"), ("bottom_genes", "risk-lowering")):
+            genes = [str(g) for g in ((payload.get(key) or {}).get("selected_genes") or []) if str(g).strip()]
+            if genes:
+                lines.append(f"- Largest {label} contributions, in table order: {', '.join(genes)}")
+        if not lines:
+            return ""
+        return ("This report's gene contribution tables (gene symbols in rank order only; the first "
+                "risk-increasing gene is the top gene):\n" + "\n".join(lines))
 
     @staticmethod
     def _ranked_gene_rows(gene_df: pd.DataFrame) -> list[dict[str, Any]]:
@@ -2248,6 +2285,9 @@ class ExplanationAgent:
             rare_variant_question=rare_variant_question,
             rare_findings_text=rare_findings_text,
             rare_findings_shown=rare_findings_shown,
+            report_gene_order=self._report_gene_order_text(
+                summary_context if (summary_context or {}).get("Report Payload") else base
+            ),
         )
 
         if not answer:
