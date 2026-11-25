@@ -35,10 +35,12 @@ let traitOverviewData = null;
 let traitOverviewRequestId = 0;
 let activeOverviewView = "diseases";
 let traitsAvailable = false;
-// All trait groups start open; a group the user collapses shows its most
-// extreme trait in the header. (If startup proves too long, collapse by
-// default here instead.)
-const collapsedTraitGroups = new Set();
+// One trait group is open at a time (advisor feedback, 25 Nov: all 42 traits
+// open looked busy). `undefined` means "not chosen yet", which opens the first
+// group; `null` means the user closed the open group. Collapsed headers show
+// only the group name and trait count. The choice survives switching
+// individuals.
+let openTraitGroup;
 const OVERVIEW_VIEW_PREFERENCE_KEY = "xprs.overview_view";
 // Neutral flag for the tails; not a clinical threshold.
 const TRAIT_TAIL_PERCENT = 5;
@@ -100,7 +102,6 @@ const UI_TEXT = {
     traitColumnPercentile: "Percentile",
     traitTop5: "top 5%",
     traitBottom5: "bottom 5%",
-    traitMostExtreme: (label, value) => `most extreme: ${label} ${value}`,
     traitNotApplicable: "n/a",
     loadingTraits: "Loading trait PRS...",
     selectIndividualForTraits: "Select an individual to view trait PRS.",
@@ -263,7 +264,6 @@ const UI_TEXT = {
     traitColumnPercentile: "백분위",
     traitTop5: "상위 5%",
     traitBottom5: "하위 5%",
-    traitMostExtreme: (label, value) => `가장 치우친 형질: ${label} ${value}`,
     traitNotApplicable: "해당 없음",
     loadingTraits: "형질 PRS를 불러오는 중...",
     selectIndividualForTraits: "형질 PRS를 보려면 개인을 선택하세요.",
@@ -1784,11 +1784,14 @@ function traitRowHtml(trait) {
     </div>`;
 }
 
-function traitGroupPreview(traits) {
-  const applicable = traits.filter((trait) => Number.isFinite(trait.z));
-  if (!applicable.length) return "";
-  const extreme = applicable.reduce((a, b) => (Math.abs(b.z) > Math.abs(a.z) ? b : a));
-  return `<span class="trait-group-preview">${escapeHtml(t("traitMostExtreme", extreme.label, formatTraitPercentile(extreme.percentile)))}${traitTailTag(extreme.percentile)}</span>`;
+// The open group's key, or null when the user closed it. Falls back to the
+// first group before any choice, or when the chosen group is absent for this
+// individual.
+function currentOpenTraitGroup(data) {
+  const groups = data?.groups || [];
+  if (openTraitGroup === null) return null;
+  if (groups.some((group) => group.key === openTraitGroup)) return openTraitGroup;
+  return groups[0]?.key ?? null;
 }
 
 function renderTraitOverview(data) {
@@ -1798,8 +1801,9 @@ function renderTraitOverview(data) {
     container.innerHTML = `<div class="empty-state"><p>${escapeHtml(t("selectIndividualForTraits"))}</p></div>`;
     return;
   }
+  const openKey = currentOpenTraitGroup(data);
   const groups = data.groups.map((group) => {
-    const open = !collapsedTraitGroups.has(group.key);
+    const open = group.key === openKey;
     const rows = open
       ? `<div class="trait-rows" role="list">${group.traits.map(traitRowHtml).join("")}</div>`
       : "";
@@ -1809,7 +1813,6 @@ function renderTraitOverview(data) {
           <span class="trait-group-chevron" aria-hidden="true">${open ? "▾" : "▸"}</span>
           <span class="trait-group-name">${escapeHtml(traitGroupLabel(group.key))}</span>
           <span class="trait-group-count">(${group.traits.length})</span>
-          ${open ? "" : traitGroupPreview(group.traits)}
         </button>
         ${rows}
       </section>`;
@@ -2054,9 +2057,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     const toggle = event.target.closest(".trait-group-toggle");
     if (!toggle) return;
     const key = toggle.dataset.traitGroup;
-    if (collapsedTraitGroups.has(key)) collapsedTraitGroups.delete(key);
-    else collapsedTraitGroups.add(key);
+    openTraitGroup = currentOpenTraitGroup(traitOverviewData) === key ? null : key;
     renderTraitOverview(traitOverviewData);
+    // Closing a long group above the clicked one shifts the page up; keep the
+    // clicked header in view.
+    const header = [...document.querySelectorAll("#trait-overview .trait-group-toggle")]
+      .find((button) => button.dataset.traitGroup === key);
+    header?.focus({ preventScroll: true });
+    header?.scrollIntoView({ block: "nearest" });
   });
 
   $("refresh-grid-btn")?.addEventListener("click", () => {
