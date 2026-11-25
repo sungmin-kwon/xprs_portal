@@ -705,13 +705,6 @@ body.dark-theme .overview-view-tab.is-active {
   font-weight: 400;
 }
 
-.trait-group-preview {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 400;
-}
-
 .trait-row {
   padding: 0.28rem 0.6rem;
   border-radius: 6px;
