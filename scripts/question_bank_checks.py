@@ -33,6 +33,13 @@ NEGATION = re.compile(r"\b(?:not|no|never|isn't|doesn't|does not|is not|rather t
 NO_PATHOGENIC = re.compile(
     r"\b(?:has|have|carries|carry)\s+no\s+(?:known\s+)?(?:pathogenic|disease-causing|rare)\s+variants?"
     r"|\bno\s+pathogenic\s+variants?\s+(?:was|were)\s+(?:found|identified|detected)", re.I)
+# "this does not mean the individual has no pathogenic variants" is the caveat
+# the portal should give, not the claim. Only a "does not mean/imply ..." phrase
+# in the same sentence counts: a bare "no" ("no findings, so she has no ...")
+# does not negate the claim.
+ABSENCE_CAVEAT = re.compile(
+    r"\b(?:not|cannot|can't|doesn't|don't)\s+(?:necessarily\s+)?"
+    r"(?:mean|imply|indicate|establish|show|prove|confirm|suggest)\b[^.]{0,60}$", re.I)
 # "higher than about 93.0% of the reference cohort"; "top 1% of ..." is a
 # premise in some questions, not the report's percentile, so it is skipped.
 QUOTED_PERCENTILE = re.compile(
@@ -77,8 +84,9 @@ def general_checks(answer: str, *, percentile: float | None, failures: list[str]
     misread = [m.group(0) for m in PERCENT_AS_PROBABILITY.finditer(answer)
                if not NEGATION.search(answer[max(0, m.start() - 60):m.start()])]
     results.append(_result("percentile_not_probability", not misread, "; ".join(misread)))
-    found = NO_PATHOGENIC.search(answer)
-    results.append(_result("no_absence_claim", not found, found.group(0) if found else ""))
+    claims = [m.group(0) for m in NO_PATHOGENIC.finditer(answer)
+              if not ABSENCE_CAVEAT.search(answer[max(0, m.start() - 80):m.start()])]
+    results.append(_result("no_absence_claim", not claims, "; ".join(claims)))
     if percentile is not None:
         quoted = [float(m.group(1)) for m in QUOTED_PERCENTILE.finditer(answer)]
         wrong = [value for value in quoted if abs(value - round(percentile, 1)) > 0.06]
