@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated OpenRouter model allowlists for the model-switching dropdowns. Prices are USD per 1M tokens, a snapshot from OpenRouter on 2026-11-03 (for display/cap reference only; the live API is authoritative). The generation list intentionally contains two OpenAI frontier models, one Anthropic frontier model, and two open-weight models. GPT-6 Sol was added on 2026-11-11 and made the default while GPT-6.1 Sol's ZDR-eligible global Azure endpoint was degraded; revert the default once that endpoint recovers. GPT-6 Luna replaced GPT-5 mini (retired by OpenRouter on 2026-12-11) as the reference-extraction default on 2026-11-25, priced as of that date.",
+  "_comment": "Curated OpenRouter model allowlists for the model-switching dropdowns. Prices are USD per 1M tokens, a snapshot from OpenRouter on 2026-11-03 (for display/cap reference only; the live API is authoritative). The generation list intentionally contains two OpenAI frontier models, one Anthropic frontier model, and three open-weight models (Muse Glimmer 30B added on 2026-11-25 as a local-deployment candidate, priced as of that date). GPT-6 Sol was added on 2026-11-11 and made the default while GPT-6.1 Sol's ZDR-eligible global Azure endpoint was degraded; revert the default once that endpoint recovers. GPT-6 Luna replaced GPT-5 mini (retired by OpenRouter on 2026-12-11) as the reference-extraction default on 2026-11-25, priced as of that date.",
   "cost_cap_per_million": {"input": 4.00, "output": 20.00},
   "priced_as_of": "2026-11-03",
   "generation": [
@@ -7,7 +7,8 @@
     {"id": "openai/gpt-6-sol",               "label": "GPT-6 Sol (OpenAI)",                   "price_in": 2.00, "price_out": 10.00, "default": true},
     {"id": "anthropic/claude-opus-5.5",      "label": "Claude Opus 5.5 (Anthropic)",          "price_in": 4.00, "price_out": 20.00},
     {"id": "qwen/qwen3.8-27b",               "label": "Qwen3.8 27B (open-weight)",             "price_in": 0.42, "price_out": 3.00},
-    {"id": "google/gemma-4-31b-it",          "label": "Gemma 4 31B (open-weight)",             "price_in": 0.09, "price_out": 0.34}
+    {"id": "google/gemma-4-31b-it",          "label": "Gemma 4 31B (open-weight)",             "price_in": 0.09, "price_out": 0.34},
+    {"id": "meta/muse-glimmer-30b",          "label": "Muse Glimmer 30B (open-weight)",        "price_in": 0.35, "price_out": 1.50}
   ],
   "reference_extraction": [
     {"id": "openai/gpt-6-luna",              "label": "GPT-6 Luna",          "price_in": 0.10, "price_out": 0.50, "default": true},
