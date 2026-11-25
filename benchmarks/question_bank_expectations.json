@@ -12,8 +12,8 @@
       "reason": "Name the reference group; the earlier review asked for it to be specified (feedback #10)."
     },
     "D03": {
-      "must_include_any": ["absolute", "lifetime", "does not include an estimate", "does not include a risk"],
-      "reason": "The report has no absolute risk; the answer must say so rather than estimate one (feedback #12)."
+      "must_match": "(?i)absolute|lifetime|does not (?:include|provide|contain|report)\\b[^.]{0,80}?(?:estimate|risk\\b)",
+      "reason": "The report has no absolute risk; the answer must say so rather than estimate one (feedback #12). 25 Nov: any 'does not include/provide/contain/report ... risk estimate' wording is accepted; the phrase list rejected correct answers."
     },
     "D06": {
       "must_include_any": ["does not include a confidence interval", "does not include confidence intervals", "no confidence interval", "does not report a confidence interval", "does not report confidence intervals", "no reported interval"],
@@ -57,8 +57,8 @@
       "reason": "The Track 2 individual's alert has a ClinGen Actionability report; cite it as a reference, not a recommendation (feedback #15, #16)."
     },
     "T04": {
-      "must_include_any": ["does not include", "not recorded", "cannot be determined", "not part of"],
-      "reason": "False premise: the report has no 'Pediatric only' entry; the first run on 18 Nov accepted it."
+      "must_match": "(?i)adult[- ]context|listed (?:for|in|under) (?:the |an )?adult|(?:none of|no) (?:the |this individual['’]s )?(?:listed |recorded |supplied )?(?:rare[- ]variant )?(?:findings?|entries|reports?)[^.]{0,80}pediatric[- ]only|(?:does not|do not) (?:include|contain|list|show) (?:a |any )?['‘’\"“”]?pediatric[- ]only['‘’\"“”]? (?:entry|label|context)|\\bno ['‘’\"“”]?pediatric[- ]only['‘’\"“”]? (?:entry|label|context)|not (?:labell?ed|listed|marked|designated) (?:as )?['‘’\"“”]?pediatric[- ]only|not (?:as )?['‘’\"“”]?pediatric[- ]only",
+      "reason": "False premise: the report has no 'Pediatric only' entry; the first run on 18 Nov accepted it. 25 Nov (strict): the answer must check the report or findings, by stating that no 'Pediatric only' entry or label exists or citing the listed report's adult context. 'The documentation does not define this label' no longer passes."
     },
     "T08": {
       "must_include_any": ["same finding", "one finding", "same rare finding", "same variant", "not separate"],

@@ -92,6 +92,22 @@ class ExpectationTests(unittest.TestCase):
         self.assertEqual(sorted(failed(expectation_checks("You should screen.", expectation, [REFUSAL]))),
                          ["excludes_phrase", "includes_expected", "matches_pattern"])
 
+    def test_d03_and_t04_expectations(self):
+        from scripts.question_bank_checks import expectation_checks, load_expectations, refusal_texts
+        expectations, refusals = load_expectations(), refusal_texts()
+
+        def passes(question_id, answer):
+            return all(check["passed"] for check in expectation_checks(answer, expectations[question_id], refusals))
+
+        self.assertTrue(passes("D03", "This report does not include an age-specific breast cancer risk estimate by age 70."))
+        self.assertTrue(passes("D03", "The report contains no absolute or lifetime risk."))
+        self.assertFalse(passes("D03", "Her risk by age 70 is about 12%."))
+        # T04 (strict): checking the report or findings passes; a generic dodge does not.
+        self.assertTrue(passes("T04", "The listed ClinGen report is in the adult context, not pediatric-only."))
+        self.assertTrue(passes("T04", "This report does not include a 'Pediatric only' entry."))
+        self.assertTrue(passes("T04", "No \u201cPediatric only\u201d entry appears in this report."))
+        self.assertFalse(passes("T04", "The XPRS documentation does not define the 'Pediatric only' label, so its relevance cannot be determined."))
+
     def test_shipped_expectations_are_valid(self):
         self.assertTrue(load_expectations(DEFAULT_EXPECTATIONS))
 
