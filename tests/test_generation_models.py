@@ -27,10 +27,12 @@ class GenerationModelTests(unittest.TestCase):
         self.assertIn("open-weight", models[3]["label"])
         self.assertIn("open-weight", models[4]["label"])
 
-    def test_reference_extraction_default_remains_gpt_5_mini(self):
+    def test_reference_extraction_default_is_gpt_6_luna(self):
         models = self.model_config["reference_extraction"]
         default = next(model for model in models if model.get("default"))
-        self.assertEqual(default["id"], "openai/gpt-5-mini")
+        self.assertEqual(default["id"], "openai/gpt-6-luna")
+        template = (ROOT / ".env.example").read_text(encoding="utf-8")
+        self.assertIn(f"REFERENCE_EXTRACTION_MODEL={default['id']}\n", template)
 
     def test_public_environment_default_matches_ui_default(self):
         template = (ROOT / ".env.example").read_text(encoding="utf-8")
