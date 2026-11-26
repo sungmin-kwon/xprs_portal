@@ -30,6 +30,13 @@ class ChatbotQualityTests(unittest.TestCase):
             ("Could these scores help to inform her therapy?", "medical_advice_seeking"),
             ("Which genes guide the treatment response literature?", "biomedical_followup"),
             ("How does tamoxifen guide estrogen receptor signalling?", "biomedical_followup"),
+            # T02: a generic ask about an alert's Actionability entry is answerable;
+            # naming a concrete action, or asking with no alert, stays declined.
+            ("This alert has an Actionability entry. What should I do?", "biomedical_followup"),
+            ("There's a ClinGen report for this finding. What next?", "biomedical_followup"),
+            ("This alert has an Actionability entry. What should I do about testing her sister?", "medical_advice_seeking"),
+            ("What should I do?", "medical_advice_seeking"),
+            ("What should I do about my cancer risk?", "medical_advice_seeking"),
             ("Write Python code to analyze KCNQ1 in breast cancer.", "off_domain_request"),
             ("What is the weather today?", "casual_chat"),
         )
