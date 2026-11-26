@@ -97,6 +97,19 @@ class ConversationAgent:
         ),
         re.compile(r"(?:저|제가|나는|내가).*(?:암|당뇨병|질환).*(?:인가요|입니까|있나요|걸리나요)"),
     ]
+    # "This alert has an Actionability entry. What should I do?" (T02) asks what
+    # the attached ClinGen reference covers; the answer describes it as a
+    # reference and leaves the decision to the clinician. A generic action ask
+    # about an alert, Actionability entry or ClinGen report is therefore
+    # answerable, unless it names a concrete action, which stays declined.
+    ACTIONABILITY_REFERENCE_PATTERN = re.compile(r"\b(?:actionability|clingen|alert)\b", re.I)
+    GENERIC_ACTION_ASK_PATTERN = re.compile(
+        r"\bwhat\s+(?:should|do|can)\s+(?:i|we)\s+do\b|\bwhat\s+now\b|\bwhat\s+next\b"
+        r"|\bwhat\s+(?:does|do)\s+(?:this|that|it)\s+mean\s+for\b", re.I)
+    CONCRETE_ACTION_PATTERN = re.compile(
+        r"\b(?:take|start|stop|prescribe|test(?:ed|ing)?|screen(?:ed|ing)?|surgery|mastectomy|oophorectomy|"
+        r"medication|drug|refer(?:ral)?|treat(?:ment)?)\b", re.I)
+
     BIOMEDICAL_KEYWORDS = (
         "gene", "genes", "cancer", "cancers", "tumor", "tumors", "tumour", "tumours",
         "disease", "diseases", "phenotype", "phenotypes", "mutation", "mutations",
@@ -426,6 +439,7 @@ Rules:
 - The reader is usually a clinician or researcher asking about "this patient" or "this individual". Apply the same boundary to them:
     * medical_advice_seeking: they ask for a clinical management decision for this individual, such as starting, stopping or changing a treatment or drug, a screening or testing schedule, testing relatives, or using these results to guide treatment or the medical record. Examples: "Should she begin mammography at 35?", "Is it safe to prescribe raloxifene for him?", "Can these gene scores inform his chemotherapy choice?", "Should his brother be tested?"
     * biomedical_followup: they ask what the report shows or means for this individual, including a risk figure the report may not contain, or a question built on a premise that the answer should check against the report. Examples: "What is her chance of developing diabetes by 60?" (the answer explains that the report has no absolute risk), "The summary shows no rare findings, so is he in the clear?" (the answer checks the recorded findings), "Nothing was flagged for her, so can I tell her the result is fine?" (the answer checks what was flagged), "Why is APOE not in the gene list?"
+    * A generic question about what to do with an alert or its ClinGen Actionability entry ("There's an Actionability report for this finding. What now?") is biomedical_followup: the answer describes what the entry covers as a reference and leaves the decision to the clinician. A question naming a concrete action (a test, drug, screening or surgery) stays medical_advice_seeking.
     * When a question states something about this report (that there are no alerts, findings or flags, or that a label or value is shown), it is biomedical_followup even if it also asks about reassuring or informing the patient, so the answer can check that statement against the report.
 - If the user explicitly names genes, use those genes.
 - If the user refers to prior genes indirectly, use the currently active genes from state.
@@ -538,6 +552,16 @@ Recent conversation:
         return any(pattern.search(text) for pattern in cls.SMALLTALK_FALLBACK_PATTERNS)
 
     @classmethod
+    def is_actionability_reference_question(cls, question: str) -> bool:
+        """A generic "what should I do?" about an alert or its ClinGen Actionability entry."""
+        text = question or ""
+        return bool(
+            cls.ACTIONABILITY_REFERENCE_PATTERN.search(text)
+            and cls.GENERIC_ACTION_ASK_PATTERN.search(text)
+            and not cls.CONCRETE_ACTION_PATTERN.search(text)
+        )
+
+    @classmethod
     def classify_turn_fallback(
         cls,
         question: str,
@@ -552,6 +576,8 @@ Recent conversation:
         # Medical-advice patterns are checked BEFORE the biomedical-keyword shortcut,
         # because "should I get tested for cancer?" contains "cancer" but is still
         # a medical-advice request, not a research question.
+        if cls.is_actionability_reference_question(text):
+            return "biomedical_followup"
         if any(pattern.search(text) for pattern in cls.MEDICAL_ADVICE_FALLBACK_PATTERNS):
             return "medical_advice_seeking"
         if cls.is_smalltalk_turn(text):
